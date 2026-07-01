@@ -1,0 +1,124 @@
+import { createId } from "./analysis";
+import type { CoachingReport, GeometrySource, MetricPhase, PoseMetric, RideSession } from "../types/domain";
+
+type WorkerMetric = {
+  phase: MetricPhase;
+  frameTime: number;
+  torsoAngle: number;
+  hipAngle: number;
+  kneeAngle: number;
+  elbowAngle: number;
+  bikePitchAngle: number;
+  floorAngle?: number;
+  tireBaselineAngle?: number;
+  landingAlignmentAngle?: number;
+  geometrySource?: GeometrySource;
+  geometry?: PoseMetric["geometry"];
+  confidence: number;
+};
+
+type WorkerReport = {
+  summary: string;
+  strengths: string[];
+  improvements: string[];
+  drills: string[];
+};
+
+type WorkerResponse = {
+  status: "completed";
+  metrics: WorkerMetric[];
+  report: WorkerReport;
+};
+
+export type WorkerAnalysisResult = {
+  metrics: PoseMetric[];
+  report: CoachingReport;
+};
+
+export function getAnalysisWorkerUrl(): string | undefined {
+  const rawUrl = process.env.EXPO_PUBLIC_ANALYSIS_WORKER_URL?.trim();
+  if (!rawUrl) return undefined;
+  return rawUrl.replace(/\/+$/, "");
+}
+
+export async function analyzeRegularJumpWithWorker(session: RideSession): Promise<WorkerAnalysisResult | undefined> {
+  const workerUrl = getAnalysisWorkerUrl();
+  const video = session.video;
+
+  if (!workerUrl || !video || session.source !== "video_upload") {
+    return undefined;
+  }
+
+  const formData = new FormData();
+  formData.append("session_id", session.id);
+  formData.append("trim_start_seconds", String(video.trimStartSeconds));
+  formData.append("trim_end_seconds", String(video.trimEndSeconds));
+  formData.append("crop_preset", video.cropPreset);
+  formData.append("video", {
+    uri: video.rawVideoUri,
+    name: getVideoFileName(video.rawVideoUri),
+    type: getVideoContentType(video.rawVideoUri)
+  } as unknown as Blob);
+
+  const response = await fetch(`${workerUrl}/analysis/regular-jump`, {
+    method: "POST",
+    body: formData
+  });
+
+  if (!response.ok) {
+    const detail = await readErrorDetail(response);
+    throw new Error(detail || `Analysis worker failed with ${response.status}`);
+  }
+
+  const payload = (await response.json()) as WorkerResponse;
+  return {
+    metrics: payload.metrics.map((metric) => ({
+      id: createId(`metric-${metric.phase}`),
+      sessionId: session.id,
+      phase: metric.phase,
+      frameTime: metric.frameTime,
+      torsoAngle: metric.torsoAngle,
+      hipAngle: metric.hipAngle,
+      kneeAngle: metric.kneeAngle,
+      elbowAngle: metric.elbowAngle,
+      bikePitchAngle: metric.bikePitchAngle,
+      floorAngle: metric.floorAngle,
+      tireBaselineAngle: metric.tireBaselineAngle,
+      landingAlignmentAngle: metric.landingAlignmentAngle,
+      geometrySource: metric.geometrySource,
+      geometry: metric.geometry,
+      confidence: metric.confidence
+    })),
+    report: {
+      id: createId("report"),
+      sessionId: session.id,
+      summary: payload.report.summary,
+      strengths: payload.report.strengths,
+      improvements: payload.report.improvements,
+      drills: payload.report.drills,
+      createdAt: new Date().toISOString()
+    }
+  };
+}
+
+async function readErrorDetail(response: Response): Promise<string | undefined> {
+  try {
+    const payload = await response.json();
+    return typeof payload.detail === "string" ? payload.detail : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function getVideoFileName(uri: string): string {
+  const name = uri.split("/").filter(Boolean).pop();
+  return name?.includes(".") ? name : "riderlens-jump.mp4";
+}
+
+function getVideoContentType(uri: string): string {
+  const lower = uri.toLowerCase();
+  if (lower.endsWith(".mov")) return "video/quicktime";
+  if (lower.endsWith(".m4v")) return "video/x-m4v";
+  if (lower.endsWith(".webm")) return "video/webm";
+  return "video/mp4";
+}

@@ -1,0 +1,41 @@
+{
+  "expo": {
+    "name": "RiderLens",
+    "slug": "riderlens",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "riderlens",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "app.riderlens.mvp",
+      "infoPlist": {
+        "NSCameraUsageDescription": "RiderLens uses the camera to record short bike technique clips for coaching feedback.",
+        "NSMicrophoneUsageDescription": "RiderLens may record audio with bike technique clips.",
+        "NSPhotoLibraryUsageDescription": "RiderLens lets you upload existing bike technique clips for analysis.",
+        "NSMotionUsageDescription": "RiderLens uses motion sensors for the level and inclinometer tool."
+      }
+    },
+    "android": {
+      "package": "app.riderlens.mvp",
+      "permissions": [
+        "CAMERA",
+        "RECORD_AUDIO",
+        "READ_MEDIA_VIDEO",
+        "BODY_SENSORS"
+      ]
+    },
+    "plugins": [
+      "expo-font",
+      "expo-camera",
+      "expo-image-picker"
+    ],
+    "extra": {
+      "analysisWorkerUrl": ""
+    }
+  }
+}

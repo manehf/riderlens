@@ -1,0 +1,607 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>RiderLens — Garage Setup Sheet</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;700&family=IBM+Plex+Sans:wght@400;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --background: #f5f7f1;
+        --surface: #ffffff;
+        --surface-muted: #edf2ea;
+        --text: #101411;
+        --text-muted: #60685f;
+        --border: #dde3da;
+        --graphite: #111613;
+        --electric: #b6ff2e;
+        --electric-soft: #efffd8;
+        --green: #2e7d32;
+        --cyan: #00b8d9;
+        --cyan-soft: #d9f8ff;
+        --amber: #e19a00;
+        --amber-soft: #fff0ce;
+        --red: #d64545;
+        --red-soft: #ffe0df;
+        --font-ui: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system,
+          "Segoe UI", sans-serif;
+        --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Consolas,
+          monospace;
+        --shadow: 0 22px 58px rgba(16, 20, 17, 0.12);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: var(--background);
+        color: var(--text);
+        font-family: var(--font-ui);
+        line-height: 1.5;
+      }
+
+      .page {
+        width: min(760px, calc(100% - 32px));
+        margin: 0 auto;
+        padding: 28px 0 56px;
+      }
+
+      /* Share toolbar — screen only, hidden when printed */
+      .toolbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 18px;
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .brand-mark {
+        display: grid;
+        width: 36px;
+        height: 36px;
+        place-items: center;
+        border-radius: 10px;
+        background: var(--graphite);
+        color: var(--electric);
+        font-size: 13px;
+        font-weight: 900;
+      }
+
+      .brand-name {
+        font-size: 15px;
+        font-weight: 900;
+        line-height: 1;
+      }
+
+      .brand-sub {
+        color: var(--text-muted);
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .share {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .btn {
+        display: inline-flex;
+        min-height: 40px;
+        align-items: center;
+        gap: 7px;
+        border: 1px solid transparent;
+        border-radius: 8px;
+        padding: 0 14px;
+        font-size: 13px;
+        font-weight: 800;
+        text-decoration: none;
+        color: var(--text);
+        cursor: pointer;
+      }
+
+      .btn-primary {
+        background: var(--electric);
+        color: var(--graphite);
+      }
+
+      .btn-ghost {
+        border-color: var(--border);
+        background: var(--surface);
+      }
+
+      .btn svg {
+        width: 15px;
+        height: 15px;
+      }
+
+      /* The sheet itself — light, calm, printable */
+      .sheet {
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        background: var(--surface);
+        box-shadow: var(--shadow);
+        overflow: hidden;
+      }
+
+      .sheet-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 22px 24px 18px;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .sheet-title {
+        margin: 0 0 8px;
+        font-size: 26px;
+        line-height: 1.1;
+        letter-spacing: 0;
+      }
+
+      .sheet-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+        color: var(--text-muted);
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      .dot {
+        width: 3px;
+        height: 3px;
+        border-radius: 999px;
+        background: var(--border);
+      }
+
+      .updated {
+        text-align: right;
+        color: var(--text-muted);
+        font-size: 12px;
+        font-weight: 700;
+        white-space: nowrap;
+      }
+
+      .updated strong {
+        display: block;
+        color: var(--text);
+        font-size: 13px;
+      }
+
+      .chip {
+        display: inline-flex;
+        min-height: 24px;
+        align-items: center;
+        gap: 5px;
+        border-radius: 999px;
+        padding: 0 9px;
+        font-family: var(--font-ui);
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .chip-current {
+        background: var(--electric-soft);
+        color: var(--green);
+      }
+
+      .chip-disc {
+        background: var(--surface-muted);
+        color: var(--text-muted);
+      }
+
+      .chip-measured {
+        background: var(--cyan-soft);
+        color: #006b82;
+      }
+
+      .chip-flag {
+        background: var(--amber-soft);
+        color: #7a4b00;
+      }
+
+      /* Rider feedback callout */
+      .feedback {
+        display: grid;
+        gap: 4px;
+        margin: 18px 24px 4px;
+        border: 1px solid var(--border);
+        border-left: 5px solid var(--cyan);
+        border-radius: 8px;
+        padding: 12px 14px;
+        background: #fbfdfd;
+      }
+
+      .feedback-label {
+        color: var(--text-muted);
+        font-size: 11px;
+        font-weight: 900;
+        text-transform: uppercase;
+        letter-spacing: 0.02em;
+      }
+
+      .feedback p {
+        margin: 0;
+        font-size: 15px;
+        font-weight: 600;
+      }
+
+      /* Sections */
+      .section {
+        padding: 18px 24px;
+        border-top: 1px solid var(--border);
+      }
+
+      .section:first-of-type {
+        border-top: none;
+      }
+
+      .section-title {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin: 0 0 12px;
+        font-size: 12px;
+        font-weight: 900;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: var(--text-muted);
+      }
+
+      .section-title::before {
+        width: 8px;
+        height: 8px;
+        border-radius: 2px;
+        background: var(--green);
+        content: "";
+      }
+
+      .cols {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+      }
+
+      .subcard {
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--surface);
+        overflow: hidden;
+      }
+
+      .subcard-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        padding: 10px 12px;
+        background: var(--surface-muted);
+        font-size: 13px;
+        font-weight: 900;
+      }
+
+      .subcard-head span {
+        color: var(--text-muted);
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .rows {
+        display: grid;
+      }
+
+      .row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 9px 12px;
+        border-top: 1px solid var(--border);
+        font-size: 14px;
+      }
+
+      .row:first-child {
+        border-top: none;
+      }
+
+      .row .k {
+        color: var(--text-muted);
+        font-weight: 700;
+      }
+
+      .row .v {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        font-family: var(--font-mono);
+        font-variant-numeric: tabular-nums;
+        font-weight: 700;
+      }
+
+      .grid {
+        display: grid;
+        gap: 10px;
+      }
+
+      .grid-3 {
+        grid-template-columns: repeat(3, 1fr);
+      }
+
+      .cell {
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 11px 12px;
+      }
+
+      .cell .k {
+        color: var(--text-muted);
+        font-size: 11px;
+        font-weight: 900;
+        text-transform: uppercase;
+        letter-spacing: 0.02em;
+      }
+
+      .cell .v {
+        margin-top: 3px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-family: var(--font-mono);
+        font-variant-numeric: tabular-nums;
+        font-size: 16px;
+        font-weight: 700;
+      }
+
+      /* Footer — permissions + disclaimer */
+      .sheet-foot {
+        padding: 16px 24px 20px;
+        border-top: 1px solid var(--border);
+        background: var(--surface-muted);
+      }
+
+      .permission {
+        display: flex;
+        gap: 10px;
+        align-items: flex-start;
+        font-size: 13px;
+        color: var(--text-muted);
+      }
+
+      .permission strong {
+        color: var(--text);
+      }
+
+      .lock {
+        flex: none;
+        width: 26px;
+        height: 26px;
+        display: grid;
+        place-items: center;
+        border-radius: 7px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+      }
+
+      .disclaimer {
+        margin-top: 10px;
+        font-size: 12px;
+        color: var(--text-muted);
+      }
+
+      @media (max-width: 560px) {
+        .cols,
+        .grid-3 {
+          grid-template-columns: 1fr;
+        }
+
+        .sheet-head {
+          flex-direction: column;
+        }
+
+        .updated {
+          text-align: left;
+        }
+      }
+
+      /* Printable: drop the chrome so a coach/shop gets a clean sheet */
+      @media print {
+        body {
+          background: #ffffff;
+        }
+
+        .toolbar {
+          display: none;
+        }
+
+        .page {
+          width: 100%;
+          padding: 0;
+        }
+
+        .sheet {
+          border: none;
+          border-radius: 0;
+          box-shadow: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <div class="toolbar">
+        <div class="brand">
+          <div class="brand-mark">RL</div>
+          <div>
+            <div class="brand-name">RiderLens</div>
+            <div class="brand-sub">Garage setup sheet</div>
+          </div>
+        </div>
+        <div class="share">
+          <button class="btn btn-primary" type="button">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg>
+            Copy link
+          </button>
+          <button class="btn btn-ghost" type="button">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.5 8.5 0 0 1-12.5 7.5L3 21l2-5.5A8.5 8.5 0 1 1 21 11.5Z"/></svg>
+            WhatsApp
+          </button>
+          <button class="btn btn-ghost" type="button">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3M21 21v.01M17 21h.01M21 17h.01"/></svg>
+            QR
+          </button>
+        </div>
+      </div>
+
+      <article class="sheet">
+        <header class="sheet-head">
+          <div>
+            <h1 class="sheet-title">Canyon Spectral 29</h1>
+            <div class="sheet-meta">
+              <span class="chip chip-disc">Enduro / Trail</span>
+              <span class="dot"></span>
+              <span class="chip chip-current">Bike park · Current</span>
+              <span class="dot"></span>
+              <span>Rider 82&nbsp;kg with gear</span>
+            </div>
+          </div>
+          <div class="updated">
+            Last updated
+            <strong>28 Jun 2026</strong>
+            Version v4
+          </div>
+        </header>
+
+        <div class="feedback">
+          <div class="feedback-label">Rider feedback</div>
+          <p>Front dives under heavy braking; rear kicks on bigger landings.</p>
+        </div>
+
+        <section class="section">
+          <h2 class="section-title">Suspension</h2>
+          <div class="cols">
+            <div class="subcard">
+              <div class="subcard-head">Fork <span>Fox 36 Factory · 160&nbsp;mm</span></div>
+              <div class="rows">
+                <div class="row"><span class="k">Air pressure</span><span class="v">86 psi</span></div>
+                <div class="row"><span class="k">Sag</span><span class="v">18%</span></div>
+                <div class="row"><span class="k">Rebound</span><span class="v">8 clicks</span></div>
+                <div class="row"><span class="k">LSC / HSC</span><span class="v">6 / 2</span></div>
+                <div class="row"><span class="k">Volume tokens</span><span class="v">1</span></div>
+              </div>
+            </div>
+            <div class="subcard">
+              <div class="subcard-head">Shock <span>Fox Float X · 210×55</span></div>
+              <div class="rows">
+                <div class="row"><span class="k">Air pressure</span><span class="v">172 psi</span></div>
+                <div class="row"><span class="k">Sag</span><span class="v">30%</span></div>
+                <div class="row"><span class="k">Rebound</span><span class="v">7 clicks</span></div>
+                <div class="row"><span class="k">LSC / HSC</span><span class="v">5 / 3</span></div>
+                <div class="row"><span class="k">Volume tokens</span><span class="v">1</span></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="section">
+          <h2 class="section-title">Tires</h2>
+          <div class="cols">
+            <div class="subcard">
+              <div class="subcard-head">Front <span>Maxxis Assegai 2.5</span></div>
+              <div class="rows">
+                <div class="row"><span class="k">Pressure</span><span class="v">22 psi</span></div>
+                <div class="row"><span class="k">Width / insert</span><span class="v">2.5" · CushCore</span></div>
+              </div>
+            </div>
+            <div class="subcard">
+              <div class="subcard-head">Rear <span>Maxxis Minion DHR II 2.4</span></div>
+              <div class="rows">
+                <div class="row"><span class="k">Pressure</span><span class="v">24 psi</span></div>
+                <div class="row"><span class="k">Width / insert</span><span class="v">2.4" · CushCore</span></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="section">
+          <h2 class="section-title">Cockpit</h2>
+          <div class="grid grid-3">
+            <div class="cell">
+              <div class="k">Bar width</div>
+              <div class="v">780 mm</div>
+            </div>
+            <div class="cell">
+              <div class="k">Stem</div>
+              <div class="v">40 mm</div>
+            </div>
+            <div class="cell">
+              <div class="k">Spacers</div>
+              <div class="v">10 mm</div>
+            </div>
+            <div class="cell">
+              <div class="k">Bar roll</div>
+              <div class="v">4&deg;</div>
+            </div>
+            <div class="cell">
+              <div class="k">Brake lever angle</div>
+              <div class="v">32&deg; <span class="chip chip-measured">Measured</span></div>
+            </div>
+            <div class="cell">
+              <div class="k">Saddle height</div>
+              <div class="v">740 mm</div>
+            </div>
+          </div>
+        </section>
+
+        <section class="section">
+          <h2 class="section-title">Service</h2>
+          <div class="grid grid-3">
+            <div class="cell">
+              <div class="k">Last service</div>
+              <div class="v" style="font-size: 14px; font-family: var(--font-ui)">Lower legs · 10 Jun</div>
+            </div>
+            <div class="cell">
+              <div class="k">Fork full service</div>
+              <div class="v" style="font-size: 14px; font-family: var(--font-ui)">Due <span class="chip chip-flag">~8 h left</span></div>
+            </div>
+            <div class="cell">
+              <div class="k">Stem bolt torque</div>
+              <div class="v">5 Nm</div>
+            </div>
+          </div>
+        </section>
+
+        <footer class="sheet-foot">
+          <div class="permission">
+            <span class="lock" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#60685f" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>
+            </span>
+            <div>
+              <strong>View-only link.</strong> The shop or mechanic can review this setup but
+              cannot change it unless the rider grants edit access. Any change is saved as a new version.
+            </div>
+          </div>
+          <div class="disclaimer">
+            Setup data is entered by the rider and may not reflect the bike's current state.
+            Verify critical settings before riding. RiderLens feedback is educational, not a safety guarantee.
+          </div>
+        </footer>
+      </article>
+    </div>
+  </body>
+</html>

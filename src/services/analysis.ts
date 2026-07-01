@@ -1,0 +1,395 @@
+import type {
+  AnalysisJob,
+  ClipReview,
+  CoachingReport,
+  FrameGeometry,
+  FrameLine,
+  FramePoint,
+  PoseMetric,
+  RideSession,
+  SkillType,
+  VideoLinkProvider,
+  VideoAsset
+} from "../types/domain";
+
+const skillLabels: Record<SkillType, string> = {
+  regular_jump: "Regular jump",
+  bunnyhop: "Bunnyhop",
+  manual: "Manual",
+  wheelie: "Wheelie",
+  drop: "Drop"
+};
+
+export function getSkillLabel(skillType: SkillType): string {
+  return skillLabels[skillType];
+}
+
+export function createId(prefix: string): string {
+  return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+export function createQueuedSession(skillType: SkillType, videoUri: string, clip?: ClipReview): RideSession {
+  const now = new Date().toISOString();
+  const sessionId = createId("session");
+  const durationSeconds = clip?.durationSeconds ?? 6;
+  const video: VideoAsset = {
+    id: createId("video"),
+    sessionId,
+    rawVideoUri: videoUri,
+    durationSeconds,
+    fps: 60,
+    trimStartSeconds: clip?.trimStartSeconds ?? 0,
+    trimEndSeconds: clip?.trimEndSeconds ?? Math.min(10, durationSeconds),
+    cropPreset: clip?.cropPreset ?? "full_side_view",
+    createdAt: now
+  };
+  const job: AnalysisJob = {
+    id: createId("job"),
+    sessionId,
+    status: "queued",
+    progress: 0,
+    startedAt: now
+  };
+
+  return {
+    id: sessionId,
+    userId: "demo-user",
+    skillType,
+    status: "uploaded",
+    source: "video_upload",
+    title: `${getSkillLabel(skillType)} analysis`,
+    createdAt: now,
+    video,
+    job,
+    metrics: []
+  };
+}
+
+export function createLinkReferenceSession(skillType: SkillType, rawUrl: string): RideSession {
+  const now = new Date().toISOString();
+  const sessionId = createId("session-link");
+  const provider = getVideoLinkProvider(rawUrl);
+  const providerLabel = provider === "other" ? "Video link" : provider.charAt(0).toUpperCase() + provider.slice(1);
+
+  return {
+    id: sessionId,
+    userId: "demo-user",
+    skillType,
+    status: "reference",
+    source: "video_link",
+    title: `${providerLabel} reference`,
+    createdAt: now,
+    linkReference: {
+      url: rawUrl.trim(),
+      provider,
+      notes: "Reference link only. Upload the original clip file for MediaPipe frame geometry.",
+      createdAt: now
+    },
+    metrics: []
+  };
+}
+
+export type FrameMediaSource = {
+  videoUri?: string;
+  imageUri?: string;
+};
+
+export function getFrameMediaSource(session: RideSession): FrameMediaSource | undefined {
+  if (session.source === "video_upload" && session.video?.rawVideoUri && !session.video.rawVideoUri.startsWith("demo://")) {
+    return { videoUri: session.video.rawVideoUri };
+  }
+
+  if (session.source === "video_link" && session.linkReference?.url) {
+    const imageUri = getVideoLinkThumbnailUri(session.linkReference.url);
+    return imageUri ? { imageUri } : undefined;
+  }
+
+  return undefined;
+}
+
+export function hasVerifiedGeometry(metric?: PoseMetric): boolean {
+  return metric?.geometrySource === "detected" || metric?.geometrySource === "manual";
+}
+
+export function getGeometrySourceLabel(metric?: PoseMetric): string {
+  if (metric?.geometrySource === "detected") return "Detected";
+  if (metric?.geometrySource === "manual") return "Manual";
+  return "Calibration required";
+}
+
+export function applyManualFrameGeometry(metric: PoseMetric, geometry: FrameGeometry, frameTime = metric.frameTime): PoseMetric {
+  return {
+    ...metric,
+    frameTime,
+    torsoAngle: Math.round(getAngleBetweenLines(geometry.torso, geometry.floor)),
+    kneeAngle: Math.round(getJointAngle(geometry.kneeUpper.start, geometry.kneeUpper.end, geometry.kneeLower.end)),
+    floorAngle: Math.round(getLineAngle(geometry.floor)),
+    tireBaselineAngle: Math.round(getLineAngle(geometry.tireBaseline)),
+    landingAlignmentAngle: Math.round(getLineAngle(geometry.landing)),
+    bikePitchAngle: Math.round(getLineAngle(geometry.tireBaseline)),
+    geometrySource: "manual",
+    geometry,
+    confidence: 0.95
+  };
+}
+
+function getLineAngle(line: FrameLine): number {
+  return normalizeAngle((Math.atan2(line.end.y - line.start.y, line.end.x - line.start.x) * 180) / Math.PI);
+}
+
+function getAngleBetweenLines(first: FrameLine, second: FrameLine): number {
+  const diff = Math.abs(normalizeAngle(getLineAngle(first) - getLineAngle(second)));
+  return Math.min(diff, 180 - diff);
+}
+
+function getJointAngle(first: FramePoint, joint: FramePoint, second: FramePoint): number {
+  const firstVector = { x: first.x - joint.x, y: first.y - joint.y };
+  const secondVector = { x: second.x - joint.x, y: second.y - joint.y };
+  const firstMagnitude = Math.hypot(firstVector.x, firstVector.y);
+  const secondMagnitude = Math.hypot(secondVector.x, secondVector.y);
+
+  if (firstMagnitude === 0 || secondMagnitude === 0) {
+    return 0;
+  }
+
+  const cosine = clamp(
+    (firstVector.x * secondVector.x + firstVector.y * secondVector.y) / (firstMagnitude * secondMagnitude),
+    -1,
+    1
+  );
+
+  return (Math.acos(cosine) * 180) / Math.PI;
+}
+
+function normalizeAngle(angle: number): number {
+  let next = angle;
+  while (next > 180) next -= 360;
+  while (next < -180) next += 360;
+  return next;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+export function getVideoLinkThumbnailUri(rawUrl: string): string | undefined {
+  const youtubeId = getYoutubeVideoId(rawUrl);
+  return youtubeId ? `https://img.youtube.com/vi/${youtubeId}/hqdefault.jpg` : undefined;
+}
+
+export function isSupportedVideoLink(rawUrl: string): boolean {
+  try {
+    const url = new URL(rawUrl.trim());
+    return Boolean(url.protocol.match(/^https?:$/) && url.hostname.includes("."));
+  } catch {
+    return false;
+  }
+}
+
+export function getVideoLinkProvider(rawUrl: string): VideoLinkProvider {
+  try {
+    const hostname = new URL(rawUrl.trim()).hostname.replace(/^www\./, "");
+    if (hostname === "youtu.be" || hostname.endsWith("youtube.com")) return "youtube";
+    if (hostname.endsWith("vimeo.com")) return "vimeo";
+    if (hostname.endsWith("instagram.com")) return "instagram";
+    if (hostname.endsWith("tiktok.com")) return "tiktok";
+  } catch {
+    return "other";
+  }
+  return "other";
+}
+
+function getYoutubeVideoId(rawUrl: string): string | undefined {
+  try {
+    const url = new URL(rawUrl.trim());
+    const hostname = url.hostname.replace(/^www\./, "");
+
+    if (hostname === "youtu.be") {
+      return normalizeYoutubeId(url.pathname.split("/").filter(Boolean)[0]);
+    }
+
+    if (!hostname.endsWith("youtube.com")) {
+      return undefined;
+    }
+
+    const watchId = normalizeYoutubeId(url.searchParams.get("v") ?? "");
+    if (watchId) return watchId;
+
+    const parts = url.pathname.split("/").filter(Boolean);
+    const idIndex = parts.findIndex((part) => part === "shorts" || part === "embed" || part === "live");
+    return idIndex >= 0 ? normalizeYoutubeId(parts[idIndex + 1]) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function normalizeYoutubeId(value?: string): string | undefined {
+  const candidate = value?.match(/^[A-Za-z0-9_-]{6,}$/)?.[0];
+  return candidate;
+}
+
+export function createJumpMetrics(sessionId: string): PoseMetric[] {
+  return [
+    {
+      id: createId("metric-approach"),
+      sessionId,
+      phase: "approach",
+      frameTime: 1.1,
+      torsoAngle: 55,
+      hipAngle: 116,
+      kneeAngle: 139,
+      elbowAngle: 153,
+      bikePitchAngle: 1,
+      floorAngle: -4,
+      tireBaselineAngle: 3,
+      landingAlignmentAngle: 8,
+      geometrySource: "estimated",
+      confidence: 0.83
+    },
+    {
+      id: createId("metric-compression"),
+      sessionId,
+      phase: "compression",
+      frameTime: 1.9,
+      torsoAngle: 42,
+      hipAngle: 92,
+      kneeAngle: 104,
+      elbowAngle: 132,
+      bikePitchAngle: 3,
+      floorAngle: -5,
+      tireBaselineAngle: 7,
+      landingAlignmentAngle: 10,
+      geometrySource: "estimated",
+      confidence: 0.8
+    },
+    {
+      id: createId("metric-takeoff"),
+      sessionId,
+      phase: "takeoff",
+      frameTime: 2.5,
+      torsoAngle: 49,
+      hipAngle: 106,
+      kneeAngle: 130,
+      elbowAngle: 168,
+      bikePitchAngle: -5,
+      floorAngle: -6,
+      tireBaselineAngle: -5,
+      landingAlignmentAngle: 12,
+      geometrySource: "estimated",
+      confidence: 0.82
+    },
+    {
+      id: createId("metric-air"),
+      sessionId,
+      phase: "air",
+      frameTime: 3.4,
+      torsoAngle: 46,
+      hipAngle: 101,
+      kneeAngle: 120,
+      elbowAngle: 151,
+      bikePitchAngle: -4,
+      floorAngle: -6,
+      tireBaselineAngle: -4,
+      landingAlignmentAngle: 10,
+      geometrySource: "estimated",
+      confidence: 0.76
+    },
+    {
+      id: createId("metric-landing"),
+      sessionId,
+      phase: "landing",
+      frameTime: 4.8,
+      torsoAngle: 44,
+      hipAngle: 98,
+      kneeAngle: 114,
+      elbowAngle: 140,
+      bikePitchAngle: -2,
+      floorAngle: -3,
+      tireBaselineAngle: -2,
+      landingAlignmentAngle: 4,
+      geometrySource: "estimated",
+      confidence: 0.78
+    }
+  ];
+}
+
+export function createRuleBasedReport(session: RideSession, metrics: PoseMetric[]): CoachingReport {
+  const takeoff = metrics.find((metric) => metric.phase === "takeoff");
+  const landing = metrics.find((metric) => metric.phase === "landing");
+  const tireBaseline = takeoff?.tireBaselineAngle ?? takeoff?.bikePitchAngle ?? 0;
+  const landingAlignment = landing?.landingAlignmentAngle ?? 0;
+  const elbowAngle = takeoff?.elbowAngle ?? 0;
+  const confidence = Math.min(...metrics.map((metric) => metric.confidence));
+
+  const improvements = [
+    "Check the floor line first, then compare both tire centers against that baseline.",
+    "Keep torso, knee, and landing alignment stacked over the bike instead of chasing the bars."
+  ];
+
+  if (tireBaseline < -4) {
+    improvements.push("The tire baseline trends nose-low; keep light pressure through the bars after takeoff.");
+  }
+
+  if (Math.abs(landingAlignment) > 8 || (landing?.torsoAngle ?? 50) < 46) {
+    improvements.push("On landing, bring the torso slightly taller and keep hips closer to the tire baseline.");
+  }
+
+  return {
+    id: createId("report"),
+    sessionId: session.id,
+    summary:
+      confidence < 0.72
+        ? "The clip is usable, but some frames are uncertain. Treat this as directional coaching, not a final score."
+        : "Your jump is controlled through takeoff, with the main opportunity in extension timing and landing position.",
+    strengths: [
+      "The side-view frame is usable for floor, tire baseline, torso, knee, and landing alignment review.",
+      tireBaseline > -7 ? "The tire baseline stays reasonably controlled in the air." : "The takeoff phase is readable enough to review tire baseline timing.",
+      elbowAngle > 150 ? "Arm extension is strong at takeoff." : "Upper-body position stays compact before takeoff."
+    ],
+    improvements,
+    drills: [
+      "Do 5 pump-throughs on the lip without leaving the ground.",
+      "Practice small-table jumps while matching arm and leg extension.",
+      "Film again from the same side angle and compare takeoff frame time."
+    ],
+    createdAt: new Date().toISOString()
+  };
+}
+
+export function completeLocalAnalysis(session: RideSession): RideSession {
+  const metrics = createJumpMetrics(session.id);
+  return {
+    ...session,
+    status: "complete",
+    metrics,
+    job: session.job
+      ? {
+          ...session.job,
+          status: "completed",
+          progress: 1,
+          finishedAt: new Date().toISOString()
+        }
+      : undefined,
+    report: createRuleBasedReport(session, metrics)
+  };
+}
+
+export function formatReportShareText(session: RideSession): string {
+  const report = session.report;
+  if (!report) {
+    return "RiderLens report is still processing.";
+  }
+
+  return [
+    `RiderLens ${getSkillLabel(session.skillType)} report`,
+    ...(session.source === "video_link" ? ["", session.linkReference?.url ?? ""] : []),
+    "",
+    report.summary,
+    "",
+    "Improvements:",
+    ...report.improvements.map((item) => `- ${item}`),
+    "",
+    "Drills:",
+    ...report.drills.map((item) => `- ${item}`)
+  ].join("\n");
+}

@@ -1,0 +1,628 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>RiderLens — Type Direction Specimen</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=IBM+Plex+Sans:wght@400;600;700&family=IBM+Plex+Mono:wght@500;700&family=Geist:wght@400;600;800&family=Geist+Mono:wght@500;700&family=Archivo:wght@400;600;800&family=Spline+Sans+Mono:wght@500;700&family=Space+Grotesk:wght@500;700&display=swap"
+      rel="stylesheet"
+    />
+
+    <style>
+      :root {
+        --background: #f5f7f1;
+        --surface: #ffffff;
+        --surface-muted: #edf2ea;
+        --text: #101411;
+        --text-muted: #60685f;
+        --border: #dde3da;
+        --graphite: #111613;
+        --graphite-2: #171d19;
+        --electric: #b6ff2e;
+        --electric-soft: #efffd8;
+        --green: #2e7d32;
+        --cyan: #00b8d9;
+        --cyan-soft: #d9f8ff;
+        --amber: #e19a00;
+        --amber-soft: #fff0ce;
+        --shadow: 0 22px 58px rgba(16, 20, 17, 0.12);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: var(--background);
+        color: var(--text);
+        font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+        line-height: 1.5;
+      }
+
+      main {
+        width: min(1180px, calc(100% - 40px));
+        margin: 0 auto;
+        padding: 40px 0 64px;
+      }
+
+      .eyebrow {
+        display: inline-flex;
+        align-items: center;
+        gap: 9px;
+        margin-bottom: 16px;
+        color: var(--green);
+        font-size: 13px;
+        font-weight: 800;
+        text-transform: uppercase;
+      }
+
+      .eyebrow::before {
+        width: 12px;
+        height: 12px;
+        border: 3px solid var(--electric);
+        border-radius: 999px;
+        background: var(--graphite);
+        content: "";
+      }
+
+      .page-title {
+        max-width: 720px;
+        margin: 0 0 14px;
+        font-size: clamp(34px, 5vw, 52px);
+        line-height: 1.02;
+      }
+
+      .page-intro {
+        max-width: 660px;
+        margin: 0 0 36px;
+        color: var(--text-muted);
+        font-size: 18px;
+      }
+
+      /* Comparison grid of type systems */
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(330px, 1fr));
+        gap: 18px;
+      }
+
+      .sys {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        background: var(--surface);
+        box-shadow: var(--shadow);
+        padding: 20px;
+        font-family: var(--ui);
+      }
+
+      /* Each system just swaps these two variables */
+      .sys-inter {
+        --ui: Inter, system-ui, sans-serif;
+        --mono: Inter, ui-monospace, monospace;
+      }
+      .sys-plex {
+        --ui: "IBM Plex Sans", system-ui, sans-serif;
+        --mono: "IBM Plex Mono", ui-monospace, monospace;
+      }
+      .sys-geist {
+        --ui: "Geist", system-ui, sans-serif;
+        --mono: "Geist Mono", ui-monospace, monospace;
+      }
+      .sys-archivo {
+        --ui: "Archivo", system-ui, sans-serif;
+        --mono: "Spline Sans Mono", ui-monospace, monospace;
+      }
+
+      .sys-head {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 10px;
+        padding-bottom: 14px;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .sys-name {
+        font-size: 17px;
+        font-weight: 800;
+      }
+
+      .sys-fonts {
+        margin-top: 2px;
+        color: var(--text-muted);
+        font-size: 12px;
+        font-weight: 600;
+      }
+
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        border-radius: 999px;
+        padding: 3px 9px;
+        font-family: var(--ui);
+        font-size: 11px;
+        font-weight: 800;
+      }
+
+      .badge-rec {
+        background: var(--electric);
+        color: var(--graphite);
+      }
+
+      .badge-now {
+        background: var(--surface-muted);
+        color: var(--text-muted);
+      }
+
+      /* Wordmark */
+      .wm {
+        font-size: 34px;
+        font-weight: 800;
+        line-height: 1;
+        letter-spacing: -0.01em;
+      }
+
+      .wm-sub {
+        margin-top: 5px;
+        color: var(--text-muted);
+        font-size: 13px;
+        font-weight: 600;
+      }
+
+      /* Dark HUD readout — the "instrument" test */
+      .hud {
+        border-radius: 10px;
+        background:
+          linear-gradient(0deg, rgba(182, 255, 46, 0.06) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(182, 255, 46, 0.06) 1px, transparent 1px),
+          var(--graphite-2);
+        background-size: 22px 22px;
+        padding: 14px;
+        color: #ffffff;
+      }
+
+      .hud-top {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 14px;
+      }
+
+      .hud-readout {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 10px;
+      }
+
+      .read .num {
+        font-family: var(--mono);
+        font-variant-numeric: tabular-nums;
+        font-size: 28px;
+        font-weight: 700;
+        line-height: 1;
+      }
+
+      .read .unit {
+        font-family: var(--mono);
+        font-size: 15px;
+        font-weight: 500;
+        color: var(--electric);
+      }
+
+      .read .cap {
+        margin-top: 5px;
+        color: rgba(255, 255, 255, 0.6);
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+      }
+
+      /* Light metric rows */
+      .rows {
+        display: grid;
+      }
+
+      .spec-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 9px 0;
+        border-top: 1px solid var(--border);
+        font-size: 14px;
+      }
+
+      .spec-row:first-child {
+        border-top: none;
+      }
+
+      .spec-row .k {
+        flex: 1;
+        color: var(--text-muted);
+        font-weight: 600;
+      }
+
+      .spec-row .v {
+        font-family: var(--mono);
+        font-variant-numeric: tabular-nums;
+        font-weight: 700;
+      }
+
+      /* Coaching note — body legibility test */
+      .note {
+        margin: 0;
+        border-left: 4px solid var(--cyan);
+        padding: 2px 0 2px 12px;
+        font-size: 14px;
+        color: var(--text);
+      }
+
+      /* Buttons + chips */
+      .btns {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .button {
+        display: inline-flex;
+        min-height: 42px;
+        align-items: center;
+        border: 1px solid transparent;
+        border-radius: 8px;
+        padding: 0 16px;
+        font-family: var(--ui);
+        font-size: 14px;
+        font-weight: 800;
+        text-decoration: none;
+        cursor: pointer;
+      }
+
+      .button-primary {
+        background: var(--electric);
+        color: var(--graphite);
+        box-shadow: 0 8px 20px rgba(16, 20, 17, 0.14);
+      }
+
+      .button-secondary {
+        border-color: var(--border);
+        background: var(--surface);
+        color: var(--text);
+      }
+
+      .chip-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 7px;
+      }
+
+      .chip {
+        display: inline-flex;
+        min-height: 26px;
+        align-items: center;
+        border-radius: 999px;
+        padding: 0 10px;
+        font-family: var(--ui);
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .chip-electric {
+        background: var(--electric);
+        color: var(--graphite);
+      }
+
+      .chip-dark {
+        border: 1px solid rgba(182, 255, 46, 0.32);
+        background: rgba(17, 22, 19, 0.6);
+        color: var(--electric);
+      }
+
+      .chip-measured {
+        background: var(--cyan-soft);
+        color: #006b82;
+      }
+
+      .chip-current {
+        background: var(--electric-soft);
+        color: var(--green);
+      }
+
+      .chip-amber {
+        background: var(--amber-soft);
+        color: #7a4b00;
+      }
+
+      /* Wordmark lockup options */
+      .lockups {
+        margin-top: 40px;
+        border-top: 1px solid var(--border);
+        padding-top: 28px;
+      }
+
+      .lockups h2 {
+        margin: 0 0 6px;
+        font-size: 22px;
+      }
+
+      .lockups p {
+        margin: 0 0 20px;
+        max-width: 620px;
+        color: var(--text-muted);
+      }
+
+      .lockup-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        gap: 14px;
+      }
+
+      .lockup {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: var(--surface);
+        padding: 18px 18px;
+      }
+
+      .lockup .name {
+        font-size: 28px;
+        font-weight: 800;
+        letter-spacing: -0.01em;
+      }
+
+      .lockup .tag {
+        color: var(--text-muted);
+        font-size: 11px;
+        font-weight: 700;
+        text-align: right;
+      }
+
+      .ff-plex .name { font-family: "IBM Plex Sans", sans-serif; }
+      .ff-geist .name { font-family: "Geist", sans-serif; }
+      .ff-archivo .name { font-family: "Archivo", sans-serif; }
+      .ff-space .name { font-family: "Space Grotesk", sans-serif; }
+
+      .footnote {
+        margin-top: 34px;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: var(--surface);
+        padding: 16px 18px;
+        color: var(--text-muted);
+        font-size: 13px;
+      }
+
+      .footnote strong {
+        color: var(--text);
+      }
+
+      .footnote code {
+        font-family: "IBM Plex Mono", ui-monospace, monospace;
+        font-size: 12px;
+        color: var(--text);
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="eyebrow">Type direction</div>
+      <h1 class="page-title">RiderLens type systems, in the electric scheme</h1>
+      <p class="page-intro">
+        The same elements — wordmark, dark HUD readout, light metric rows, a coaching note, buttons,
+        and status chips — rendered in four type systems. Numbers use a mono with
+        <strong>tabular figures</strong> so columns stay aligned.
+      </p>
+
+      <div class="grid">
+        <!-- INTER (current) -->
+        <section class="sys sys-inter">
+          <div class="sys-head">
+            <div>
+              <div class="sys-name">Inter <span class="badge badge-now">Current</span></div>
+              <div class="sys-fonts">Inter · Inter (no dedicated mono)</div>
+            </div>
+          </div>
+          <div>
+            <div class="wm">RiderLens</div>
+            <div class="wm-sub">Vision coach</div>
+          </div>
+          <div class="hud">
+            <div class="hud-top">
+              <span class="chip chip-electric">Jump scan</span>
+              <span class="chip chip-dark">82% conf</span>
+            </div>
+            <div class="hud-readout">
+              <div class="read"><span class="num">48</span><span class="unit">&deg;</span><div class="cap">Torso</div></div>
+              <div class="read"><span class="num">-6</span><span class="unit">&deg;</span><div class="cap">Pitch</div></div>
+              <div class="read"><span class="num">02.4</span><span class="unit">s</span><div class="cap">Takeoff</div></div>
+            </div>
+          </div>
+          <div class="rows">
+            <div class="spec-row"><span class="k">Fork pressure</span><span class="v">86 psi</span></div>
+            <div class="spec-row"><span class="k">Shock pressure</span><span class="v">172 psi</span></div>
+            <div class="spec-row"><span class="k">Lever angle</span><span class="v">32&deg;</span><span class="chip chip-measured">Measured</span></div>
+          </div>
+          <p class="note">Your arms appear to extend before your legs through takeoff, which drops the front wheel early.</p>
+          <div class="btns">
+            <a class="button button-primary">Analyze Video</a>
+            <a class="button button-secondary">Upload Clip</a>
+          </div>
+          <div class="chip-row">
+            <span class="chip chip-electric">Scanning</span>
+            <span class="chip chip-measured">Measured</span>
+            <span class="chip chip-current">Saved</span>
+            <span class="chip chip-amber">Low light</span>
+          </div>
+        </section>
+
+        <!-- PLEX (recommended) -->
+        <section class="sys sys-plex">
+          <div class="sys-head">
+            <div>
+              <div class="sys-name">Plex <span class="badge badge-rec">Recommended</span></div>
+              <div class="sys-fonts">IBM Plex Sans · IBM Plex Mono</div>
+            </div>
+          </div>
+          <div>
+            <div class="wm">RiderLens</div>
+            <div class="wm-sub">Vision coach</div>
+          </div>
+          <div class="hud">
+            <div class="hud-top">
+              <span class="chip chip-electric">Jump scan</span>
+              <span class="chip chip-dark">82% conf</span>
+            </div>
+            <div class="hud-readout">
+              <div class="read"><span class="num">48</span><span class="unit">&deg;</span><div class="cap">Torso</div></div>
+              <div class="read"><span class="num">-6</span><span class="unit">&deg;</span><div class="cap">Pitch</div></div>
+              <div class="read"><span class="num">02.4</span><span class="unit">s</span><div class="cap">Takeoff</div></div>
+            </div>
+          </div>
+          <div class="rows">
+            <div class="spec-row"><span class="k">Fork pressure</span><span class="v">86 psi</span></div>
+            <div class="spec-row"><span class="k">Shock pressure</span><span class="v">172 psi</span></div>
+            <div class="spec-row"><span class="k">Lever angle</span><span class="v">32&deg;</span><span class="chip chip-measured">Measured</span></div>
+          </div>
+          <p class="note">Your arms appear to extend before your legs through takeoff, which drops the front wheel early.</p>
+          <div class="btns">
+            <a class="button button-primary">Analyze Video</a>
+            <a class="button button-secondary">Upload Clip</a>
+          </div>
+          <div class="chip-row">
+            <span class="chip chip-electric">Scanning</span>
+            <span class="chip chip-measured">Measured</span>
+            <span class="chip chip-current">Saved</span>
+            <span class="chip chip-amber">Low light</span>
+          </div>
+        </section>
+
+        <!-- GEIST -->
+        <section class="sys sys-geist">
+          <div class="sys-head">
+            <div>
+              <div class="sys-name">Geist</div>
+              <div class="sys-fonts">Geist · Geist Mono</div>
+            </div>
+          </div>
+          <div>
+            <div class="wm">RiderLens</div>
+            <div class="wm-sub">Vision coach</div>
+          </div>
+          <div class="hud">
+            <div class="hud-top">
+              <span class="chip chip-electric">Jump scan</span>
+              <span class="chip chip-dark">82% conf</span>
+            </div>
+            <div class="hud-readout">
+              <div class="read"><span class="num">48</span><span class="unit">&deg;</span><div class="cap">Torso</div></div>
+              <div class="read"><span class="num">-6</span><span class="unit">&deg;</span><div class="cap">Pitch</div></div>
+              <div class="read"><span class="num">02.4</span><span class="unit">s</span><div class="cap">Takeoff</div></div>
+            </div>
+          </div>
+          <div class="rows">
+            <div class="spec-row"><span class="k">Fork pressure</span><span class="v">86 psi</span></div>
+            <div class="spec-row"><span class="k">Shock pressure</span><span class="v">172 psi</span></div>
+            <div class="spec-row"><span class="k">Lever angle</span><span class="v">32&deg;</span><span class="chip chip-measured">Measured</span></div>
+          </div>
+          <p class="note">Your arms appear to extend before your legs through takeoff, which drops the front wheel early.</p>
+          <div class="btns">
+            <a class="button button-primary">Analyze Video</a>
+            <a class="button button-secondary">Upload Clip</a>
+          </div>
+          <div class="chip-row">
+            <span class="chip chip-electric">Scanning</span>
+            <span class="chip chip-measured">Measured</span>
+            <span class="chip chip-current">Saved</span>
+            <span class="chip chip-amber">Low light</span>
+          </div>
+        </section>
+
+        <!-- ARCHIVO (athletic, stands in for Mona Sans) -->
+        <section class="sys sys-archivo">
+          <div class="sys-head">
+            <div>
+              <div class="sys-name">Archivo</div>
+              <div class="sys-fonts">Archivo · Spline Sans Mono — athletic (Mona Sans stand-in)</div>
+            </div>
+          </div>
+          <div>
+            <div class="wm">RiderLens</div>
+            <div class="wm-sub">Vision coach</div>
+          </div>
+          <div class="hud">
+            <div class="hud-top">
+              <span class="chip chip-electric">Jump scan</span>
+              <span class="chip chip-dark">82% conf</span>
+            </div>
+            <div class="hud-readout">
+              <div class="read"><span class="num">48</span><span class="unit">&deg;</span><div class="cap">Torso</div></div>
+              <div class="read"><span class="num">-6</span><span class="unit">&deg;</span><div class="cap">Pitch</div></div>
+              <div class="read"><span class="num">02.4</span><span class="unit">s</span><div class="cap">Takeoff</div></div>
+            </div>
+          </div>
+          <div class="rows">
+            <div class="spec-row"><span class="k">Fork pressure</span><span class="v">86 psi</span></div>
+            <div class="spec-row"><span class="k">Shock pressure</span><span class="v">172 psi</span></div>
+            <div class="spec-row"><span class="k">Lever angle</span><span class="v">32&deg;</span><span class="chip chip-measured">Measured</span></div>
+          </div>
+          <p class="note">Your arms appear to extend before your legs through takeoff, which drops the front wheel early.</p>
+          <div class="btns">
+            <a class="button button-primary">Analyze Video</a>
+            <a class="button button-secondary">Upload Clip</a>
+          </div>
+          <div class="chip-row">
+            <span class="chip chip-electric">Scanning</span>
+            <span class="chip chip-measured">Measured</span>
+            <span class="chip chip-current">Saved</span>
+            <span class="chip chip-amber">Low light</span>
+          </div>
+        </section>
+      </div>
+
+      <section class="lockups">
+        <h2>Wordmark options</h2>
+        <p>
+          The lockup can use a sharper display face even if the UI stays neutral. Space Grotesk adds
+          the most "computer-vision" edge; Archivo reads most athletic.
+        </p>
+        <div class="lockup-grid">
+          <div class="lockup ff-plex">
+            <span class="name">RiderLens</span>
+            <span class="tag">IBM Plex Sans<br />700</span>
+          </div>
+          <div class="lockup ff-geist">
+            <span class="name">RiderLens</span>
+            <span class="tag">Geist<br />800</span>
+          </div>
+          <div class="lockup ff-archivo">
+            <span class="name">RiderLens</span>
+            <span class="tag">Archivo<br />800</span>
+          </div>
+          <div class="lockup ff-space">
+            <span class="name">RiderLens</span>
+            <span class="tag">Space Grotesk<br />700</span>
+          </div>
+        </div>
+      </section>
+
+      <div class="footnote">
+        <strong>Reading the specimen:</strong> watch the HUD numerals and the metric column — that
+        is where a technical mono separates from Inter. All four families are SIL OFL (free to bundle
+        in the Expo app) and load via <code>@expo-google-fonts</code>. Numbers use
+        <code>font-variant-numeric: tabular-nums</code> so <code>86 / 172 / 32</code> stay aligned in
+        columns. Archivo stands in for Mona Sans here because Mona is not on Google Fonts.
+      </div>
+    </main>
+  </body>
+</html>
