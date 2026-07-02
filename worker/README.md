@@ -123,9 +123,12 @@ External links can be stored by the mobile app as reference sessions, but they s
 
 ## Geometry Quality Notes
 
-MediaPipe Pose detects rider body landmarks. It does not detect bike wheels, frame tubes, the takeoff lip, or the landing slope as first-class landmarks.
+Bike geometry uses a detection ladder, most-trusted first:
 
-Current floor, tire baseline, and landing geometry is heuristic. The app keeps manual calibration because those lines can be wrong depending on camera angle, shadows, trees, background edges, wheel blur, and occlusion.
+1. **Bike bounding box** — MediaPipe Object Detector (EfficientDet-Lite2, COCO `bicycle` class). The model (~7 MB) downloads automatically into `worker/models/` on first use; `/health` reports `bike_detector_model`. Wheels are placed in the lower box corners and refined with a circle search; the box bottom anchors the floor line at tire contact.
+2. **Pose-anchored estimate** — wheel positions predicted from body scale and facing direction (feet sit near the bottom bracket, which shares a height line with the hubs). Used when no bike box is found; refinement is skipped when pose confidence is low.
+
+`geometrySource` is `detected` only when both wheels are pair-confirmed by the circle search plus a second pixel-grounded signal (bike box or a real floor edge). Everything else is honestly labeled `estimated`. Manual calibration in the app remains the override for hard frames (blur, occlusion, pitched bike in the air).
 
 Best clips:
 

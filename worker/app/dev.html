@@ -85,6 +85,7 @@
         <span><i style="background:#22d3ee"></i>torso</span>
         <span><i style="background:#c4b5fd"></i>knee</span>
         <span><i style="background:#f87171"></i>landing</span>
+        <span><i style="background:#ffffff"></i>bike box</span>
       </div>
       <div id="frames"><span style="color:var(--muted)">Run an analysis to see annotated frames.</span></div>
     </div>
@@ -213,7 +214,7 @@ function renderFrames(metrics) {
     const canvas = document.createElement("canvas");
     if (metric.frameImage) {
       img.src = metric.frameImage;
-      img.onload = () => drawGeometry(canvas, img, metric.geometry);
+      img.onload = () => drawGeometry(canvas, img, metric.geometry, metric.bikeBox);
     }
     media.appendChild(img);
     media.appendChild(canvas);
@@ -229,12 +230,18 @@ function renderFrames(metrics) {
   }
 }
 
-function drawGeometry(canvas, img, geometry) {
+function drawGeometry(canvas, img, geometry, bikeBox) {
   if (!geometry) return;
   canvas.width = img.naturalWidth;
   canvas.height = img.naturalHeight;
   const ctx = canvas.getContext("2d");
   ctx.lineWidth = Math.max(2, img.naturalWidth / 400);
+  if (bikeBox) {
+    ctx.strokeStyle = "rgba(255,255,255,0.85)";
+    ctx.setLineDash([8, 6]);
+    ctx.strokeRect(bikeBox.x * canvas.width, bikeBox.y * canvas.height, bikeBox.w * canvas.width, bikeBox.h * canvas.height);
+    ctx.setLineDash([]);
+  }
   for (const [name, line] of Object.entries(geometry)) {
     const color = LINE_COLORS[name];
     if (!color || !line?.start || !line?.end) continue;

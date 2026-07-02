@@ -7,6 +7,7 @@ import os
 import re
 import shutil
 import tempfile
+import urllib.request
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path as FilePath
@@ -69,6 +70,13 @@ class FrameGeometry(BaseModel):
     landing: FrameLine
 
 
+class FrameRect(BaseModel):
+    x: float = Field(ge=0, le=1)
+    y: float = Field(ge=0, le=1)
+    w: float = Field(ge=0, le=1)
+    h: float = Field(ge=0, le=1)
+
+
 class Metric(BaseModel):
     phase: Phase
     frameTime: float
@@ -82,6 +90,8 @@ class Metric(BaseModel):
     landingAlignmentAngle: float
     geometrySource: GeometrySource
     geometry: FrameGeometry
+    # Normalized bike bounding box from the object detector, when the bike was found in this frame.
+    bikeBox: FrameRect | None = None
     confidence: float = Field(ge=0, le=1)
     # Base64 JPEG data URL of the source frame; only populated when include_frames is requested (dev UI).
     frameImage: str | None = None
@@ -124,6 +134,7 @@ def health():
         "service": "riderlens-worker",
         "mediapipe": mp is not None,
         "opencv": cv2 is not None,
+        "bike_detector_model": BIKE_MODEL_PATH.exists(),
     }
 
 
@@ -434,26 +445,58 @@ def build_metric(session_id: str, phase: Phase, pose_frame: PoseFrame, fps: floa
     def to_px(point: FramePoint) -> tuple[float, float]:
         return (point.x * width, point.y * height)
 
-    rear_pred, front_pred, wheel_radius = estimate_wheel_geometry(
-        shoulder=to_px(shoulder), hip=to_px(hip), ankle=to_px(ankle), foot=to_px(foot), wrist=to_px(wrist)
-    )
-    # Wheel/floor confirmation is anchored to the pose; with a low-confidence pose the
-    # anchors are unreliable and "confirmations" are usually background texture.
     trustworthy_pose = pose_frame.confidence >= 0.8
     gray = cv2.medianBlur(cv2.cvtColor(pose_frame.frame, cv2.COLOR_BGR2GRAY), 5)
-    rear_hit = confirm_wheel_circle(gray, rear_pred, wheel_radius) if trustworthy_pose else None
-    front_hit = confirm_wheel_circle(gray, front_pred, wheel_radius) if trustworthy_pose else None
-    tires_detected = rear_hit is not None and front_hit is not None
-    rear_center = rear_hit or rear_pred
-    front_center = front_hit or front_pred
-    tire_baseline = px_line(rear_center, front_center, width, height)
 
-    wheel_bottom_y = max(rear_center[1], front_center[1]) + wheel_radius
-    bike_x_range = (min(rear_center[0], front_center[0]) - wheel_radius, max(rear_center[0], front_center[0]) + wheel_radius)
-    detected_floor = detect_floor_line(pose_frame.frame, wheel_bottom_y, bike_x_range) if trustworthy_pose else None
+    bike_box = detect_bike_box(pose_frame.frame)
+    bike_box_norm: FrameRect | None = None
+    if bike_box is not None:
+        box_x0, box_y0, box_x1, box_y1 = bike_box
+        bike_box_norm = FrameRect(
+            x=clamp(box_x0 / width, 0, 1),
+            y=clamp(box_y0 / height, 0, 1),
+            w=clamp((box_x1 - box_x0) / width, 0, 1),
+            h=clamp((box_y1 - box_y0) / height, 0, 1),
+        )
+        # Side-on, the wheels sit in the lower corners of the bike box.
+        wheel_radius = max(6.0, min(0.33 * (box_y1 - box_y0), 0.18 * (box_x1 - box_x0)))
+        first_pred = (box_x0 + wheel_radius, box_y1 - wheel_radius)
+        second_pred = (box_x1 - wheel_radius, box_y1 - wheel_radius)
+        # The box is pixel-grounded, so circle refinement is safe regardless of pose quality.
+        first_hit = confirm_wheel_circle(gray, first_pred, wheel_radius)
+        second_hit = confirm_wheel_circle(gray, second_pred, wheel_radius)
+        tires_detected = first_hit is not None and second_hit is not None
+        # Mixing one refined wheel with one predicted wheel tilts the baseline artificially;
+        # only trust the refinements as a pair.
+        first_center = first_hit if tires_detected else first_pred
+        second_center = second_hit if tires_detected else second_pred
+        wheel_bottom_y = box_y1
+        bike_x_range = (box_x0, box_x1)
+        floor_anchor_trusted = True
+    else:
+        # No bike box: fall back to pose-anchored estimation. With a low-confidence pose the
+        # anchors are unreliable and "confirmations" are usually background texture.
+        rear_pred, front_pred, wheel_radius = estimate_wheel_geometry(
+            shoulder=to_px(shoulder), hip=to_px(hip), ankle=to_px(ankle), foot=to_px(foot), wrist=to_px(wrist)
+        )
+        first_hit = confirm_wheel_circle(gray, rear_pred, wheel_radius) if trustworthy_pose else None
+        second_hit = confirm_wheel_circle(gray, front_pred, wheel_radius) if trustworthy_pose else None
+        tires_detected = first_hit is not None and second_hit is not None
+        first_center = first_hit if tires_detected else rear_pred
+        second_center = second_hit if tires_detected else front_pred
+        wheel_bottom_y = max(first_center[1], second_center[1]) + wheel_radius
+        bike_x_range = (min(first_center[0], second_center[0]) - wheel_radius, max(first_center[0], second_center[0]) + wheel_radius)
+        floor_anchor_trusted = trustworthy_pose
+
+    tire_baseline = px_line(first_center, second_center, width, height)
+    detected_floor = detect_floor_line(pose_frame.frame, wheel_bottom_y, bike_x_range) if floor_anchor_trusted else None
     floor = detected_floor or estimated_floor_line(wheel_bottom_y, bike_x_range, width, height)
     landing = floor
-    geometry_source: GeometrySource = "detected" if detected_floor is not None and tires_detected else "estimated"
+    # "detected" needs pair-confirmed wheels plus a second pixel-grounded signal: the bike box
+    # (whose bottom edge anchors the floor at tire contact) or an actual floor edge.
+    geometry_source: GeometrySource = (
+        "detected" if tires_detected and (bike_box is not None or detected_floor is not None) else "estimated"
+    )
     geometry = FrameGeometry(
         floor=floor,
         tireBaseline=tire_baseline,
@@ -485,6 +528,7 @@ def build_metric(session_id: str, phase: Phase, pose_frame: PoseFrame, fps: floa
         landingAlignmentAngle=round(landing_angle),
         geometrySource=geometry_source,
         geometry=geometry,
+        bikeBox=bike_box_norm,
         confidence=round(confidence, 2),
     )
 
@@ -547,6 +591,76 @@ def get_pose_confidence(landmarks, side: Literal["left", "right"]) -> float:
 def landmark_point(landmarks, index: int) -> FramePoint:
     landmark = landmarks[index]
     return FramePoint(x=clamp(float(landmark.x), 0, 1), y=clamp(float(landmark.y), 0, 1))
+
+
+# --- Bike object detection ---------------------------------------------------
+# MediaPipe Object Detector (EfficientDet-Lite2, COCO) finds the bicycle as a
+# whole object, which survives the motion blur that defeats edge-based wheel
+# detection. The model is downloaded once into worker/models/.
+
+BIKE_MODEL_URL = "https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite2/float32/latest/efficientdet_lite2.tflite"
+BIKE_MODEL_PATH = FilePath(__file__).resolve().parents[1] / "models" / "efficientdet_lite2.tflite"
+BIKE_SCORE_THRESHOLD = 0.35
+
+_bike_detector = None  # None = not initialized, False = unavailable
+
+
+def get_bike_detector():
+    global _bike_detector
+    if _bike_detector is not None:
+        return _bike_detector or None
+    try:
+        if not BIKE_MODEL_PATH.exists():
+            BIKE_MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
+            print(f"[riderlens] downloading bike detection model to {BIKE_MODEL_PATH} ...")
+            import ssl
+
+            import certifi
+
+            context = ssl.create_default_context(cafile=certifi.where())
+            with urllib.request.urlopen(BIKE_MODEL_URL, context=context) as response, open(BIKE_MODEL_PATH, "wb") as out:
+                shutil.copyfileobj(response, out)
+            print("[riderlens] bike detection model ready")
+
+        from mediapipe.tasks import python as tasks_python
+        from mediapipe.tasks.python import vision as tasks_vision
+
+        _bike_detector = tasks_vision.ObjectDetector.create_from_options(
+            tasks_vision.ObjectDetectorOptions(
+                base_options=tasks_python.BaseOptions(model_asset_path=str(BIKE_MODEL_PATH)),
+                running_mode=tasks_vision.RunningMode.IMAGE,
+                category_allowlist=["bicycle"],
+                score_threshold=BIKE_SCORE_THRESHOLD,
+                max_results=3,
+            )
+        )
+    except Exception as error:  # detector is an enhancement; analysis must keep working without it
+        print(f"[riderlens] bike detector unavailable, falling back to pose-only geometry: {error}")
+        _bike_detector = False
+    return _bike_detector or None
+
+
+def detect_bike_box(frame) -> tuple[float, float, float, float] | None:
+    """Return the highest-score bicycle box as pixel (x0, y0, x1, y1), or None."""
+    detector = get_bike_detector()
+    if detector is None:
+        return None
+    rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    result = detector.detect(mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb))
+    best = None
+    best_score = 0.0
+    for detection in result.detections:
+        score = detection.categories[0].score if detection.categories else 0.0
+        if score > best_score:
+            box = detection.bounding_box
+            best = (
+                float(box.origin_x),
+                float(box.origin_y),
+                float(box.origin_x + box.width),
+                float(box.origin_y + box.height),
+            )
+            best_score = score
+    return best
 
 
 # --- Bike geometry heuristics -----------------------------------------------
