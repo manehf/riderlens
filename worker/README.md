@@ -136,6 +136,18 @@ Best clips:
 - Stable camera.
 - Takeoff and landing visible.
 
+## Dev Analysis Lab
+
+With the worker running, open the browser dashboard:
+
+```text
+http://127.0.0.1:8000/dev
+```
+
+It lists the `clips/` library, lets you upload any video, set the trim window, and shows the analyzed key frames with the geometry lines drawn on the real pixels, plus the metrics table and report. This is the fastest way to iterate on analysis quality — no phone involved. The overlays are drawn from the same normalized geometry JSON the mobile app consumes.
+
+It is a dev tool only: plain styling on purpose, enabled by default locally, disable with `RIDERLENS_DEV_UI=0` (keep it disabled on any deployed worker).
+
 ## Debug Snapshots
 
 Set `RIDERLENS_SNAPSHOT_DIR` to archive every analysis (request metadata + full response JSON) for debugging real clips:

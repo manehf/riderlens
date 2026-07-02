@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>RiderLens Analysis Lab</title>
+<style>
+  /* Dev lab tool only — deliberately plain, not the product design system. */
+  :root {
+    --bg: #141815; --panel: #1d231f; --border: #2e372f; --text: #e8ece7;
+    --muted: #9aa79b; --accent: #b6ff2e; --cyan: #22d3ee; --amber: #fbbf24;
+    --red: #f87171; --green: #4ade80; --purple: #c4b5fd;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 -apple-system, "Segoe UI", sans-serif; }
+  code, .num { font-family: "SF Mono", Menlo, monospace; font-variant-numeric: tabular-nums; }
+  header { padding: 14px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: baseline; gap: 12px; }
+  header h1 { font-size: 16px; margin: 0; }
+  header span { color: var(--muted); font-size: 12px; }
+  main { display: grid; grid-template-columns: 300px 1fr; gap: 16px; padding: 16px 20px; align-items: start; }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 14px; }
+  .panel h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 0 0 10px; }
+  .clip { padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; margin-bottom: 6px; cursor: pointer; }
+  .clip:hover { border-color: var(--accent); }
+  .clip.selected { border-color: var(--accent); background: #232c22; }
+  .clip .file { font-size: 12px; word-break: break-all; }
+  .clip .notes { color: var(--muted); font-size: 11px; margin-top: 2px; }
+  .tag { display: inline-block; font-size: 10px; padding: 1px 6px; border-radius: 999px; margin-right: 6px; }
+  .tag.fail { background: #3d2323; color: var(--red); }
+  .tag.good { background: #1f3325; color: var(--green); }
+  label { display: block; color: var(--muted); font-size: 12px; margin: 10px 0 4px; }
+  input[type="number"], input[type="file"] { width: 100%; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; font-size: 13px; }
+  button { width: 100%; margin-top: 12px; padding: 10px; border: 0; border-radius: 6px; background: var(--accent); color: #101411; font-weight: 700; font-size: 14px; cursor: pointer; }
+  button:disabled { opacity: 0.5; cursor: default; }
+  #status { margin-top: 10px; font-size: 12px; color: var(--muted); min-height: 18px; }
+  #status.error { color: var(--red); }
+  .legend { display: flex; flex-wrap: wrap; gap: 12px; font-size: 11px; color: var(--muted); margin-bottom: 10px; }
+  .legend i { display: inline-block; width: 14px; height: 3px; border-radius: 2px; margin-right: 4px; vertical-align: middle; }
+  #frames { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+  .frame { position: relative; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: #000; }
+  .frame .media { position: relative; }
+  .frame img { display: block; width: 100%; }
+  .frame canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .frame .cap { display: flex; justify-content: space-between; align-items: center; padding: 6px 9px; font-size: 12px; background: var(--panel); }
+  .badge { font-size: 10px; padding: 1px 7px; border-radius: 999px; }
+  .badge.detected { background: #1f3325; color: var(--green); }
+  .badge.estimated { background: #3a301a; color: var(--amber); }
+  .badge.manual { background: #1d3038; color: var(--cyan); }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 4px; }
+  th, td { text-align: right; padding: 5px 8px; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 600; }
+  th:first-child, td:first-child { text-align: left; }
+  #report p { margin: 6px 0; }
+  #report ul { margin: 4px 0 10px; padding-left: 18px; color: var(--muted); }
+  #report .head { color: var(--text); font-weight: 700; margin-top: 10px; }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+<header>
+  <h1>RiderLens Analysis Lab</h1>
+  <span>dev tool — analyzes clips with the local worker; not part of the product UI</span>
+</header>
+<main>
+  <div>
+    <div class="panel">
+      <h2>Clip library</h2>
+      <div id="clips">Loading…</div>
+      <label>…or upload a video file</label>
+      <input type="file" id="upload" accept="video/*" />
+      <label>Trim start (s)</label>
+      <input type="number" id="trimStart" value="0" min="0" step="0.1" />
+      <label>Trim end (s) — empty = full clip</label>
+      <input type="number" id="trimEnd" min="0" step="0.1" />
+      <button id="run">Analyze</button>
+      <div id="status"></div>
+    </div>
+  </div>
+  <div>
+    <div class="panel">
+      <h2>Key frames</h2>
+      <div class="legend">
+        <span><i style="background:#4ade80"></i>floor</span>
+        <span><i style="background:#fbbf24"></i>tire baseline</span>
+        <span><i style="background:#22d3ee"></i>torso</span>
+        <span><i style="background:#c4b5fd"></i>knee</span>
+        <span><i style="background:#f87171"></i>landing</span>
+      </div>
+      <div id="frames"><span style="color:var(--muted)">Run an analysis to see annotated frames.</span></div>
+    </div>
+    <div class="panel" style="margin-top:16px">
+      <h2>Metrics</h2>
+      <div id="metrics"><span style="color:var(--muted)">—</span></div>
+    </div>
+    <div class="panel" style="margin-top:16px">
+      <h2>Report</h2>
+      <div id="report"><span style="color:var(--muted)">—</span></div>
+    </div>
+  </div>
+</main>
+<script>
+const LINE_COLORS = {
+  floor: "#4ade80",
+  tireBaseline: "#fbbf24",
+  torso: "#22d3ee",
+  kneeUpper: "#c4b5fd",
+  kneeLower: "#c4b5fd",
+  landing: "#f87171"
+};
+
+let selectedClip = null;
+
+async function loadClips() {
+  const box = document.getElementById("clips");
+  try {
+    const res = await fetch("/dev/clips");
+    const data = await res.json();
+    if (!data.clips.length) {
+      box.innerHTML = '<span style="color:var(--muted)">No clips in clips/manifest.json yet.</span>';
+      return;
+    }
+    box.innerHTML = "";
+    for (const clip of data.clips) {
+      const el = document.createElement("div");
+      el.className = "clip";
+      el.innerHTML =
+        `<span class="tag ${clip.label}">${clip.label}</span>` +
+        `<span class="file">${clip.file}</span>` +
+        (clip.notes ? `<div class="notes">${clip.notes}</div>` : "") +
+        (clip.available ? "" : '<div class="notes" style="color:var(--red)">file missing on disk</div>');
+      el.onclick = () => {
+        selectedClip = clip.file;
+        document.getElementById("upload").value = "";
+        document.querySelectorAll(".clip").forEach((node) => node.classList.remove("selected"));
+        el.classList.add("selected");
+      };
+      box.appendChild(el);
+    }
+  } catch (err) {
+    box.innerHTML = `<span style="color:var(--red)">Could not load clips: ${err}</span>`;
+  }
+}
+
+function setStatus(text, isError) {
+  const el = document.getElementById("status");
+  el.textContent = text;
+  el.className = isError ? "error" : "";
+}
+
+async function runAnalysis() {
+  const uploadInput = document.getElementById("upload");
+  const trimStart = parseFloat(document.getElementById("trimStart").value || "0");
+  const trimEndRaw = document.getElementById("trimEnd").value;
+  const button = document.getElementById("run");
+  const startedAt = performance.now();
+
+  button.disabled = true;
+  setStatus("Analyzing… (MediaPipe runs on every sampled frame)");
+  try {
+    let response;
+    if (uploadInput.files.length > 0) {
+      const form = new FormData();
+      form.append("video", uploadInput.files[0]);
+      form.append("session_id", "dev-upload");
+      form.append("trim_start_seconds", String(trimStart));
+      if (trimEndRaw !== "") form.append("trim_end_seconds", trimEndRaw);
+      form.append("include_frames", "true");
+      response = await fetch("/analysis/regular-jump", { method: "POST", body: form });
+    } else if (selectedClip) {
+      response = await fetch("/dev/analyze-clip", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          file: selectedClip,
+          trim_start_seconds: trimStart,
+          trim_end_seconds: trimEndRaw === "" ? null : parseFloat(trimEndRaw)
+        })
+      });
+    } else {
+      setStatus("Pick a library clip or choose a file first.", true);
+      return;
+    }
+
+    if (!response.ok) {
+      let detail = `Worker responded ${response.status}`;
+      try { detail = (await response.json()).detail || detail; } catch {}
+      setStatus(detail, true);
+      return;
+    }
+
+    const data = await response.json();
+    const elapsed = ((performance.now() - startedAt) / 1000).toFixed(1);
+    setStatus(`Done in ${elapsed}s — ${data.metrics.length} key frames.`);
+    renderFrames(data.metrics);
+    renderMetrics(data.metrics);
+    renderReport(data.report);
+  } catch (err) {
+    setStatus(`Request failed: ${err}`, true);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function renderFrames(metrics) {
+  const box = document.getElementById("frames");
+  box.innerHTML = "";
+  for (const metric of metrics) {
+    const card = document.createElement("div");
+    card.className = "frame";
+    const media = document.createElement("div");
+    media.className = "media";
+    const img = document.createElement("img");
+    const canvas = document.createElement("canvas");
+    if (metric.frameImage) {
+      img.src = metric.frameImage;
+      img.onload = () => drawGeometry(canvas, img, metric.geometry);
+    }
+    media.appendChild(img);
+    media.appendChild(canvas);
+    const cap = document.createElement("div");
+    cap.className = "cap";
+    cap.innerHTML =
+      `<span><b>${metric.phase}</b> <span class="num" style="color:var(--muted)">${metric.frameTime.toFixed(2)}s</span></span>` +
+      `<span><span class="badge ${metric.geometrySource}">${metric.geometrySource}</span> ` +
+      `<span class="num" style="color:var(--muted)">${(metric.confidence * 100).toFixed(0)}%</span></span>`;
+    card.appendChild(media);
+    card.appendChild(cap);
+    box.appendChild(card);
+  }
+}
+
+function drawGeometry(canvas, img, geometry) {
+  if (!geometry) return;
+  canvas.width = img.naturalWidth;
+  canvas.height = img.naturalHeight;
+  const ctx = canvas.getContext("2d");
+  ctx.lineWidth = Math.max(2, img.naturalWidth / 400);
+  for (const [name, line] of Object.entries(geometry)) {
+    const color = LINE_COLORS[name];
+    if (!color || !line?.start || !line?.end) continue;
+    ctx.strokeStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(line.start.x * canvas.width, line.start.y * canvas.height);
+    ctx.lineTo(line.end.x * canvas.width, line.end.y * canvas.height);
+    ctx.stroke();
+  }
+}
+
+function renderMetrics(metrics) {
+  const rows = metrics.map((m) =>
+    `<tr><td>${m.phase}</td><td class="num">${m.frameTime.toFixed(2)}s</td>` +
+    `<td class="num">${m.torsoAngle}&deg;</td><td class="num">${m.hipAngle}&deg;</td>` +
+    `<td class="num">${m.kneeAngle}&deg;</td><td class="num">${m.elbowAngle}&deg;</td>` +
+    `<td class="num">${m.bikePitchAngle}&deg;</td><td class="num">${m.floorAngle}&deg;</td>` +
+    `<td class="num">${m.landingAlignmentAngle}&deg;</td>` +
+    `<td><span class="badge ${m.geometrySource}">${m.geometrySource}</span></td>` +
+    `<td class="num">${(m.confidence * 100).toFixed(0)}%</td></tr>`
+  ).join("");
+  document.getElementById("metrics").innerHTML =
+    `<table><thead><tr><th>phase</th><th>time</th><th>torso</th><th>hip</th><th>knee</th>` +
+    `<th>elbow</th><th>pitch</th><th>floor</th><th>landing</th><th>geometry</th><th>conf</th></tr></thead>` +
+    `<tbody>${rows}</tbody></table>`;
+}
+
+function renderReport(report) {
+  const list = (items) => `<ul>${items.map((item) => `<li>${item}</li>`).join("")}</ul>`;
+  document.getElementById("report").innerHTML =
+    `<p>${report.summary}</p>` +
+    `<div class="head">Strengths</div>${list(report.strengths)}` +
+    `<div class="head">Improvements</div>${list(report.improvements)}` +
+    `<div class="head">Drills</div>${list(report.drills)}`;
+}
+
+document.getElementById("run").onclick = runAnalysis;
+document.getElementById("upload").onchange = () => {
+  selectedClip = null;
+  document.querySelectorAll(".clip").forEach((node) => node.classList.remove("selected"));
+};
+loadClips();
+</script>
+</body>
+</html>

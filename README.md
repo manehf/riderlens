@@ -80,6 +80,7 @@ src/services/analysisWorker.ts  Mobile client for the FastAPI worker
 src/services/videoLibrary.ts    Local video persistence
 src/theme/tokens.ts             Locked visual tokens and numeric typography
 worker/app/main.py              FastAPI MediaPipe/OpenCV analysis worker
+worker/app/dev.html             Browser Analysis Lab at /dev (dev tool, annotated frames)
 worker/scripts/analyze_clip.sh  Run a reference clip through the worker from the CLI
 worker/README.md                Worker setup and endpoint notes
 clips/                          Reference clip library for development/validation

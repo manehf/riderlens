@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 import math
 import os
@@ -8,11 +9,13 @@ import shutil
 import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from pathlib import Path as FilePath
 from typing import Literal
 
 os.environ.setdefault("MPLCONFIGDIR", os.path.join(tempfile.gettempdir(), "riderlens-matplotlib"))
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
 try:
@@ -80,6 +83,8 @@ class Metric(BaseModel):
     geometrySource: GeometrySource
     geometry: FrameGeometry
     confidence: float = Field(ge=0, le=1)
+    # Base64 JPEG data URL of the source frame; only populated when include_frames is requested (dev UI).
+    frameImage: str | None = None
 
 
 class Report(BaseModel):
@@ -122,6 +127,69 @@ def health():
     }
 
 
+# --- Dev analysis lab -------------------------------------------------------
+# Local development dashboard. Disable with RIDERLENS_DEV_UI=0 (and keep it
+# disabled on any deployed worker).
+
+DEV_UI_ENABLED = os.getenv("RIDERLENS_DEV_UI", "1") != "0"
+REPO_ROOT = FilePath(__file__).resolve().parents[2]
+CLIPS_DIR = REPO_ROOT / "clips"
+DEV_HTML_PATH = FilePath(__file__).resolve().parent / "dev.html"
+
+
+def require_dev_ui() -> None:
+    if not DEV_UI_ENABLED:
+        raise HTTPException(status_code=404, detail="Not found.")
+
+
+@app.get("/dev", response_class=HTMLResponse)
+def dev_dashboard():
+    require_dev_ui()
+    if not DEV_HTML_PATH.exists():
+        raise HTTPException(status_code=500, detail="dev.html is missing next to app/main.py.")
+    return HTMLResponse(DEV_HTML_PATH.read_text(encoding="utf-8"))
+
+
+@app.get("/dev/clips")
+def dev_clips():
+    require_dev_ui()
+    manifest_path = CLIPS_DIR / "manifest.json"
+    if not manifest_path.exists():
+        return {"clips": []}
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    clips = [
+        {**entry, "available": (CLIPS_DIR / entry.get("file", "")).exists()}
+        for entry in manifest.get("clips", [])
+    ]
+    return {"clips": clips}
+
+
+class DevAnalyzeRequest(BaseModel):
+    file: str
+    trim_start_seconds: float = Field(default=0, ge=0)
+    trim_end_seconds: float | None = Field(default=None, ge=0)
+
+
+@app.post("/dev/analyze-clip", response_model=AnalyzeResponse)
+def dev_analyze_clip(request: DevAnalyzeRequest):
+    require_dev_ui()
+    clips_root = CLIPS_DIR.resolve()
+    clip_path = (clips_root / request.file).resolve()
+    if clips_root not in clip_path.parents:
+        raise HTTPException(status_code=400, detail="Clip path must stay inside the clips directory.")
+    if not clip_path.exists():
+        raise HTTPException(status_code=404, detail=f"Clip not found: {request.file}")
+
+    return analyze_regular_jump_file(
+        session_id=f"dev-{re.sub(r'[^A-Za-z0-9_-]', '-', request.file)}",
+        video_path=str(clip_path),
+        trim_start_seconds=request.trim_start_seconds,
+        trim_end_seconds=request.trim_end_seconds,
+        crop_preset="full_side_view",
+        include_frames=True,
+    )
+
+
 @app.post("/analysis/regular-jump", response_model=AnalyzeResponse)
 async def analyze_regular_jump_upload(
     video: UploadFile = File(...),
@@ -129,6 +197,7 @@ async def analyze_regular_jump_upload(
     trim_start_seconds: float = Form(0),
     trim_end_seconds: float | None = Form(None),
     crop_preset: CropPreset = Form("full_side_view"),
+    include_frames: bool = Form(False),
 ):
     if not video.content_type or not video.content_type.startswith("video/"):
         raise HTTPException(status_code=415, detail="Upload a video file.")
@@ -145,6 +214,7 @@ async def analyze_regular_jump_upload(
             trim_start_seconds=trim_start_seconds,
             trim_end_seconds=trim_end_seconds,
             crop_preset=crop_preset,
+            include_frames=include_frames,
         )
     finally:
         try:
@@ -211,6 +281,7 @@ def analyze_regular_jump_file(
     trim_start_seconds: float,
     trim_end_seconds: float | None,
     crop_preset: CropPreset,
+    include_frames: bool = False,
 ) -> AnalyzeResponse:
     if cv2 is None or mp is None or np is None:
         raise HTTPException(status_code=503, detail="Install worker dependencies: mediapipe, opencv-python-headless, numpy.")
@@ -228,7 +299,12 @@ def analyze_regular_jump_file(
 
     end_seconds = trim_end_seconds if trim_end_seconds is not None else duration_seconds
     selected = select_phase_frames(pose_frames, trim_start_seconds, end_seconds)
-    metrics = [build_metric(session_id, phase, pose_frame, fps) for phase, pose_frame in selected]
+    metrics = []
+    for phase, pose_frame in selected:
+        metric = build_metric(session_id, phase, pose_frame, fps)
+        if include_frames:
+            metric.frameImage = encode_frame_jpeg(pose_frame.frame)
+        metrics.append(metric)
     response = AnalyzeResponse(status="completed", metrics=metrics, report=build_report(metrics))
     save_debug_snapshot(
         session_id,
@@ -262,7 +338,8 @@ def save_debug_snapshot(session_id: str, request_info: dict, response: AnalyzeRe
         payload = {
             "savedAt": datetime.now(timezone.utc).isoformat(),
             "request": request_info,
-            "response": response.model_dump(),
+            # frameImage is dev-UI-only base64 pixel data; keep snapshots small and diffable.
+            "response": response.model_dump(exclude={"metrics": {"__all__": {"frameImage"}}}),
         }
         with open(path, "w", encoding="utf-8") as snapshot_file:
             json.dump(payload, snapshot_file, indent=2)
@@ -428,6 +505,13 @@ def build_report(metrics: list[Metric]) -> Report:
             "Repeat on a small table and look for smoother extension from compression to takeoff.",
         ],
     )
+
+
+def encode_frame_jpeg(frame) -> str | None:
+    ok, encoded = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
+    if not ok:
+        return None
+    return "data:image/jpeg;base64," + base64.b64encode(encoded.tobytes()).decode("ascii")
 
 
 def get_visible_side(landmarks) -> Literal["left", "right"]:

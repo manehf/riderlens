@@ -21,7 +21,9 @@ clips/
 
 ## Run a clip through the worker
 
-With the worker running locally (`uvicorn app.main:app --host 0.0.0.0 --port 8000` in `worker/`):
+Visual (recommended): with the worker running, open `http://127.0.0.1:8000/dev` — the Analysis Lab lists this library, runs clips through the worker, and shows key frames with geometry overlays.
+
+CLI (`uvicorn app.main:app --host 0.0.0.0 --port 8000` in `worker/`):
 
 ```bash
 worker/scripts/analyze_clip.sh clips/regular_jump/fail/jump_fail.mp4
