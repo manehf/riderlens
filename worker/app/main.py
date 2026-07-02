@@ -429,14 +429,31 @@ def build_metric(session_id: str, phase: Phase, pose_frame: PoseFrame, fps: floa
     ankle = landmark_point(landmarks, 27 if side == "left" else 28)
     foot = landmark_point(landmarks, 31 if side == "left" else 32)
 
-    detected_floor = detect_floor_line(pose_frame.frame)
-    floor = detected_floor or estimated_floor_line()
-    detected_tire_baseline = detect_tire_baseline(pose_frame.frame)
-    tire_baseline = detected_tire_baseline or estimated_tire_baseline(ankle, foot)
-    landing = floor
-    geometry_source: GeometrySource = (
-        "detected" if detected_floor is not None and detected_tire_baseline is not None else "estimated"
+    height, width = pose_frame.frame.shape[:2]
+
+    def to_px(point: FramePoint) -> tuple[float, float]:
+        return (point.x * width, point.y * height)
+
+    rear_pred, front_pred, wheel_radius = estimate_wheel_geometry(
+        shoulder=to_px(shoulder), hip=to_px(hip), ankle=to_px(ankle), foot=to_px(foot), wrist=to_px(wrist)
     )
+    # Wheel/floor confirmation is anchored to the pose; with a low-confidence pose the
+    # anchors are unreliable and "confirmations" are usually background texture.
+    trustworthy_pose = pose_frame.confidence >= 0.8
+    gray = cv2.medianBlur(cv2.cvtColor(pose_frame.frame, cv2.COLOR_BGR2GRAY), 5)
+    rear_hit = confirm_wheel_circle(gray, rear_pred, wheel_radius) if trustworthy_pose else None
+    front_hit = confirm_wheel_circle(gray, front_pred, wheel_radius) if trustworthy_pose else None
+    tires_detected = rear_hit is not None and front_hit is not None
+    rear_center = rear_hit or rear_pred
+    front_center = front_hit or front_pred
+    tire_baseline = px_line(rear_center, front_center, width, height)
+
+    wheel_bottom_y = max(rear_center[1], front_center[1]) + wheel_radius
+    bike_x_range = (min(rear_center[0], front_center[0]) - wheel_radius, max(rear_center[0], front_center[0]) + wheel_radius)
+    detected_floor = detect_floor_line(pose_frame.frame, wheel_bottom_y, bike_x_range) if trustworthy_pose else None
+    floor = detected_floor or estimated_floor_line(wheel_bottom_y, bike_x_range, width, height)
+    landing = floor
+    geometry_source: GeometrySource = "detected" if detected_floor is not None and tires_detected else "estimated"
     geometry = FrameGeometry(
         floor=floor,
         tireBaseline=tire_baseline,
@@ -532,94 +549,124 @@ def landmark_point(landmarks, index: int) -> FramePoint:
     return FramePoint(x=clamp(float(landmark.x), 0, 1), y=clamp(float(landmark.y), 0, 1))
 
 
-def detect_floor_line(frame) -> FrameLine | None:
+# --- Bike geometry heuristics -----------------------------------------------
+# MediaPipe only sees the rider, but the bike is attached to the rider: the feet
+# sit near the bottom bracket, which shares a height line with the wheel hubs.
+# Wheel positions are therefore predicted from body scale and facing direction,
+# then confirmed (or not) with a circle search restricted to those predictions.
+# All heuristic work happens in pixel space; normalized lines are built at the end.
+
+
+def estimate_wheel_geometry(
+    shoulder: tuple[float, float],
+    hip: tuple[float, float],
+    ankle: tuple[float, float],
+    foot: tuple[float, float],
+    wrist: tuple[float, float],
+) -> tuple[tuple[float, float], tuple[float, float], float]:
+    """Predict (rear_center, front_center, wheel_radius) in pixels from rider pose."""
+    leg = math.hypot(hip[0] - ankle[0], hip[1] - ankle[1])
+    leg = max(leg, 8.0)
+    facing = 1.0 if wrist[0] >= shoulder[0] else -1.0
+
+    wheel_radius = 0.42 * leg
+    hub_y = foot[1] - 0.06 * leg
+    rear_center = (foot[0] - facing * 0.72 * leg, hub_y)
+    front_center = (foot[0] + facing * 0.98 * leg, hub_y)
+    return rear_center, front_center, wheel_radius
+
+
+def confirm_wheel_circle(gray, predicted_center: tuple[float, float], radius: float) -> tuple[float, float] | None:
+    """Look for a wheel-sized circle near the predicted center. Returns the refined center or None."""
+    height, width = gray.shape[:2]
+    center_x, center_y = predicted_center
+    margin = int(1.5 * radius)
+    x0, x1 = int(max(0, center_x - margin)), int(min(width, center_x + margin))
+    y0, y1 = int(max(0, center_y - margin)), int(min(height, center_y + margin))
+    if x1 - x0 < radius * 1.5 or y1 - y0 < radius * 1.5:
+        return None
+
+    roi = gray[y0:y1, x0:x1]
+    circles = cv2.HoughCircles(
+        roi,
+        cv2.HOUGH_GRADIENT,
+        dp=1.2,
+        minDist=max(12, radius),
+        param1=90,
+        param2=27,
+        minRadius=max(6, int(0.62 * radius)),
+        maxRadius=int(1.3 * radius),
+    )
+    if circles is None:
+        return None
+
+    best = None
+    best_distance = float("inf")
+    for x, y, _r in np.round(circles[0, :]).astype("int"):
+        distance = math.hypot(x + x0 - center_x, y + y0 - center_y)
+        if distance < best_distance:
+            best_distance = distance
+            best = (float(x + x0), float(y + y0))
+    # A confirmation far from the pose-anchored prediction is more likely foliage than a wheel.
+    if best is None or best_distance > 0.5 * radius:
+        return None
+    return best
+
+
+def detect_floor_line(frame, wheel_bottom_y: float, bike_x_range: tuple[float, float]) -> FrameLine | None:
+    """Find a ground edge in the band just under the wheels, near the bike."""
     height, width = frame.shape[:2]
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     gray = cv2.GaussianBlur(gray, (5, 5), 0)
     edges = cv2.Canny(gray, 60, 140)
-    lines = cv2.HoughLinesP(edges, 1, np.pi / 180, threshold=70, minLineLength=int(width * 0.22), maxLineGap=24)
+    lines = cv2.HoughLinesP(edges, 1, np.pi / 180, threshold=60, minLineLength=int(width * 0.16), maxLineGap=24)
+    if lines is None:
+        return None
+
+    band_top = wheel_bottom_y - height * 0.06
+    band_bottom = wheel_bottom_y + height * 0.20
+    x_min = bike_x_range[0] - width * 0.12
+    x_max = bike_x_range[1] + width * 0.12
 
     best = None
-    best_score = -1.0
-    if lines is not None:
-        for line in lines[:, 0]:
-            x1, y1, x2, y2 = [int(value) for value in line]
-            angle = math.degrees(math.atan2(y2 - y1, x2 - x1))
-            midpoint_y = (y1 + y2) / 2
-            length = math.hypot(x2 - x1, y2 - y1)
-            if abs(angle) > 35 or midpoint_y < height * 0.45:
-                continue
-            score = length + midpoint_y * 0.35
-            if score > best_score:
-                best_score = score
-                best = (x1, y1, x2, y2)
+    best_score = -float("inf")
+    for line in lines[:, 0]:
+        x1, y1, x2, y2 = [int(value) for value in line]
+        angle = math.degrees(math.atan2(y2 - y1, x2 - x1))
+        midpoint_y = (y1 + y2) / 2
+        midpoint_x = (x1 + x2) / 2
+        length = math.hypot(x2 - x1, y2 - y1)
+        if abs(angle) > 35:
+            continue
+        if not (band_top <= midpoint_y <= band_bottom):
+            continue
+        if not (x_min <= midpoint_x <= x_max):
+            continue
+        score = length - 1.5 * abs(midpoint_y - wheel_bottom_y)
+        if score > best_score:
+            best_score = score
+            best = (x1, y1, x2, y2)
 
     if best is None:
         return None
 
     x1, y1, x2, y2 = best
+    return px_line((x1, y1), (x2, y2), width, height)
+
+
+def estimated_floor_line(wheel_bottom_y: float, bike_x_range: tuple[float, float], width: int, height: int) -> FrameLine:
+    """Fallback: a horizontal line tangent to the bottom of the estimated wheels."""
+    span = max(bike_x_range[1] - bike_x_range[0], width * 0.2)
+    x0 = bike_x_range[0] - span * 0.25
+    x1 = bike_x_range[1] + span * 0.25
+    return px_line((x0, wheel_bottom_y), (x1, wheel_bottom_y), width, height)
+
+
+def px_line(first: tuple[float, float], second: tuple[float, float], width: int, height: int) -> FrameLine:
+    left, right = sorted([first, second], key=lambda point: point[0])
     return FrameLine(
-        start=FramePoint(x=clamp(x1 / width, 0, 1), y=clamp(y1 / height, 0, 1)),
-        end=FramePoint(x=clamp(x2 / width, 0, 1), y=clamp(y2 / height, 0, 1)),
-    )
-
-
-def detect_tire_baseline(frame) -> FrameLine | None:
-    height, width = frame.shape[:2]
-    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    gray = cv2.medianBlur(gray, 5)
-    min_radius = max(8, int(min(width, height) * 0.035))
-    max_radius = max(min_radius + 4, int(min(width, height) * 0.18))
-    circles = cv2.HoughCircles(
-        gray,
-        cv2.HOUGH_GRADIENT,
-        dp=1.2,
-        minDist=max(24, width * 0.18),
-        param1=90,
-        param2=24,
-        minRadius=min_radius,
-        maxRadius=max_radius,
-    )
-    if circles is None:
-        return None
-
-    candidates = []
-    for x, y, radius in np.round(circles[0, :]).astype("int"):
-        if y < height * 0.25 or radius < min_radius:
-            continue
-        candidates.append((x, y, radius))
-    if len(candidates) < 2:
-        return None
-
-    best_pair = None
-    best_distance = 0.0
-    for index, first in enumerate(candidates):
-        for second in candidates[index + 1 :]:
-            distance = abs(first[0] - second[0])
-            if distance > best_distance:
-                best_distance = distance
-                best_pair = (first, second)
-    if best_pair is None:
-        return None
-
-    first, second = sorted(best_pair, key=lambda circle: circle[0])
-    return FrameLine(
-        start=FramePoint(x=clamp(first[0] / width, 0, 1), y=clamp(first[1] / height, 0, 1)),
-        end=FramePoint(x=clamp(second[0] / width, 0, 1), y=clamp(second[1] / height, 0, 1)),
-    )
-
-
-def estimated_floor_line() -> FrameLine:
-    y = 0.88
-    return FrameLine(start=FramePoint(x=0.08, y=y), end=FramePoint(x=0.92, y=y))
-
-
-def estimated_tire_baseline(ankle: FramePoint, foot: FramePoint) -> FrameLine:
-    center_x = clamp((ankle.x + foot.x) / 2, 0.18, 0.82)
-    center_y = clamp(max(ankle.y, foot.y) + 0.12, 0.35, 0.92)
-    return FrameLine(
-        start=FramePoint(x=clamp(center_x - 0.22, 0, 1), y=center_y),
-        end=FramePoint(x=clamp(center_x + 0.22, 0, 1), y=center_y),
+        start=FramePoint(x=clamp(left[0] / width, 0, 1), y=clamp(left[1] / height, 0, 1)),
+        end=FramePoint(x=clamp(right[0] / width, 0, 1), y=clamp(right[1] / height, 0, 1)),
     )
 
 
