@@ -41,6 +41,10 @@ export function getAnalysisWorkerUrl(): string | undefined {
   return rawUrl.replace(/\/+$/, "");
 }
 
+// Upload plus MediaPipe processing can legitimately take a while on long clips,
+// but an unreachable worker (wrong LAN IP, firewall) would otherwise hang forever.
+const ANALYSIS_TIMEOUT_MS = 120_000;
+
 export async function analyzeRegularJumpWithWorker(session: RideSession): Promise<WorkerAnalysisResult | undefined> {
   const workerUrl = getAnalysisWorkerUrl();
   const video = session.video;
@@ -60,10 +64,26 @@ export async function analyzeRegularJumpWithWorker(session: RideSession): Promis
     type: getVideoContentType(video.rawVideoUri)
   } as unknown as Blob);
 
-  const response = await fetch(`${workerUrl}/analysis/regular-jump`, {
-    method: "POST",
-    body: formData
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), ANALYSIS_TIMEOUT_MS);
+  let response: Response;
+  try {
+    response = await fetch(`${workerUrl}/analysis/regular-jump`, {
+      method: "POST",
+      body: formData,
+      signal: controller.signal
+    });
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw new Error(
+        `The analysis worker at ${workerUrl} did not respond within ${ANALYSIS_TIMEOUT_MS / 1000}s. Check that the phone and computer are on the same Wi-Fi and that the URL matches the computer's current IP.`
+      );
+    }
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Could not reach the analysis worker at ${workerUrl}. ${message}`);
+  } finally {
+    clearTimeout(timeout);
+  }
 
   if (!response.ok) {
     const detail = await readErrorDetail(response);

@@ -55,7 +55,26 @@ function isSeedSession(session: RideSession): boolean {
 
 // Drops legacy demo seeds and removed video-link reference sessions from persisted state.
 function getUserSessions(sessions: RideSession[]): RideSession[] {
-  return sessions.filter((session) => !isSeedSession(session) && Boolean(session.video));
+  return sessions
+    .filter((session) => !isSeedSession(session) && Boolean(session.video))
+    .map(reconcileInterruptedSession);
+}
+
+// A session persisted mid-analysis has no live request left to resolve it; surface it as failed with retry.
+function reconcileInterruptedSession(session: RideSession): RideSession {
+  if (session.status !== "uploaded" && session.status !== "analyzing") return session;
+  return {
+    ...session,
+    status: "analysis_failed",
+    job: session.job
+      ? {
+          ...session.job,
+          status: "failed",
+          errorMessage: "Analysis was interrupted before it finished. Retry to run it again.",
+          finishedAt: new Date().toISOString()
+        }
+      : session.job
+  };
 }
 
 function resolveActiveSessionId(sessions: RideSession[], activeSessionId?: string): string {
