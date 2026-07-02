@@ -151,6 +151,18 @@ It lists the `clips/` library, lets you upload any video, set the trim window, a
 
 It is a dev tool only: plain styling on purpose, enabled by default locally, disable with `RIDERLENS_DEV_UI=0` (keep it disabled on any deployed worker).
 
+## AI Review (Claude)
+
+The Analysis Lab has an "AI review" button that sends the analyzed key frames plus the measured metrics to the Claude API (`claude-opus-4-8` by default, override with `RIDERLENS_AI_MODEL`). The model describes what actually happens in each frame, validates the pipeline's phase labels, detects crashes, and writes a coaching summary from visual understanding.
+
+Requires credentials — start the worker with an API key:
+
+```bash
+ANTHROPIC_API_KEY=sk-ant-... RIDERLENS_SNAPSHOT_DIR=./snapshots uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
+
+Without a key the endpoint returns a clear 503 and everything else keeps working. Cost is roughly a cent or two per review (five 720p frames + a structured response).
+
 ## Debug Snapshots
 
 Set `RIDERLENS_SNAPSHOT_DIR` to archive every analysis (request metadata + full response JSON) for debugging real clips:

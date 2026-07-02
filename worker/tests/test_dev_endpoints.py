@@ -35,3 +35,27 @@ def test_dev_ui_flag_disables_endpoints(monkeypatch):
     assert client.get("/dev").status_code == 404
     assert client.get("/dev/clips").status_code == 404
     assert client.post("/dev/analyze-clip", json={"file": "x.mp4"}).status_code == 404
+
+
+def test_ai_review_requires_frame_images():
+    metric = {
+        "phase": "takeoff",
+        "frameTime": 2.5,
+        "torsoAngle": 49,
+        "hipAngle": 106,
+        "kneeAngle": 130,
+        "elbowAngle": 168,
+        "bikePitchAngle": -5,
+        "floorAngle": -6,
+        "tireBaselineAngle": -5,
+        "landingAlignmentAngle": 12,
+        "geometrySource": "estimated",
+        "geometry": {
+            key: {"start": {"x": 0.1, "y": 0.9}, "end": {"x": 0.9, "y": 0.9}}
+            for key in ["floor", "tireBaseline", "torso", "kneeUpper", "kneeLower", "landing"]
+        },
+        "confidence": 0.9,
+    }
+    response = client.post("/dev/ai-review", json={"metrics": [metric]})
+    assert response.status_code == 422
+    assert "frame images" in response.json()["detail"]

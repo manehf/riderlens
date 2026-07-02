@@ -175,6 +175,21 @@ def dev_clips():
     return {"clips": clips}
 
 
+class AIReviewRequest(BaseModel):
+    metrics: list[Metric]
+
+
+@app.post("/dev/ai-review")
+def dev_ai_review(request: AIReviewRequest):
+    require_dev_ui()
+    from .ai_review import AIReviewError, review_key_frames
+
+    try:
+        return review_key_frames(request.metrics)
+    except AIReviewError as error:
+        raise HTTPException(status_code=error.status_code, detail=str(error))
+
+
 class DevAnalyzeRequest(BaseModel):
     file: str
     trim_start_seconds: float = Field(default=0, ge=0)

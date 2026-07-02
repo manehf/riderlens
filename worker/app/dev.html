@@ -97,6 +97,12 @@
       <h2>Report</h2>
       <div id="report"><span style="color:var(--muted)">—</span></div>
     </div>
+    <div class="panel" style="margin-top:16px">
+      <h2>AI review (Claude)</h2>
+      <button id="aiReview" disabled style="max-width:260px">Run AI review</button>
+      <div id="aiStatus" style="margin-top:8px;font-size:12px;color:var(--muted)"></div>
+      <div id="aiResult" style="margin-top:10px"></div>
+    </div>
   </div>
 </main>
 <script>
@@ -110,6 +116,7 @@ const LINE_COLORS = {
 };
 
 let selectedClip = null;
+let lastAnalysis = null;
 
 async function loadClips() {
   const box = document.getElementById("clips");
@@ -192,6 +199,10 @@ async function runAnalysis() {
     const data = await response.json();
     const elapsed = ((performance.now() - startedAt) / 1000).toFixed(1);
     setStatus(`Done in ${elapsed}s — ${data.metrics.length} key frames.`);
+    lastAnalysis = data;
+    document.getElementById("aiReview").disabled = false;
+    document.getElementById("aiResult").innerHTML = "";
+    document.getElementById("aiStatus").textContent = "";
     renderFrames(data.metrics);
     renderMetrics(data.metrics);
     renderReport(data.report);
@@ -278,6 +289,57 @@ function renderReport(report) {
     `<div class="head">Drills</div>${list(report.drills)}`;
 }
 
+async function runAiReview() {
+  if (!lastAnalysis) return;
+  const button = document.getElementById("aiReview");
+  const status = document.getElementById("aiStatus");
+  const box = document.getElementById("aiResult");
+  button.disabled = true;
+  status.textContent = "Asking Claude to look at the key frames…";
+  const startedAt = performance.now();
+  try {
+    const response = await fetch("/dev/ai-review", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ metrics: lastAnalysis.metrics })
+    });
+    if (!response.ok) {
+      let detail = `Worker responded ${response.status}`;
+      try { detail = (await response.json()).detail || detail; } catch {}
+      status.textContent = detail;
+      status.style.color = "var(--red)";
+      return;
+    }
+    const review = await response.json();
+    const elapsed = ((performance.now() - startedAt) / 1000).toFixed(1);
+    status.textContent = `Done in ${elapsed}s — model: ${review.model}`;
+    status.style.color = "var(--muted)";
+
+    const stateColors = { riding: "var(--green)", airborne: "var(--cyan)", landing: "var(--cyan)", crashed: "var(--red)", bike_only: "var(--red)", not_visible: "var(--amber)" };
+    const frameRows = review.frames.map((f) =>
+      `<tr><td>${f.phase_label} <span class="num" style="color:var(--muted)">${f.time_seconds.toFixed(2)}s</span></td>` +
+      `<td style="text-align:left;color:${stateColors[f.rider_state] || "var(--text)"}">${f.rider_state.replace("_", " ")}</td>` +
+      `<td style="text-align:left">${f.what_is_happening}</td>` +
+      `<td>${f.phase_label_correct ? "&#10003;" : '<span style="color:var(--red)">&#10007; wrong label</span>'}</td></tr>`
+    ).join("");
+    const list = (items) => `<ul>${items.map((item) => `<li>${item}</li>`).join("")}</ul>`;
+    box.innerHTML =
+      `<p><span class="badge ${review.crash_detected ? "estimated" : "detected"}" style="${review.crash_detected ? "background:#3d2323;color:var(--red)" : ""}">` +
+      `${review.crash_detected ? "CRASH DETECTED" : "no crash"}</span></p>` +
+      `<p>${review.event_summary}</p>` +
+      `<table><thead><tr><th>frame</th><th style="text-align:left">rider state</th><th style="text-align:left">what is happening</th><th>label</th></tr></thead><tbody>${frameRows}</tbody></table>` +
+      `<div id="report"><div class="head">Coaching</div><p>${review.coaching.summary}</p>` +
+      `<div class="head">Positives</div>${list(review.coaching.positives)}` +
+      `<div class="head">Improvements</div>${list(review.coaching.improvements)}</div>`;
+  } catch (err) {
+    status.textContent = `Request failed: ${err}`;
+    status.style.color = "var(--red)";
+  } finally {
+    button.disabled = false;
+  }
+}
+
+document.getElementById("aiReview").onclick = runAiReview;
 document.getElementById("run").onclick = runAnalysis;
 document.getElementById("upload").onchange = () => {
   selectedClip = null;

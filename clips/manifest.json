@@ -4,11 +4,11 @@
     {
       "file": "regular_jump/fail/jump_fail.mp4",
       "skill": "regular_jump",
-      "label": "fail",
+      "label": "crash",
       "durationSeconds": 9.2,
       "resolution": "1280x720",
       "fps": 29.8,
-      "notes": "First failed-jump reference clip. TODO: describe the mistake (nose drop, dead sailor, stiff landing, poor compression, off-axis...)."
+      "notes": "Crash after the takeoff: rider and bike separate, the bike cartwheels down the trail (visible riderless at ~6.2s). Regression case for crash detection, honest geometry labeling, and phase detection (approach/compression collapse onto the same frame)."
     }
   ]
 }
