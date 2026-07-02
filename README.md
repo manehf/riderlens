@@ -80,7 +80,9 @@ src/services/analysisWorker.ts  Mobile client for the FastAPI worker
 src/services/videoLibrary.ts    Local video persistence
 src/theme/tokens.ts             Locked visual tokens and numeric typography
 worker/app/main.py              FastAPI MediaPipe/OpenCV analysis worker
+worker/scripts/analyze_clip.sh  Run a reference clip through the worker from the CLI
 worker/README.md                Worker setup and endpoint notes
+clips/                          Reference clip library for development/validation
 supabase/schema.sql             Planned backend database/storage schema
 ```
 
@@ -183,6 +185,7 @@ Use electric green for primary actions and scan states, graphite for video/analy
 ## Product Docs
 
 - Current product & technical plan (roadmap, MediaPipe Tasks migration, rider measurements): `riderlens-product-plan.md`
+- Reference clip library conventions and CLI testing: `clips/README.md`
 - Original product scope, risks, data model, and visual system: `bike-technique-app-prerequisites.md`
 - Worker details: `worker/README.md`
 - Garage setup-sheet visual reference: `garage-setup-sheet.html`

@@ -1,0 +1,14 @@
+{
+  "description": "Development reference clips for RiderLens analysis testing. Every clip added here should get a manifest entry with an honest note about what the rider does right or wrong.",
+  "clips": [
+    {
+      "file": "regular_jump/fail/jump_fail.mp4",
+      "skill": "regular_jump",
+      "label": "fail",
+      "durationSeconds": 9.2,
+      "resolution": "1280x720",
+      "fps": 29.8,
+      "notes": "First failed-jump reference clip. TODO: describe the mistake (nose drop, dead sailor, stiff landing, poor compression, off-axis...)."
+    }
+  ]
+}
