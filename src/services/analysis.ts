@@ -5,6 +5,7 @@ import type {
   FrameGeometry,
   FrameLine,
   FramePoint,
+  MetricPhase,
   PoseMetric,
   RideSession,
   SkillType,
@@ -133,16 +134,16 @@ export function applyManualFrameGeometry(metric: PoseMetric, geometry: FrameGeom
   };
 }
 
-function getLineAngle(line: FrameLine): number {
+export function getLineAngle(line: FrameLine): number {
   return normalizeAngle((Math.atan2(line.end.y - line.start.y, line.end.x - line.start.x) * 180) / Math.PI);
 }
 
-function getAngleBetweenLines(first: FrameLine, second: FrameLine): number {
+export function getAngleBetweenLines(first: FrameLine, second: FrameLine): number {
   const diff = Math.abs(normalizeAngle(getLineAngle(first) - getLineAngle(second)));
   return Math.min(diff, 180 - diff);
 }
 
-function getJointAngle(first: FramePoint, joint: FramePoint, second: FramePoint): number {
+export function getJointAngle(first: FramePoint, joint: FramePoint, second: FramePoint): number {
   const firstVector = { x: first.x - joint.x, y: first.y - joint.y };
   const secondVector = { x: second.x - joint.x, y: second.y - joint.y };
   const firstMagnitude = Math.hypot(firstVector.x, firstVector.y);
@@ -161,7 +162,7 @@ function getJointAngle(first: FramePoint, joint: FramePoint, second: FramePoint)
   return (Math.acos(cosine) * 180) / Math.PI;
 }
 
-function normalizeAngle(angle: number): number {
+export function normalizeAngle(angle: number): number {
   let next = angle;
   while (next > 180) next -= 360;
   while (next < -180) next += 360;
@@ -228,89 +229,34 @@ function normalizeYoutubeId(value?: string): string | undefined {
   return candidate;
 }
 
-export function createJumpMetrics(sessionId: string): PoseMetric[] {
-  return [
-    {
-      id: createId("metric-approach"),
-      sessionId,
-      phase: "approach",
-      frameTime: 1.1,
-      torsoAngle: 55,
-      hipAngle: 116,
-      kneeAngle: 139,
-      elbowAngle: 153,
-      bikePitchAngle: 1,
-      floorAngle: -4,
-      tireBaselineAngle: 3,
-      landingAlignmentAngle: 8,
-      geometrySource: "estimated",
-      confidence: 0.83
-    },
-    {
-      id: createId("metric-compression"),
-      sessionId,
-      phase: "compression",
-      frameTime: 1.9,
-      torsoAngle: 42,
-      hipAngle: 92,
-      kneeAngle: 104,
-      elbowAngle: 132,
-      bikePitchAngle: 3,
-      floorAngle: -5,
-      tireBaselineAngle: 7,
-      landingAlignmentAngle: 10,
-      geometrySource: "estimated",
-      confidence: 0.8
-    },
-    {
-      id: createId("metric-takeoff"),
-      sessionId,
-      phase: "takeoff",
-      frameTime: 2.5,
-      torsoAngle: 49,
-      hipAngle: 106,
-      kneeAngle: 130,
-      elbowAngle: 168,
-      bikePitchAngle: -5,
-      floorAngle: -6,
-      tireBaselineAngle: -5,
-      landingAlignmentAngle: 12,
-      geometrySource: "estimated",
-      confidence: 0.82
-    },
-    {
-      id: createId("metric-air"),
-      sessionId,
-      phase: "air",
-      frameTime: 3.4,
-      torsoAngle: 46,
-      hipAngle: 101,
-      kneeAngle: 120,
-      elbowAngle: 151,
-      bikePitchAngle: -4,
-      floorAngle: -6,
-      tireBaselineAngle: -4,
-      landingAlignmentAngle: 10,
-      geometrySource: "estimated",
-      confidence: 0.76
-    },
-    {
-      id: createId("metric-landing"),
-      sessionId,
-      phase: "landing",
-      frameTime: 4.8,
-      torsoAngle: 44,
-      hipAngle: 98,
-      kneeAngle: 114,
-      elbowAngle: 140,
-      bikePitchAngle: -2,
-      floorAngle: -3,
-      tireBaselineAngle: -2,
-      landingAlignmentAngle: 4,
-      geometrySource: "estimated",
-      confidence: 0.78
-    }
-  ];
+const calibrationPhases: Array<{ phase: MetricPhase; ratio: number }> = [
+  { phase: "approach", ratio: 0.12 },
+  { phase: "compression", ratio: 0.32 },
+  { phase: "takeoff", ratio: 0.48 },
+  { phase: "air", ratio: 0.66 },
+  { phase: "landing", ratio: 0.86 }
+];
+
+// Empty frames for manual calibration only. All angles stay 0 and geometrySource
+// stays unset ("Calibration required") until the rider places the geometry lines.
+export function createCalibrationMetrics(session: RideSession): PoseMetric[] {
+  const video = session.video;
+  const start = video?.trimStartSeconds ?? 0;
+  const end = video?.trimEndSeconds ?? video?.durationSeconds ?? 6;
+  const window = Math.max(0.5, end - start);
+
+  return calibrationPhases.map(({ phase, ratio }) => ({
+    id: createId(`metric-${phase}`),
+    sessionId: session.id,
+    phase,
+    frameTime: Number((start + window * ratio).toFixed(2)),
+    torsoAngle: 0,
+    hipAngle: 0,
+    kneeAngle: 0,
+    elbowAngle: 0,
+    bikePitchAngle: 0,
+    confidence: 0
+  }));
 }
 
 export function createRuleBasedReport(session: RideSession, metrics: PoseMetric[]): CoachingReport {
@@ -353,24 +299,6 @@ export function createRuleBasedReport(session: RideSession, metrics: PoseMetric[
       "Film again from the same side angle and compare takeoff frame time."
     ],
     createdAt: new Date().toISOString()
-  };
-}
-
-export function completeLocalAnalysis(session: RideSession): RideSession {
-  const metrics = createJumpMetrics(session.id);
-  return {
-    ...session,
-    status: "complete",
-    metrics,
-    job: session.job
-      ? {
-          ...session.job,
-          status: "completed",
-          progress: 1,
-          finishedAt: new Date().toISOString()
-        }
-      : undefined,
-    report: createRuleBasedReport(session, metrics)
   };
 }
 

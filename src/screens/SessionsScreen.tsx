@@ -54,9 +54,7 @@ export function SessionsScreen({ store }: SessionsScreenProps) {
           <Card style={styles.detailCard}>
             <View style={styles.detailHeader}>
               <View style={styles.detailTitle}>
-                <Chip tone={active.status === "complete" ? "green" : active.status === "reference" ? "neutral" : "amber"}>
-                  {active.status === "complete" ? "Report ready" : active.status === "reference" ? "Reference" : "Analyzing"}
-                </Chip>
+                <Chip tone={getSessionTone(active)}>{getSessionHeadline(active)}</Chip>
                 <Heading level={2}>{active.title}</Heading>
                 <AppText color={tokens.textMuted} size={13}>
                   {getSkillLabel(active.skillType)} {active.source === "video_link" ? "link" : "clip"}
@@ -283,11 +281,20 @@ function ReportColumn({ title, items, tone }: { title: string; items: string[]; 
 
 function getSessionTone(session: RideSession): "green" | "amber" | "red" | "neutral" {
   if (session.status === "reference") return "neutral";
+  if (session.status === "analysis_failed") return "red";
   return getJobTone(session.job?.status);
+}
+
+function getSessionHeadline(session: RideSession): string {
+  if (session.status === "complete") return "Report ready";
+  if (session.status === "reference") return "Reference";
+  if (session.status === "analysis_failed") return "Analysis failed";
+  return "Analyzing";
 }
 
 function getSessionStatusLabel(session: RideSession): string {
   if (session.status === "reference") return "reference";
+  if (session.status === "analysis_failed") return "failed";
   return session.job?.status ?? "draft";
 }
 

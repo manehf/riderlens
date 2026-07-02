@@ -1,0 +1,80 @@
+{
+  "description": "Shared geometry fixtures. src/services/analysis.ts (vitest) and worker/app/main.py (pytest) must both produce these exact values so the duplicated angle math cannot drift.",
+  "lineAngle": [
+    { "name": "horizontal right", "line": { "start": { "x": 0, "y": 0 }, "end": { "x": 1, "y": 0 } }, "expected": 0 },
+    { "name": "45 down-right (screen coords)", "line": { "start": { "x": 0, "y": 0 }, "end": { "x": 1, "y": 1 } }, "expected": 45 },
+    { "name": "45 up-right (screen coords)", "line": { "start": { "x": 0, "y": 1 }, "end": { "x": 1, "y": 0 } }, "expected": -45 },
+    { "name": "horizontal left", "line": { "start": { "x": 1, "y": 0 }, "end": { "x": 0, "y": 0 } }, "expected": 180 },
+    { "name": "vertical down", "line": { "start": { "x": 0, "y": 0 }, "end": { "x": 0, "y": 1 } }, "expected": 90 }
+  ],
+  "angleBetweenLines": [
+    {
+      "name": "45 vs horizontal",
+      "first": { "start": { "x": 0, "y": 0 }, "end": { "x": 1, "y": 1 } },
+      "second": { "start": { "x": 0, "y": 0 }, "end": { "x": 1, "y": 0 } },
+      "expected": 45
+    },
+    {
+      "name": "opposite directions are parallel",
+      "first": { "start": { "x": 1, "y": 0 }, "end": { "x": 0, "y": 0 } },
+      "second": { "start": { "x": 0, "y": 0 }, "end": { "x": 1, "y": 0 } },
+      "expected": 0
+    },
+    {
+      "name": "perpendicular",
+      "first": { "start": { "x": 0, "y": 0 }, "end": { "x": 0, "y": 1 } },
+      "second": { "start": { "x": 0, "y": 0 }, "end": { "x": 1, "y": 0 } },
+      "expected": 90
+    },
+    {
+      "name": "crossing diagonals",
+      "first": { "start": { "x": 0, "y": 0 }, "end": { "x": 1, "y": 1 } },
+      "second": { "start": { "x": 0, "y": 1 }, "end": { "x": 1, "y": 0 } },
+      "expected": 90
+    }
+  ],
+  "jointAngle": [
+    {
+      "name": "right angle at joint",
+      "first": { "x": 0, "y": 0 },
+      "joint": { "x": 0, "y": 1 },
+      "second": { "x": 1, "y": 1 },
+      "expected": 90
+    },
+    {
+      "name": "straight leg",
+      "first": { "x": 0, "y": 0 },
+      "joint": { "x": 0.5, "y": 0.5 },
+      "second": { "x": 1, "y": 1 },
+      "expected": 180
+    },
+    {
+      "name": "degenerate zero-length segment",
+      "first": { "x": 0.5, "y": 0.5 },
+      "joint": { "x": 0.5, "y": 0.5 },
+      "second": { "x": 1, "y": 1 },
+      "expected": 0
+    },
+    {
+      "name": "45 degrees at origin",
+      "first": { "x": 1, "y": 0 },
+      "joint": { "x": 0, "y": 0 },
+      "second": { "x": 1, "y": 1 },
+      "expected": 45
+    }
+  ],
+  "normalizeAngle": [
+    { "input": 0, "expected": 0 },
+    { "input": 180, "expected": 180 },
+    { "input": -180, "expected": -180 },
+    { "input": 270, "expected": -90 },
+    { "input": -270, "expected": 90 },
+    { "input": 540, "expected": 180 },
+    { "input": -540, "expected": -180 }
+  ],
+  "clamp": [
+    { "value": 5, "min": 0, "max": 1, "expected": 1 },
+    { "value": -1, "min": 0, "max": 1, "expected": 0 },
+    { "value": 0.5, "min": 0, "max": 1, "expected": 0.5 }
+  ]
+}

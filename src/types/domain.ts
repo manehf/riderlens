@@ -7,7 +7,7 @@ export type SkillType =
 
 export type JobStatus = "queued" | "processing" | "completed" | "failed";
 
-export type SessionStatus = "draft" | "uploaded" | "analyzing" | "complete" | "reference";
+export type SessionStatus = "draft" | "uploaded" | "analyzing" | "analysis_failed" | "complete" | "reference";
 
 export type MetricPhase = "approach" | "compression" | "takeoff" | "air" | "landing";
 export type GeometrySource = "detected" | "manual" | "estimated";

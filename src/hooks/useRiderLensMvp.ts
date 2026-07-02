@@ -6,7 +6,7 @@ import { Alert, Share } from "react-native";
 import { demoGarage } from "../data/demoData";
 import {
   applyManualFrameGeometry,
-  completeLocalAnalysis,
+  createCalibrationMetrics,
   createId,
   createLinkReferenceSession,
   createQueuedSession,
@@ -40,6 +40,8 @@ export type RiderLensStore = {
   updatePendingClip: (updates: Partial<Pick<ClipReview, "trimStartSeconds" | "trimEndSeconds" | "cropPreset">>) => void;
   confirmPendingClip: () => Promise<void>;
   cancelPendingClip: () => void;
+  retryAnalysis: (sessionId: string) => void;
+  startManualCalibration: (sessionId: string) => void;
   calibrateSessionFrame: (sessionId: string, metricId: string, geometry: FrameGeometry, frameTime?: number) => void;
   uploadVideoFromLibrary: () => Promise<void>;
   shareSessionReport: (sessionId: string) => Promise<void>;
@@ -166,7 +168,14 @@ export function useRiderLensMvp(): RiderLensStore {
         timers.current.push(
           setTimeout(() => {
             updateSession(sessionId, (session) => {
-              if (session.status === "complete" || session.job?.status === "completed") return session;
+              if (
+                session.status === "complete" ||
+                session.status === "analysis_failed" ||
+                session.job?.status === "completed" ||
+                session.job?.status === "failed"
+              ) {
+                return session;
+              }
               return {
                 ...session,
                 status: "analyzing",
@@ -206,17 +215,22 @@ export function useRiderLensMvp(): RiderLensStore {
     [updateSession]
   );
 
-  const runLocalJob = useCallback(
-    (sessionId: string) => {
-      scheduleJobProgress(sessionId);
-
-      timers.current.push(
-        setTimeout(() => {
-          updateSession(sessionId, completeLocalAnalysis);
-        }, 2100)
-      );
+  const failAnalysis = useCallback(
+    (sessionId: string, message: string) => {
+      updateSession(sessionId, (session) => ({
+        ...session,
+        status: "analysis_failed",
+        job: session.job
+          ? {
+              ...session.job,
+              status: "failed",
+              errorMessage: message,
+              finishedAt: new Date().toISOString()
+            }
+          : session.job
+      }));
     },
-    [scheduleJobProgress, updateSession]
+    [updateSession]
   );
 
   const runMediaPipeJob = useCallback(
@@ -229,17 +243,53 @@ export function useRiderLensMvp(): RiderLensStore {
             completeWithWorkerResult(session.id, result);
             return;
           }
-          updateSession(session.id, completeLocalAnalysis);
+          failAnalysis(
+            session.id,
+            "No analysis worker is configured. Set EXPO_PUBLIC_ANALYSIS_WORKER_URL, restart Expo, then retry."
+          );
         })
         .catch((error: Error) => {
-          updateSession(session.id, completeLocalAnalysis);
-          Alert.alert(
-            "MediaPipe analysis unavailable",
-            `${error.message || "The analysis worker could not process this clip."} You can still use manual calibration and try again later.`
-          );
+          failAnalysis(session.id, error.message || "The analysis worker could not process this clip.");
         });
     },
-    [completeWithWorkerResult, scheduleJobProgress, updateSession]
+    [completeWithWorkerResult, failAnalysis, scheduleJobProgress]
+  );
+
+  const retryAnalysis = useCallback(
+    (sessionId: string) => {
+      const session = sessions.find((item) => item.id === sessionId);
+      if (!session || session.source !== "video_upload" || !session.video) return;
+
+      const requeued: RideSession = {
+        ...session,
+        status: "analyzing",
+        metrics: [],
+        report: undefined,
+        job: {
+          id: createId("job"),
+          sessionId: session.id,
+          status: "queued",
+          progress: 0,
+          startedAt: new Date().toISOString()
+        }
+      };
+      updateSession(sessionId, () => requeued);
+      runMediaPipeJob(requeued);
+    },
+    [runMediaPipeJob, sessions, updateSession]
+  );
+
+  const startManualCalibration = useCallback(
+    (sessionId: string) => {
+      updateSession(sessionId, (session) => {
+        if (session.metrics.length > 0) return session;
+        return {
+          ...session,
+          metrics: createCalibrationMetrics(session)
+        };
+      });
+    },
+    [updateSession]
   );
 
   const analyzeVideoLink = useCallback(
@@ -318,9 +368,13 @@ export function useRiderLensMvp(): RiderLensStore {
         const metrics = session.metrics.map((metric) =>
           metric.id === metricId ? applyManualFrameGeometry(metric, geometry, frameTime) : metric
         );
+        const hasVerifiedFrame = metrics.some(
+          (metric) => metric.geometrySource === "manual" || metric.geometrySource === "detected"
+        );
 
         return {
           ...session,
+          status: hasVerifiedFrame ? "complete" : session.status,
           metrics,
           report: createRuleBasedReport(session, metrics)
         };
@@ -434,6 +488,8 @@ export function useRiderLensMvp(): RiderLensStore {
     updatePendingClip,
     confirmPendingClip,
     cancelPendingClip,
+    retryAnalysis,
+    startManualCalibration,
     calibrateSessionFrame,
     uploadVideoFromLibrary,
     shareSessionReport,

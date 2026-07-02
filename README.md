@@ -23,7 +23,7 @@ Implemented in the Expo app:
 - Pre-upload clip review with trim window controls and crop/framing presets.
 - Uploaded clip persistence in the local app video library.
 - FastAPI MediaPipe worker integration for uploaded regular-jump clips.
-- Local fallback analysis plus manual frame calibration when the worker is unavailable or geometry is uncertain.
+- Honest failure handling: when the worker is unavailable or a clip cannot be analyzed, the session is marked failed with retry and manual frame calibration — no placeholder metrics.
 - Analysis preview with video frame background, pose/geometry overlays, frame time, confidence state, and key metric tiles.
 - Sessions tab with saved uploaded analyses and reference links.
 - External video links saved as reference-only sessions. They do not create fake automatic geometry.

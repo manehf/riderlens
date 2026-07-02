@@ -59,7 +59,8 @@ export function CoachScreen({ store }: CoachScreenProps) {
   const hasAnalysisPreview = Boolean(session && session.metrics.length > 0);
   const progress = session?.job?.progress ?? 0;
   const jobStatus = session?.job?.status ?? "completed";
-  const complete = jobStatus === "completed";
+  const failed = session?.status === "analysis_failed" || jobStatus === "failed";
+  const complete = !failed && jobStatus === "completed";
   const debugRegularJumpVideo = debugVideoReferences.find((video) => video.skillType === "regular_jump");
 
   async function openCamera() {
@@ -162,22 +163,48 @@ export function CoachScreen({ store }: CoachScreenProps) {
         {session?.job ? (
           <Card>
             <View style={styles.splitRow}>
-              <View>
+              <View style={styles.jobInfo}>
                 <AppText weight="bold">Analysis job</AppText>
                 <AppText color={tokens.textMuted} size={13}>
-                  {complete ? "Report ready" : "Extracting frames and estimating key moments"}
+                  {failed
+                    ? session.job.errorMessage ?? "The analysis worker could not process this clip."
+                    : complete
+                      ? "Report ready"
+                      : "Extracting frames and estimating key moments"}
                 </AppText>
               </View>
-              <Chip tone={complete ? "green" : "amber"}>{complete ? "Complete" : "Processing"}</Chip>
+              <Chip tone={failed ? "red" : complete ? "green" : "amber"}>
+                {failed ? "Failed" : complete ? "Complete" : "Processing"}
+              </Chip>
             </View>
-            <View style={styles.progressTrack}>
-              <View style={[styles.progressFill, { width: `${Math.max(8, Math.round(progress * 100))}%` }]} />
-            </View>
-            <View style={styles.progressLabel}>
-              <NumberText weight="bold" color={tokens.green}>
-                {Math.round(progress * 100)}%
-              </NumberText>
-            </View>
+            {failed ? (
+              <View style={styles.actionGrid}>
+                <Button icon={RotateCcw} onPress={() => store.retryAnalysis(session.id)} style={styles.actionButton}>
+                  Retry analysis
+                </Button>
+                {session.metrics.length === 0 ? (
+                  <Button
+                    icon={Crosshair}
+                    variant="secondary"
+                    onPress={() => store.startManualCalibration(session.id)}
+                    style={styles.actionButton}
+                  >
+                    Calibrate manually
+                  </Button>
+                ) : null}
+              </View>
+            ) : (
+              <>
+                <View style={styles.progressTrack}>
+                  <View style={[styles.progressFill, { width: `${Math.max(8, Math.round(progress * 100))}%` }]} />
+                </View>
+                <View style={styles.progressLabel}>
+                  <NumberText weight="bold" color={tokens.green}>
+                    {Math.round(progress * 100)}%
+                  </NumberText>
+                </View>
+              </>
+            )}
           </Card>
         ) : null}
 
@@ -1456,6 +1483,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     gap: spacing.md
+  },
+  jobInfo: {
+    flex: 1
   },
   progressTrack: {
     height: 8,

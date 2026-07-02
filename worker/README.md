@@ -2,7 +2,7 @@
 
 FastAPI MediaPipe/OpenCV worker for the RiderLens regular-jump MVP.
 
-The worker exists because Expo should not do heavy video processing on-device for the first MVP. The mobile app posts uploaded clips to this service when `EXPO_PUBLIC_ANALYSIS_WORKER_URL` is set. If the worker is unavailable, the app falls back to local placeholder metrics and manual calibration.
+The worker exists because Expo should not do heavy video processing on-device for the first MVP. The mobile app posts uploaded clips to this service when `EXPO_PUBLIC_ANALYSIS_WORKER_URL` is set. If the worker is unavailable, the app marks the session as failed and offers retry plus manual calibration — it does not invent metrics.
 
 ## Scope
 
@@ -135,6 +135,25 @@ Best clips:
 - Good light.
 - Stable camera.
 - Takeoff and landing visible.
+
+## Debug Snapshots
+
+Set `RIDERLENS_SNAPSHOT_DIR` to archive every analysis (request metadata + full response JSON) for debugging real clips:
+
+```bash
+RIDERLENS_SNAPSHOT_DIR=./snapshots uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
+
+Each analysis writes `<utc-timestamp>-<session-id>.json` into that directory. Leave the variable unset to disable (default). Snapshot failures never fail an analysis.
+
+## Tests
+
+```bash
+pip install -r requirements-dev.txt
+python -m pytest tests/
+```
+
+The geometry tests share fixture values with the app's vitest suite (`tests/fixtures/geometry.json` at the repo root) so the duplicated TypeScript/Python angle math cannot drift.
 
 ## Optional Supabase Variables
 

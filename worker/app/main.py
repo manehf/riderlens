@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import json
 import math
 import os
+import re
 import shutil
 import tempfile
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Literal
 
 os.environ.setdefault("MPLCONFIGDIR", os.path.join(tempfile.gettempdir(), "riderlens-matplotlib"))
@@ -226,7 +229,45 @@ def analyze_regular_jump_file(
     end_seconds = trim_end_seconds if trim_end_seconds is not None else duration_seconds
     selected = select_phase_frames(pose_frames, trim_start_seconds, end_seconds)
     metrics = [build_metric(session_id, phase, pose_frame, fps) for phase, pose_frame in selected]
-    return AnalyzeResponse(status="completed", metrics=metrics, report=build_report(metrics))
+    response = AnalyzeResponse(status="completed", metrics=metrics, report=build_report(metrics))
+    save_debug_snapshot(
+        session_id,
+        {
+            "videoPath": video_path,
+            "trimStartSeconds": trim_start_seconds,
+            "trimEndSeconds": trim_end_seconds,
+            "cropPreset": crop_preset,
+            "fps": fps,
+            "durationSeconds": duration_seconds,
+            "poseFrameCount": len(pose_frames),
+        },
+        response,
+    )
+    return response
+
+
+def save_debug_snapshot(session_id: str, request_info: dict, response: AnalyzeResponse) -> None:
+    """Archive request metadata + full response JSON for debugging real clips.
+
+    Enabled only when RIDERLENS_SNAPSHOT_DIR is set. Snapshots must never fail an analysis.
+    """
+    snapshot_dir = os.getenv("RIDERLENS_SNAPSHOT_DIR")
+    if not snapshot_dir:
+        return
+    try:
+        os.makedirs(snapshot_dir, exist_ok=True)
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+        safe_session = re.sub(r"[^A-Za-z0-9_-]", "_", session_id)[:64]
+        path = os.path.join(snapshot_dir, f"{stamp}-{safe_session}.json")
+        payload = {
+            "savedAt": datetime.now(timezone.utc).isoformat(),
+            "request": request_info,
+            "response": response.model_dump(),
+        }
+        with open(path, "w", encoding="utf-8") as snapshot_file:
+            json.dump(payload, snapshot_file, indent=2)
+    except OSError:
+        pass
 
 
 def extract_pose_frames(video_path: str, trim_start_seconds: float, trim_end_seconds: float | None) -> tuple[list[PoseFrame], float, float]:
@@ -311,11 +352,14 @@ def build_metric(session_id: str, phase: Phase, pose_frame: PoseFrame, fps: floa
     ankle = landmark_point(landmarks, 27 if side == "left" else 28)
     foot = landmark_point(landmarks, 31 if side == "left" else 32)
 
-    floor = detect_floor_line(pose_frame.frame)
+    detected_floor = detect_floor_line(pose_frame.frame)
+    floor = detected_floor or estimated_floor_line()
     detected_tire_baseline = detect_tire_baseline(pose_frame.frame)
     tire_baseline = detected_tire_baseline or estimated_tire_baseline(ankle, foot)
     landing = floor
-    geometry_source: GeometrySource = "detected"
+    geometry_source: GeometrySource = (
+        "detected" if detected_floor is not None and detected_tire_baseline is not None else "estimated"
+    )
     geometry = FrameGeometry(
         floor=floor,
         tireBaseline=tire_baseline,
@@ -404,7 +448,7 @@ def landmark_point(landmarks, index: int) -> FramePoint:
     return FramePoint(x=clamp(float(landmark.x), 0, 1), y=clamp(float(landmark.y), 0, 1))
 
 
-def detect_floor_line(frame) -> FrameLine:
+def detect_floor_line(frame) -> FrameLine | None:
     height, width = frame.shape[:2]
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     gray = cv2.GaussianBlur(gray, (5, 5), 0)
@@ -427,8 +471,7 @@ def detect_floor_line(frame) -> FrameLine:
                 best = (x1, y1, x2, y2)
 
     if best is None:
-        y = 0.88
-        return FrameLine(start=FramePoint(x=0.08, y=y), end=FramePoint(x=0.92, y=y))
+        return None
 
     x1, y1, x2, y2 = best
     return FrameLine(
@@ -480,6 +523,11 @@ def detect_tire_baseline(frame) -> FrameLine | None:
         start=FramePoint(x=clamp(first[0] / width, 0, 1), y=clamp(first[1] / height, 0, 1)),
         end=FramePoint(x=clamp(second[0] / width, 0, 1), y=clamp(second[1] / height, 0, 1)),
     )
+
+
+def estimated_floor_line() -> FrameLine:
+    y = 0.88
+    return FrameLine(start=FramePoint(x=0.08, y=y), end=FramePoint(x=0.92, y=y))
 
 
 def estimated_tire_baseline(ankle: FramePoint, foot: FramePoint) -> FrameLine:
