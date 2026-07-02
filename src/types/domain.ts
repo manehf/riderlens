@@ -7,7 +7,7 @@ export type SkillType =
 
 export type JobStatus = "queued" | "processing" | "completed" | "failed";
 
-export type SessionStatus = "draft" | "uploaded" | "analyzing" | "analysis_failed" | "complete" | "reference";
+export type SessionStatus = "draft" | "uploaded" | "analyzing" | "analysis_failed" | "complete";
 
 export type MetricPhase = "approach" | "compression" | "takeoff" | "air" | "landing";
 export type GeometrySource = "detected" | "manual" | "estimated";
@@ -33,10 +33,6 @@ export type FrameGeometry = {
 
 export type PermissionLevel = "view" | "comment" | "edit";
 
-export type SessionSource = "video_upload" | "video_link";
-
-export type VideoLinkProvider = "youtube" | "vimeo" | "instagram" | "tiktok" | "other";
-
 export type VideoCropPreset =
   | "full_side_view"
   | "rider_centered"
@@ -61,14 +57,6 @@ export type VideoAsset = {
   trimStartSeconds: number;
   trimEndSeconds: number;
   cropPreset: VideoCropPreset;
-  createdAt: string;
-};
-
-export type VideoLinkReference = {
-  url: string;
-  provider: VideoLinkProvider;
-  title?: string;
-  notes?: string;
   createdAt: string;
 };
 
@@ -115,11 +103,9 @@ export type RideSession = {
   userId: string;
   skillType: SkillType;
   status: SessionStatus;
-  source: SessionSource;
   title: string;
   createdAt: string;
   video?: VideoAsset;
-  linkReference?: VideoLinkReference;
   job?: AnalysisJob;
   metrics: PoseMetric[];
   report?: CoachingReport;

@@ -8,11 +8,9 @@ import {
   applyManualFrameGeometry,
   createCalibrationMetrics,
   createId,
-  createLinkReferenceSession,
   createQueuedSession,
   createRuleBasedReport,
-  formatReportShareText,
-  isSupportedVideoLink
+  formatReportShareText
 } from "../services/analysis";
 import { createSetupShareText } from "../services/setupShare";
 import { analyzeRegularJumpWithWorker, type WorkerAnalysisResult } from "../services/analysisWorker";
@@ -35,7 +33,6 @@ export type RiderLensStore = {
   selectSession: (sessionId: string) => void;
   selectedSkill: SkillType;
   setSelectedSkill: (skill: SkillType) => void;
-  analyzeVideoLink: (url: string) => boolean;
   prepareClipFromUri: (uri: string, durationSeconds?: number) => void;
   updatePendingClip: (updates: Partial<Pick<ClipReview, "trimStartSeconds" | "trimEndSeconds" | "cropPreset">>) => void;
   confirmPendingClip: () => Promise<void>;
@@ -56,42 +53,9 @@ function isSeedSession(session: RideSession): boolean {
   return session.id.startsWith("session-demo") || Boolean(session.video?.rawVideoUri.startsWith("demo://"));
 }
 
+// Drops legacy demo seeds and removed video-link reference sessions from persisted state.
 function getUserSessions(sessions: RideSession[]): RideSession[] {
-  return sessions.filter((session) => !isSeedSession(session)).map(normalizeStoredSession);
-}
-
-function normalizeStoredSession(session: RideSession): RideSession {
-  if (session.source !== "video_link") {
-    return session;
-  }
-
-  const title = session.title.includes("reference") ? session.title : session.title.replace("jump analysis", "reference");
-  const notes = "Reference link only. Upload the original clip file for MediaPipe frame geometry.";
-  if (
-    session.status === "reference" &&
-    session.title === title &&
-    !session.job &&
-    session.metrics.length === 0 &&
-    !session.report &&
-    session.linkReference?.notes === notes
-  ) {
-    return session;
-  }
-
-  return {
-    ...session,
-    status: "reference",
-    title,
-    job: undefined,
-    metrics: [],
-    report: undefined,
-    linkReference: session.linkReference
-      ? {
-          ...session.linkReference,
-          notes
-        }
-      : undefined
-  };
+  return sessions.filter((session) => !isSeedSession(session) && Boolean(session.video));
 }
 
 function resolveActiveSessionId(sessions: RideSession[], activeSessionId?: string): string {
@@ -131,15 +95,6 @@ export function useRiderLensMvp(): RiderLensStore {
     const payload: PersistedState = { sessions, garage, activeSessionId };
     AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(payload)).catch(() => undefined);
   }, [activeSessionId, garage, hydrated, sessions]);
-
-  useEffect(() => {
-    if (!hydrated) return;
-
-    setSessions((current) => {
-      const normalized = current.map(normalizeStoredSession);
-      return normalized.some((session, index) => session !== current[index]) ? normalized : current;
-    });
-  }, [hydrated]);
 
   useEffect(() => {
     return () => {
@@ -258,7 +213,7 @@ export function useRiderLensMvp(): RiderLensStore {
   const retryAnalysis = useCallback(
     (sessionId: string) => {
       const session = sessions.find((item) => item.id === sessionId);
-      if (!session || session.source !== "video_upload" || !session.video) return;
+      if (!session || !session.video) return;
 
       const requeued: RideSession = {
         ...session,
@@ -290,23 +245,6 @@ export function useRiderLensMvp(): RiderLensStore {
       });
     },
     [updateSession]
-  );
-
-  const analyzeVideoLink = useCallback(
-    (url: string) => {
-      const trimmed = url.trim();
-      if (!isSupportedVideoLink(trimmed)) {
-        Alert.alert("Invalid link", "Paste a full video URL, such as a YouTube link starting with https://.");
-        return false;
-      }
-
-      const session = createLinkReferenceSession(selectedSkill, trimmed);
-      setSessions((current) => [session, ...current]);
-      setActiveSessionId(session.id);
-      Alert.alert("Reference saved", "Upload the original video file when you want MediaPipe geometry and jump-frame analysis.");
-      return true;
-    },
-    [selectedSkill]
   );
 
   const prepareClipFromUri = useCallback((uri: string, durationSeconds = 6) => {
@@ -483,7 +421,6 @@ export function useRiderLensMvp(): RiderLensStore {
     selectSession: setActiveSessionId,
     selectedSkill,
     setSelectedSkill,
-    analyzeVideoLink,
     prepareClipFromUri,
     updatePendingClip,
     confirmPendingClip,

@@ -45,7 +45,7 @@ export async function analyzeRegularJumpWithWorker(session: RideSession): Promis
   const workerUrl = getAnalysisWorkerUrl();
   const video = session.video;
 
-  if (!workerUrl || !video || session.source !== "video_upload") {
+  if (!workerUrl || !video) {
     return undefined;
   }
 

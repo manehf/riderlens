@@ -7,7 +7,6 @@ import {
   Crop,
   Crosshair,
   FileVideo,
-  Link2,
   RotateCcw,
   Scissors,
   Share2,
@@ -19,7 +18,6 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  TextInput,
   View,
   type GestureResponderEvent,
   type LayoutChangeEvent
@@ -27,7 +25,6 @@ import {
 
 import { AnalysisFrames, FrameGeometryOverlay, FrameMediaBackground } from "../components/AnalysisFrames";
 import { AppText, BrandHeader, Button, Card, Chip, Heading, MetricTile, NumberText, SectionHeader } from "../components/ui";
-import { debugVideoReferences } from "../data/debugVideos";
 import { spacing, tokens } from "../theme/tokens";
 import type { RiderLensStore } from "../hooks/useRiderLensMvp";
 import { getFrameMediaSource, getGeometrySourceLabel, hasVerifiedGeometry, type FrameMediaSource } from "../services/analysis";
@@ -46,9 +43,6 @@ type CoachScreenProps = {
 
 export function CoachScreen({ store }: CoachScreenProps) {
   const [cameraOpen, setCameraOpen] = useState(false);
-  const [uploadOpen, setUploadOpen] = useState(false);
-  const [linkMode, setLinkMode] = useState(false);
-  const [videoLink, setVideoLink] = useState("");
   const [recording, setRecording] = useState(false);
   const [calibrationMetricId, setCalibrationMetricId] = useState<string | undefined>();
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
@@ -61,7 +55,6 @@ export function CoachScreen({ store }: CoachScreenProps) {
   const jobStatus = session?.job?.status ?? "completed";
   const failed = session?.status === "analysis_failed" || jobStatus === "failed";
   const complete = !failed && jobStatus === "completed";
-  const debugRegularJumpVideo = debugVideoReferences.find((video) => video.skillType === "regular_jump");
 
   async function openCamera() {
     if (!cameraPermission?.granted) {
@@ -91,24 +84,6 @@ export function CoachScreen({ store }: CoachScreenProps) {
     cameraRef.current?.stopRecording?.();
   }
 
-  async function uploadVideoFile() {
-    setUploadOpen(false);
-    setLinkMode(false);
-    await store.uploadVideoFromLibrary();
-  }
-
-  function closeUploadModal() {
-    setUploadOpen(false);
-    setLinkMode(false);
-  }
-
-  function analyzeVideoLink() {
-    const analyzing = store.analyzeVideoLink(videoLink);
-    if (!analyzing) return;
-    setVideoLink("");
-    closeUploadModal();
-  }
-
   return (
     <View style={styles.root}>
       <BrandHeader subtitle="Vision coach" />
@@ -123,7 +98,7 @@ export function CoachScreen({ store }: CoachScreenProps) {
           <Button icon={Camera} onPress={openCamera} style={styles.actionButton}>
             Record
           </Button>
-          <Button icon={Upload} variant="secondary" onPress={() => setUploadOpen(true)} style={styles.actionButton}>
+          <Button icon={Upload} variant="secondary" onPress={() => store.uploadVideoFromLibrary()} style={styles.actionButton}>
             Upload
           </Button>
         </View>
@@ -259,19 +234,6 @@ export function CoachScreen({ store }: CoachScreenProps) {
         </Card>
       </ScrollView>
 
-      <UploadSourceModal
-        visible={uploadOpen}
-        linkMode={linkMode}
-        videoLink={videoLink}
-        onChangeVideoLink={setVideoLink}
-        onClose={closeUploadModal}
-        onShowLink={() => setLinkMode(true)}
-        onShowChoices={() => setLinkMode(false)}
-        onUploadFile={uploadVideoFile}
-        onAnalyzeLink={analyzeVideoLink}
-        debugVideoUrl={__DEV__ ? debugRegularJumpVideo?.url : undefined}
-      />
-
       {session && calibrationMetric ? (
         <ManualCalibrationModal
           visible={Boolean(calibrationMetricId)}
@@ -292,133 +254,7 @@ export function CoachScreen({ store }: CoachScreenProps) {
 
 function getLatestRegularJumpAnalysis(sessions: RideSession[]): RideSession | undefined {
   return sessions.find(
-    (session) =>
-      session.skillType === "regular_jump" &&
-      session.source === "video_upload" &&
-      !session.video?.rawVideoUri.startsWith("demo://")
-  );
-}
-
-type UploadSourceModalProps = {
-  visible: boolean;
-  linkMode: boolean;
-  videoLink: string;
-  onChangeVideoLink: (value: string) => void;
-  onClose: () => void;
-  onShowLink: () => void;
-  onShowChoices: () => void;
-  onUploadFile: () => void;
-  onAnalyzeLink: () => void;
-  debugVideoUrl?: string;
-};
-
-function UploadSourceModal({
-  visible,
-  linkMode,
-  videoLink,
-  onChangeVideoLink,
-  onClose,
-  onShowLink,
-  onShowChoices,
-  onUploadFile,
-  onAnalyzeLink,
-  debugVideoUrl
-}: UploadSourceModalProps) {
-  return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <View style={styles.modalOverlay}>
-        <Card style={styles.modalCard}>
-          <View style={styles.modalHeader}>
-            <View style={styles.modalTitleBlock}>
-              <Chip tone={linkMode ? "cyan" : "electric"} icon={linkMode ? Link2 : Upload}>
-                {linkMode ? "Video link" : "Upload"}
-              </Chip>
-              <Heading level={3}>{linkMode ? "Paste video link" : "Choose source"}</Heading>
-            </View>
-          </View>
-
-          {linkMode ? (
-            <>
-              <TextInput
-                value={videoLink}
-                onChangeText={onChangeVideoLink}
-                autoCapitalize="none"
-                autoCorrect={false}
-                keyboardType="url"
-                placeholder="https://www.youtube.com/watch?v=..."
-                placeholderTextColor={tokens.textMuted}
-                style={styles.linkInput}
-              />
-              <AppText color={tokens.textMuted} size={13}>
-                Save a video link as a reference. Uploading the original file is required for MediaPipe geometry.
-              </AppText>
-              {debugVideoUrl ? (
-                <Button
-                  variant="secondary"
-                  icon={Link2}
-                  onPress={() => onChangeVideoLink(debugVideoUrl)}
-                  style={styles.debugSampleButton}
-                >
-                  Debug sample
-                </Button>
-              ) : null}
-              <View style={styles.actionGrid}>
-                <Button icon={Link2} onPress={onAnalyzeLink} disabled={!videoLink.trim()} style={styles.actionButton}>
-                  Save Reference
-                </Button>
-                <Button variant="secondary" onPress={onShowChoices} style={styles.actionButton}>
-                  Back
-                </Button>
-              </View>
-            </>
-          ) : (
-            <>
-              <AppText color={tokens.textMuted} size={14} style={styles.modalBody}>
-                Choose a video file for analysis or save a link as a reference.
-              </AppText>
-              <View style={styles.sourceList}>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="Upload video file"
-                  onPress={onUploadFile}
-                  style={({ pressed }) => [styles.sourceOption, pressed && styles.sourceOptionPressed]}
-                >
-                  <View style={styles.sourceIcon}>
-                    <FileVideo color={tokens.green} size={20} />
-                  </View>
-                  <View style={styles.sourceText}>
-                    <AppText weight="bold">Video file</AppText>
-                    <AppText color={tokens.textMuted} size={13}>
-                      Analyze jump frames, body lines, and angles.
-                    </AppText>
-                  </View>
-                </Pressable>
-
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="Paste video link"
-                  onPress={onShowLink}
-                  style={({ pressed }) => [styles.sourceOption, pressed && styles.sourceOptionPressed]}
-                >
-                  <View style={styles.sourceIcon}>
-                    <Link2 color={tokens.green} size={20} />
-                  </View>
-                  <View style={styles.sourceText}>
-                    <AppText weight="bold">Video link</AppText>
-                    <AppText color={tokens.textMuted} size={13}>
-                      Save a YouTube or web video reference.
-                    </AppText>
-                  </View>
-                </Pressable>
-              </View>
-              <Button variant="secondary" onPress={onClose}>
-                Cancel
-              </Button>
-            </>
-          )}
-        </Card>
-      </View>
-    </Modal>
+    (session) => session.skillType === "regular_jump" && !session.video?.rawVideoUri.startsWith("demo://")
   );
 }
 
@@ -561,7 +397,7 @@ function AnalysisPreview({
 }) {
   const takeoff = session.metrics.find((metric) => metric.phase === "takeoff");
   const verifiedGeometry = hasVerifiedGeometry(takeoff);
-  const calibrationCopy = getCalibrationCopy(session);
+  const calibrationCopy = getCalibrationCopy();
 
   if (!takeoff) {
     return null;
@@ -619,17 +455,7 @@ function AnalysisPreview({
   );
 }
 
-function getCalibrationCopy(session: RideSession) {
-  if (session.source === "video_link") {
-    return {
-      previewTitle: "Reference link",
-      previewBody: "Upload the original clip for MediaPipe frame geometry.",
-      title: "Linked video is reference-only.",
-      body: "YouTube and web links only provide a thumbnail in this MVP. Upload the original video file to detect floor, tires, torso, knee, and landing geometry.",
-      action: "Calibrate thumbnail"
-    };
-  }
-
+function getCalibrationCopy() {
   return {
     previewTitle: "Calibration required",
     previewBody: "Mark key lines or check the worker before trusting angles.",
@@ -1073,72 +899,8 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between"
   },
-  linkInput: {
-    minHeight: 48,
-    borderWidth: 1,
-    borderColor: tokens.border,
-    borderRadius: 8,
-    backgroundColor: tokens.surface,
-    color: tokens.text,
-    fontFamily: tokens.fontUi,
-    fontSize: 15,
-    paddingHorizontal: spacing.md
-  },
-  modalOverlay: {
-    flex: 1,
-    justifyContent: "flex-end",
-    backgroundColor: "rgba(9, 13, 15, 0.54)",
-    padding: spacing.lg
-  },
-  modalCard: {
-    gap: spacing.lg
-  },
-  modalHeader: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    justifyContent: "space-between",
-    gap: spacing.md
-  },
   modalTitleBlock: {
     gap: spacing.sm
-  },
-  modalBody: {
-    lineHeight: 20
-  },
-  debugSampleButton: {
-    alignSelf: "flex-start",
-    minHeight: 40,
-    paddingHorizontal: spacing.md
-  },
-  sourceList: {
-    gap: spacing.sm
-  },
-  sourceOption: {
-    minHeight: 82,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.md,
-    borderWidth: 1,
-    borderColor: tokens.border,
-    borderRadius: 8,
-    backgroundColor: tokens.surface,
-    padding: spacing.md
-  },
-  sourceOptionPressed: {
-    borderColor: tokens.electric,
-    backgroundColor: tokens.electricSoft
-  },
-  sourceIcon: {
-    width: 42,
-    height: 42,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 999,
-    backgroundColor: tokens.electricSoft
-  },
-  sourceText: {
-    flex: 1,
-    gap: 3
   },
   clipReviewCard: {
     gap: spacing.lg

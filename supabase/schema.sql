@@ -13,8 +13,7 @@ create table if not exists public.sessions (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
   skill_type text not null check (skill_type in ('regular_jump', 'bunnyhop', 'manual', 'wheelie', 'drop')),
-  source text not null default 'video_upload' check (source in ('video_upload', 'video_link')),
-  status text not null default 'draft' check (status in ('draft', 'uploaded', 'analyzing', 'complete', 'reference')),
+  status text not null default 'draft' check (status in ('draft', 'uploaded', 'analyzing', 'analysis_failed', 'complete')),
   created_at timestamptz not null default now()
 );
 
@@ -28,16 +27,6 @@ create table if not exists public.videos (
   trim_start_seconds numeric(8, 3) not null default 0,
   trim_end_seconds numeric(8, 3),
   crop_preset text not null default 'full_side_view' check (crop_preset in ('full_side_view', 'rider_centered', 'takeoff_landing', 'vertical_social')),
-  created_at timestamptz not null default now()
-);
-
-create table if not exists public.video_link_references (
-  id uuid primary key default gen_random_uuid(),
-  session_id uuid not null references public.sessions(id) on delete cascade,
-  url text not null,
-  provider text not null default 'other' check (provider in ('youtube', 'vimeo', 'instagram', 'tiktok', 'other')),
-  title text,
-  notes text,
   created_at timestamptz not null default now()
 );
 
@@ -186,7 +175,6 @@ create table if not exists public.tool_measurements (
 
 create index if not exists sessions_user_id_idx on public.sessions(user_id);
 create index if not exists videos_session_id_idx on public.videos(session_id);
-create index if not exists video_link_references_session_id_idx on public.video_link_references(session_id);
 create index if not exists analysis_jobs_session_id_idx on public.analysis_jobs(session_id);
 create index if not exists pose_metrics_session_id_idx on public.pose_metrics(session_id);
 create index if not exists bikes_user_id_idx on public.bikes(user_id);
@@ -195,7 +183,6 @@ create index if not exists bike_setups_bike_id_idx on public.bike_setups(bike_id
 alter table public.profiles enable row level security;
 alter table public.sessions enable row level security;
 alter table public.videos enable row level security;
-alter table public.video_link_references enable row level security;
 alter table public.analysis_jobs enable row level security;
 alter table public.pose_metrics enable row level security;
 alter table public.reports enable row level security;
@@ -216,10 +203,6 @@ create policy "sessions owner all" on public.sessions for all using (auth.uid() 
 create policy "bikes owner all" on public.bikes for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
 create policy "videos session owner all" on public.videos for all
-using (exists (select 1 from public.sessions s where s.id = session_id and s.user_id = auth.uid()))
-with check (exists (select 1 from public.sessions s where s.id = session_id and s.user_id = auth.uid()));
-
-create policy "video links session owner all" on public.video_link_references for all
 using (exists (select 1 from public.sessions s where s.id = session_id and s.user_id = auth.uid()))
 with check (exists (select 1 from public.sessions s where s.id = session_id and s.user_id = auth.uid()));
 

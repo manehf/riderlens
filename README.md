@@ -10,7 +10,7 @@ The MVP is intentionally narrow:
 
 - Start with regular jumps before adding scrubs, turns, wheelies, manuals, drops, or other skills.
 - Use uploaded or recorded video files for real analysis because MediaPipe needs access to actual frames.
-- Save YouTube and other external links as reference material only.
+- Analyze uploaded or recorded clips only. External video links (YouTube etc.) were removed from the MVP to keep it simple; a future ingestion path may support authorized direct video-file URLs.
 - Use a small Python/FastAPI worker for MediaPipe and OpenCV processing instead of doing heavy computer vision inside Expo.
 - Keep manual calibration available because bike landmarks and floor/landing lines are hard for general pose models.
 - Build a future-ready reference library for good jumps, bad jumps, and classic mistakes, even if the first analysis model is rule-based.
@@ -25,8 +25,7 @@ Implemented in the Expo app:
 - FastAPI MediaPipe worker integration for uploaded regular-jump clips.
 - Honest failure handling: when the worker is unavailable or a clip cannot be analyzed, the session is marked failed with retry and manual frame calibration — no placeholder metrics.
 - Analysis preview with video frame background, pose/geometry overlays, frame time, confidence state, and key metric tiles.
-- Sessions tab with saved uploaded analyses and reference links.
-- External video links saved as reference-only sessions. They do not create fake automatic geometry.
+- Sessions tab with saved uploaded analyses.
 - Garage tab with bike setup, suspension settings, cockpit/tire/service data, and shareable setup-sheet text.
 - Tools tab with inclinometer/level, calibration, saved measurements, and sag calculator.
 - Supabase schema draft in `supabase/schema.sql`.
@@ -46,9 +45,8 @@ Implemented in the worker:
 
 External links:
 
-- YouTube/web links are useful as references, but they do not provide raw frame access to the app.
-- A YouTube URL can be saved in Sessions and opened later.
-- Automatic floor/tire/body/landing detection requires the original video file or an authorized direct video file URL.
+- The app analyzes uploaded or recorded video files only. There is no YouTube/link flow.
+- Automatic floor/tire/body/landing detection requires the original video file or, in the future, an authorized direct video file URL.
 
 MediaPipe:
 
@@ -73,11 +71,11 @@ Safety:
 ```text
 App.tsx                         Expo app shell and tabs
 src/screens/CoachScreen.tsx     Record/upload, clip review, analysis preview, calibration
-src/screens/SessionsScreen.tsx  Saved analyses and reference links
+src/screens/SessionsScreen.tsx  Saved analyses
 src/screens/GarageScreen.tsx    Bike setup and garage data
 src/screens/ToolsScreen.tsx     Inclinometer and setup tools
 src/hooks/useRiderLensMvp.ts    Local MVP state, session flow, worker integration
-src/services/analysis.ts        Session creation, local fallback metrics, reports, link helpers
+src/services/analysis.ts        Session creation, calibration frames, reports, geometry math
 src/services/analysisWorker.ts  Mobile client for the FastAPI worker
 src/services/videoLibrary.ts    Local video persistence
 src/theme/tokens.ts             Locked visual tokens and numeric typography

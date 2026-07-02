@@ -9,7 +9,6 @@ import type {
   PoseMetric,
   RideSession,
   SkillType,
-  VideoLinkProvider,
   VideoAsset
 } from "../types/domain";
 
@@ -57,35 +56,10 @@ export function createQueuedSession(skillType: SkillType, videoUri: string, clip
     userId: "demo-user",
     skillType,
     status: "uploaded",
-    source: "video_upload",
     title: `${getSkillLabel(skillType)} analysis`,
     createdAt: now,
     video,
     job,
-    metrics: []
-  };
-}
-
-export function createLinkReferenceSession(skillType: SkillType, rawUrl: string): RideSession {
-  const now = new Date().toISOString();
-  const sessionId = createId("session-link");
-  const provider = getVideoLinkProvider(rawUrl);
-  const providerLabel = provider === "other" ? "Video link" : provider.charAt(0).toUpperCase() + provider.slice(1);
-
-  return {
-    id: sessionId,
-    userId: "demo-user",
-    skillType,
-    status: "reference",
-    source: "video_link",
-    title: `${providerLabel} reference`,
-    createdAt: now,
-    linkReference: {
-      url: rawUrl.trim(),
-      provider,
-      notes: "Reference link only. Upload the original clip file for MediaPipe frame geometry.",
-      createdAt: now
-    },
     metrics: []
   };
 }
@@ -96,13 +70,8 @@ export type FrameMediaSource = {
 };
 
 export function getFrameMediaSource(session: RideSession): FrameMediaSource | undefined {
-  if (session.source === "video_upload" && session.video?.rawVideoUri && !session.video.rawVideoUri.startsWith("demo://")) {
+  if (session.video?.rawVideoUri && !session.video.rawVideoUri.startsWith("demo://")) {
     return { videoUri: session.video.rawVideoUri };
-  }
-
-  if (session.source === "video_link" && session.linkReference?.url) {
-    const imageUri = getVideoLinkThumbnailUri(session.linkReference.url);
-    return imageUri ? { imageUri } : undefined;
   }
 
   return undefined;
@@ -171,62 +140,6 @@ export function normalizeAngle(angle: number): number {
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
-}
-
-export function getVideoLinkThumbnailUri(rawUrl: string): string | undefined {
-  const youtubeId = getYoutubeVideoId(rawUrl);
-  return youtubeId ? `https://img.youtube.com/vi/${youtubeId}/hqdefault.jpg` : undefined;
-}
-
-export function isSupportedVideoLink(rawUrl: string): boolean {
-  try {
-    const url = new URL(rawUrl.trim());
-    return Boolean(url.protocol.match(/^https?:$/) && url.hostname.includes("."));
-  } catch {
-    return false;
-  }
-}
-
-export function getVideoLinkProvider(rawUrl: string): VideoLinkProvider {
-  try {
-    const hostname = new URL(rawUrl.trim()).hostname.replace(/^www\./, "");
-    if (hostname === "youtu.be" || hostname.endsWith("youtube.com")) return "youtube";
-    if (hostname.endsWith("vimeo.com")) return "vimeo";
-    if (hostname.endsWith("instagram.com")) return "instagram";
-    if (hostname.endsWith("tiktok.com")) return "tiktok";
-  } catch {
-    return "other";
-  }
-  return "other";
-}
-
-function getYoutubeVideoId(rawUrl: string): string | undefined {
-  try {
-    const url = new URL(rawUrl.trim());
-    const hostname = url.hostname.replace(/^www\./, "");
-
-    if (hostname === "youtu.be") {
-      return normalizeYoutubeId(url.pathname.split("/").filter(Boolean)[0]);
-    }
-
-    if (!hostname.endsWith("youtube.com")) {
-      return undefined;
-    }
-
-    const watchId = normalizeYoutubeId(url.searchParams.get("v") ?? "");
-    if (watchId) return watchId;
-
-    const parts = url.pathname.split("/").filter(Boolean);
-    const idIndex = parts.findIndex((part) => part === "shorts" || part === "embed" || part === "live");
-    return idIndex >= 0 ? normalizeYoutubeId(parts[idIndex + 1]) : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-function normalizeYoutubeId(value?: string): string | undefined {
-  const candidate = value?.match(/^[A-Za-z0-9_-]{6,}$/)?.[0];
-  return candidate;
 }
 
 const calibrationPhases: Array<{ phase: MetricPhase; ratio: number }> = [
@@ -310,7 +223,6 @@ export function formatReportShareText(session: RideSession): string {
 
   return [
     `RiderLens ${getSkillLabel(session.skillType)} report`,
-    ...(session.source === "video_link" ? ["", session.linkReference?.url ?? ""] : []),
     "",
     report.summary,
     "",

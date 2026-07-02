@@ -1,5 +1,5 @@
-import { AlertTriangle, Clock3, ExternalLink, FileVideo, Link2, Share2 } from "lucide-react-native";
-import { Linking, ScrollView, StyleSheet, View } from "react-native";
+import { AlertTriangle, Clock3, FileVideo, Share2 } from "lucide-react-native";
+import { ScrollView, StyleSheet, View } from "react-native";
 
 import { AnalysisFrames } from "../components/AnalysisFrames";
 import { AppText, BrandHeader, Button, Card, Chip, Heading, MetricTile, NumberText, SectionHeader } from "../components/ui";
@@ -57,30 +57,15 @@ export function SessionsScreen({ store }: SessionsScreenProps) {
                 <Chip tone={getSessionTone(active)}>{getSessionHeadline(active)}</Chip>
                 <Heading level={2}>{active.title}</Heading>
                 <AppText color={tokens.textMuted} size={13}>
-                  {getSkillLabel(active.skillType)} {active.source === "video_link" ? "link" : "clip"}
+                  {getSkillLabel(active.skillType)} clip
                 </AppText>
               </View>
-              {active.source === "video_link" && active.linkReference ? (
-                <Button
-                  icon={ExternalLink}
-                  variant="secondary"
-                  onPress={() => Linking.openURL(active.linkReference?.url ?? "")}
-                  style={styles.shareButton}
-                >
-                  Open
-                </Button>
-              ) : (
-                <Button icon={Share2} variant="secondary" onPress={store.shareActiveReport} style={styles.shareButton}>
-                  Share
-                </Button>
-              )}
+              <Button icon={Share2} variant="secondary" onPress={store.shareActiveReport} style={styles.shareButton}>
+                Share
+              </Button>
             </View>
 
-            {active.source === "video_link" ? (
-              <LinkReferenceDetail session={active} onShare={store.shareActiveReport} />
-            ) : (
-              <VideoSessionDetail session={active} />
-            )}
+            <VideoSessionDetail session={active} />
           </Card>
         ) : null}
       </ScrollView>
@@ -101,10 +86,7 @@ function VideoSessionDetail({ session }: { session: RideSession }) {
             <MetricTile label="Frame rate" value={session.video.fps} unit="fps" />
           </>
         ) : (
-          <>
-            <MetricTile label="Source" value={session.linkReference?.provider ?? "link"} />
-            <MetricTile label="Frames" value={session.metrics.length} />
-          </>
+          <MetricTile label="Frames" value={session.metrics.length} />
         )}
         <MetricTile label="Mode" value={getGeometrySourceLabel(session.metrics[0])} />
       </View>
@@ -183,54 +165,10 @@ function VideoSessionDetail({ session }: { session: RideSession }) {
   );
 }
 
-function LinkReferenceDetail({ session, onShare }: { session: RideSession; onShare: () => Promise<void> }) {
-  const reference = session.linkReference;
-  if (!reference) return null;
-
-  return (
-    <View style={styles.linkDetail}>
-      <View style={styles.linkBox}>
-        <View style={styles.linkBoxHeader}>
-          <Link2 color={tokens.green} size={18} />
-          <View style={styles.linkText}>
-            <AppText weight="bold">Linked video reference</AppText>
-            <AppText color={tokens.textMuted} size={13}>
-              {reference.provider}
-            </AppText>
-          </View>
-        </View>
-        <AppText color={tokens.textMuted} size={13} numberOfLines={2}>
-          {reference.url}
-        </AppText>
-        <View style={styles.linkActions}>
-          <Button icon={ExternalLink} variant="dark" onPress={() => Linking.openURL(reference.url)} style={styles.linkActionButton}>
-            Open Link
-          </Button>
-          <Button icon={Share2} variant="secondary" onPress={onShare} style={styles.linkActionButton}>
-            Share
-          </Button>
-        </View>
-      </View>
-
-      <View style={styles.referenceWarning}>
-        <AlertTriangle color="#7a4b00" size={18} />
-        <View style={styles.referenceWarningText}>
-          <AppText weight="bold" color="#704400">
-            Original file recommended
-          </AppText>
-          <AppText color="#704400" size={13}>
-            Upload the original video file from Coach when you want MediaPipe frame timing and body-mechanics metrics.
-          </AppText>
-        </View>
-      </View>
-    </View>
-  );
-}
-
 function SessionListItem({ session, active, onPress }: { session: RideSession; active: boolean; onPress: () => void }) {
   const statusTone = getSessionTone(session);
   const progress = Math.round((session.job?.progress ?? 0) * 100);
-  const Icon = session.source === "video_link" ? Link2 : FileVideo;
+  const Icon = FileVideo;
 
   return (
     <Card style={[styles.sessionCard, active && styles.activeSessionCard]}>
@@ -280,20 +218,17 @@ function ReportColumn({ title, items, tone }: { title: string; items: string[]; 
 }
 
 function getSessionTone(session: RideSession): "green" | "amber" | "red" | "neutral" {
-  if (session.status === "reference") return "neutral";
   if (session.status === "analysis_failed") return "red";
   return getJobTone(session.job?.status);
 }
 
 function getSessionHeadline(session: RideSession): string {
   if (session.status === "complete") return "Report ready";
-  if (session.status === "reference") return "Reference";
   if (session.status === "analysis_failed") return "Analysis failed";
   return "Analyzing";
 }
 
 function getSessionStatusLabel(session: RideSession): string {
-  if (session.status === "reference") return "reference";
   if (session.status === "analysis_failed") return "failed";
   return session.job?.status ?? "draft";
 }
@@ -468,45 +403,4 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: spacing.sm
   },
-  linkDetail: {
-    gap: spacing.md
-  },
-  linkBox: {
-    gap: spacing.md,
-    borderWidth: 1,
-    borderColor: tokens.border,
-    borderRadius: 8,
-    backgroundColor: tokens.surface,
-    padding: spacing.md
-  },
-  linkBoxHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.sm
-  },
-  linkText: {
-    flex: 1
-  },
-  linkActions: {
-    flexDirection: "row",
-    gap: spacing.md
-  },
-  linkActionButton: {
-    flex: 1,
-    minHeight: 40,
-    paddingHorizontal: spacing.sm
-  },
-  referenceWarning: {
-    flexDirection: "row",
-    gap: spacing.sm,
-    borderWidth: 1,
-    borderColor: "#f2c068",
-    borderRadius: 8,
-    backgroundColor: tokens.amberSoft,
-    padding: spacing.md
-  },
-  referenceWarningText: {
-    flex: 1,
-    gap: spacing.xs
-  }
 });
