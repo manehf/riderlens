@@ -32,7 +32,8 @@
     "plugins": [
       "expo-font",
       "expo-camera",
-      "expo-image-picker"
+      "expo-image-picker",
+      "expo-video"
     ],
     "extra": {
       "analysisWorkerUrl": ""

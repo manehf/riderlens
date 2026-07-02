@@ -11,7 +11,8 @@ import {
 } from "@expo-google-fonts/ibm-plex-sans";
 import { Bike, Gauge, ListVideo, Video } from "lucide-react-native";
 import { useMemo, useState } from "react";
-import { SafeAreaView, StyleSheet, View } from "react-native";
+import { StyleSheet, View } from "react-native";
+import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 
 import { AppText, BottomTabs, Chip, Screen, type TabItem } from "./src/components/ui";
@@ -61,31 +62,35 @@ export default function App() {
 
   if (!sansLoaded || !monoLoaded) {
     return (
-      <SafeAreaView style={styles.loadingRoot}>
-        <StatusBar style="dark" />
-        <View style={styles.loadingMark}>
-          <AppText weight="bold" color={tokens.electric}>
-            RL
-          </AppText>
-        </View>
-        <AppText weight="bold">Loading RiderLens</AppText>
-      </SafeAreaView>
+      <SafeAreaProvider>
+        <SafeAreaView style={styles.loadingRoot}>
+          <StatusBar style="dark" />
+          <View style={styles.loadingMark}>
+            <AppText weight="bold" color={tokens.electric}>
+              RL
+            </AppText>
+          </View>
+          <AppText weight="bold">Loading RiderLens</AppText>
+        </SafeAreaView>
+      </SafeAreaProvider>
     );
   }
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <StatusBar style="dark" />
-      <Screen>
-        <View style={styles.modeBar}>
-          <Chip tone={getSupabaseMode() === "configured" ? "green" : "amber"}>
-            {getSupabaseMode() === "configured" ? "Supabase connected" : "Demo mode"}
-          </Chip>
-        </View>
-        {currentScreen}
-        <BottomTabs items={tabs} activeKey={activeTab} onChange={(key) => setActiveTab(key as TabKey)} />
-      </Screen>
-    </SafeAreaView>
+    <SafeAreaProvider>
+      <SafeAreaView style={styles.safeArea}>
+        <StatusBar style="dark" />
+        <Screen>
+          <View style={styles.modeBar}>
+            <Chip tone={getSupabaseMode() === "configured" ? "green" : "amber"}>
+              {getSupabaseMode() === "configured" ? "Supabase connected" : "Demo mode"}
+            </Chip>
+          </View>
+          {currentScreen}
+          <BottomTabs items={tabs} activeKey={activeTab} onChange={(key) => setActiveTab(key as TabKey)} />
+        </Screen>
+      </SafeAreaView>
+    </SafeAreaProvider>
   );
 }
 

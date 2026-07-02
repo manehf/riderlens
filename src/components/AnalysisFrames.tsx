@@ -1,6 +1,7 @@
-import { Video, ResizeMode } from "expo-av";
+import { useEventListener } from "expo";
+import { useVideoPlayer, VideoView } from "expo-video";
 import { Image as ImageIcon } from "lucide-react-native";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Image as RNImage, ScrollView, StyleSheet, View, type StyleProp, type ViewStyle } from "react-native";
 import Svg, { Line as SvgLine } from "react-native-svg";
 
@@ -71,7 +72,6 @@ export function FrameMediaBackground({
   style?: StyleProp<ViewStyle>;
 }) {
   const [failed, setFailed] = useState(false);
-  const positionMillis = Math.max(0, Math.round(frameTime * 1000));
 
   if (failed || (!mediaSource?.videoUri && !mediaSource?.imageUri)) {
     return null;
@@ -80,18 +80,7 @@ export function FrameMediaBackground({
   return (
     <View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.mediaLayer, style]}>
       {mediaSource.videoUri ? (
-        <Video
-          source={{ uri: mediaSource.videoUri }}
-          resizeMode={ResizeMode.COVER}
-          shouldPlay={false}
-          isMuted
-          volume={0}
-          positionMillis={positionMillis}
-          progressUpdateIntervalMillis={1000}
-          useNativeControls={false}
-          onError={() => setFailed(true)}
-          style={StyleSheet.absoluteFill}
-        />
+        <VideoFrameStill uri={mediaSource.videoUri} frameTime={frameTime} onError={() => setFailed(true)} />
       ) : (
         <RNImage
           source={{ uri: mediaSource.imageUri }}
@@ -103,6 +92,34 @@ export function FrameMediaBackground({
       <View style={styles.mediaScrim} />
     </View>
   );
+}
+
+// Renders a paused video positioned at frameTime, used as a still-frame background.
+function VideoFrameStill({ uri, frameTime, onError }: { uri: string; frameTime: number; onError: () => void }) {
+  const frameTimeRef = useRef(frameTime);
+  const player = useVideoPlayer(uri, (instance) => {
+    instance.muted = true;
+    instance.pause();
+  });
+
+  useEventListener(player, "statusChange", ({ status }) => {
+    if (status === "error") {
+      onError();
+      return;
+    }
+    if (status === "readyToPlay") {
+      player.currentTime = frameTimeRef.current;
+    }
+  });
+
+  useEffect(() => {
+    frameTimeRef.current = Math.max(0, frameTime);
+    if (player.status === "readyToPlay") {
+      player.currentTime = frameTimeRef.current;
+    }
+  }, [frameTime, player]);
+
+  return <VideoView player={player} contentFit="cover" nativeControls={false} style={StyleSheet.absoluteFill} />;
 }
 
 function FrameCard({ metric, mediaSource }: { metric: PoseMetric; mediaSource?: FrameMediaSource }) {
