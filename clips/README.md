@@ -41,3 +41,8 @@ Start the worker with `RIDERLENS_SNAPSHOT_DIR=./snapshots` to also archive every
 
 - iOS Simulator: drag a clip onto the simulator window to add it to Photos, then use Upload in the app.
 - Physical phone: AirDrop (iOS) or file transfer (Android) the clip into the photo library.
+
+## Ground truth and labels
+
+- `manifest.json` clip entries may carry `groundTruth`: AI-found event timestamps (takeoff, peak air, crash...) saved from the Lab's "AI key frames" flow. These are the regression targets for the future local phase detector.
+- `labels.json` holds manually corrected geometry (wheel hub centers, floor, takeoff lip, landing lines) per clip + frame time, saved from the Lab's per-frame "edit lines" editor. These corrections double as training data for the future bike keypoint model.

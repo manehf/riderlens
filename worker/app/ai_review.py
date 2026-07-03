@@ -71,14 +71,8 @@ REVIEW_SCHEMA = {
 }
 
 
-def review_key_frames(metrics: list) -> dict:
-    frames = [metric for metric in metrics if metric.frameImage]
-    if not frames:
-        raise AIReviewError(
-            "This analysis has no frame images. Run it from the Analysis Lab (frames are included there) and try again.",
-            status_code=422,
-        )
-
+def _call_structured(system_prompt: str, content: list[dict], schema: dict) -> dict:
+    """Send one vision request to the Claude API and return the parsed structured output."""
     try:
         import anthropic
     except ImportError:
@@ -90,6 +84,52 @@ def review_key_frames(metrics: list) -> dict:
         raise AIReviewError(
             f"Anthropic client could not be created ({error}). Set ANTHROPIC_API_KEY in the worker environment.",
             status_code=503,
+        )
+
+    try:
+        response = client.messages.create(
+            model=AI_MODEL,
+            max_tokens=16000,
+            thinking={"type": "adaptive"},
+            system=system_prompt,
+            messages=[{"role": "user", "content": content}],
+            output_config={"format": {"type": "json_schema", "schema": schema}},
+        )
+    except TypeError:
+        # The SDK resolves credentials at request time; no key/profile raises TypeError here.
+        raise AIReviewError(
+            "No Anthropic API credentials found. Start the worker with ANTHROPIC_API_KEY set to enable AI features.",
+            status_code=503,
+        )
+    except anthropic.AuthenticationError:
+        raise AIReviewError(
+            "Anthropic API authentication failed. Set a valid ANTHROPIC_API_KEY in the worker environment.",
+            status_code=503,
+        )
+    except anthropic.APIConnectionError:
+        raise AIReviewError("Could not reach the Anthropic API. Check the network connection.", status_code=502)
+    except anthropic.APIStatusError as error:
+        raise AIReviewError(f"Anthropic API error {error.status_code}: {error.message}", status_code=502)
+
+    if response.stop_reason == "refusal":
+        raise AIReviewError("The model declined to analyze this clip.", status_code=502)
+
+    text = "".join(block.text for block in response.content if block.type == "text")
+    try:
+        result = json.loads(text)
+    except json.JSONDecodeError:
+        raise AIReviewError("The model returned output that could not be parsed as JSON.", status_code=502)
+
+    result["model"] = response.model
+    return result
+
+
+def review_key_frames(metrics: list) -> dict:
+    frames = [metric for metric in metrics if metric.frameImage]
+    if not frames:
+        raise AIReviewError(
+            "This analysis has no frame images. Run it from the Analysis Lab (frames are included there) and try again.",
+            status_code=422,
         )
 
     content: list[dict] = [
@@ -126,39 +166,61 @@ def review_key_frames(metrics: list) -> dict:
             }
         )
 
-    try:
-        response = client.messages.create(
-            model=AI_MODEL,
-            max_tokens=16000,
-            thinking={"type": "adaptive"},
-            system=SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": content}],
-            output_config={"format": {"type": "json_schema", "schema": REVIEW_SCHEMA}},
-        )
-    except TypeError:
-        # The SDK resolves credentials at request time; no key/profile raises TypeError here.
-        raise AIReviewError(
-            "No Anthropic API credentials found. Start the worker with ANTHROPIC_API_KEY set to enable AI review.",
-            status_code=503,
-        )
-    except anthropic.AuthenticationError:
-        raise AIReviewError(
-            "Anthropic API authentication failed. Set a valid ANTHROPIC_API_KEY in the worker environment.",
-            status_code=503,
-        )
-    except anthropic.APIConnectionError:
-        raise AIReviewError("Could not reach the Anthropic API. Check the network connection.", status_code=502)
-    except anthropic.APIStatusError as error:
-        raise AIReviewError(f"Anthropic API error {error.status_code}: {error.message}", status_code=502)
+    return _call_structured(SYSTEM_PROMPT, content, REVIEW_SCHEMA)
 
-    if response.stop_reason == "refusal":
-        raise AIReviewError("The model declined to review this clip.", status_code=502)
 
-    text = "".join(block.text for block in response.content if block.type == "text")
-    try:
-        review = json.loads(text)
-    except json.JSONDecodeError:
-        raise AIReviewError("The model returned output that could not be parsed as JSON.", status_code=502)
+KEYFRAME_SYSTEM = """You are an expert mountain-bike coach scanning a contact sheet: frames sampled uniformly from one riding clip (side view), in chronological order, each labeled with its timestamp. Your job is to find the timestamps of the key moments of the jump attempt.
 
-    review["model"] = response.model
-    return review
+Rules:
+- Choose time_seconds values ONLY from the timestamps printed with the frames.
+- Include an event only when a frame actually shows it: approach (riding toward the feature), compression (lowest body position pressing into the lip), takeoff (wheels leaving the lip), peak_air (most airborne frame), landing (touchdown), crash (rider and bike separating or down).
+- If the clip ends in a crash: include the real events that happened before it, then one crash event at the first clearly-crashed frame. Do not invent takeoff, peak_air, or landing that never happened.
+- Pick the single best frame per event. It is fine to return only two or three events if that is all the clip shows."""
+
+KEYFRAME_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["event_type", "summary", "events"],
+    "properties": {
+        "event_type": {"type": "string", "enum": ["clean_jump", "crash", "no_jump_visible", "other"]},
+        "summary": {"type": "string", "description": "Two or three sentences telling the story of the clip."},
+        "events": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["name", "time_seconds", "why"],
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "enum": ["approach", "compression", "takeoff", "peak_air", "landing", "crash"],
+                    },
+                    "time_seconds": {"type": "number"},
+                    "why": {"type": "string", "description": "One sentence: what this frame shows."},
+                },
+            },
+        },
+    },
+}
+
+
+def find_key_frames_ai(sampled_frames: list[tuple[float, str]]) -> dict:
+    """sampled_frames: (time_seconds, jpeg data URL) pairs, chronological. Returns the structured event list."""
+    content: list[dict] = [
+        {
+            "type": "text",
+            "text": (
+                f"Contact sheet: {len(sampled_frames)} frames sampled uniformly from one clip, in order. "
+                "Identify the key moments per the instructions."
+            ),
+        }
+    ]
+    for time_seconds, data_url in sampled_frames:
+        content.append({"type": "text", "text": f"t={time_seconds:.2f}s"})
+        content.append(
+            {
+                "type": "image",
+                "source": {"type": "base64", "media_type": "image/jpeg", "data": data_url.split(",", 1)[1]},
+            }
+        )
+    return _call_structured(KEYFRAME_SYSTEM, content, KEYFRAME_SCHEMA)

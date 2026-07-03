@@ -48,7 +48,7 @@ app = FastAPI(title="RiderLens Analysis Worker", version="0.2.0")
 
 SkillType = Literal["regular_jump", "bunnyhop", "manual", "wheelie", "drop"]
 CropPreset = Literal["full_side_view", "rider_centered", "takeoff_landing", "vertical_social"]
-Phase = Literal["approach", "compression", "takeoff", "air", "landing"]
+Phase = Literal["approach", "compression", "takeoff", "air", "landing", "crash"]
 GeometrySource = Literal["detected", "estimated"]
 
 
@@ -206,15 +206,20 @@ class DevAnalyzeRequest(BaseModel):
     trim_end_seconds: float | None = Field(default=None, ge=0)
 
 
-@app.post("/dev/analyze-clip", response_model=AnalyzeResponse)
-def dev_analyze_clip(request: DevAnalyzeRequest):
-    require_dev_ui()
+def resolve_clip_path(file: str) -> FilePath:
     clips_root = CLIPS_DIR.resolve()
-    clip_path = (clips_root / request.file).resolve()
+    clip_path = (clips_root / file).resolve()
     if clips_root not in clip_path.parents:
         raise HTTPException(status_code=400, detail="Clip path must stay inside the clips directory.")
     if not clip_path.exists():
-        raise HTTPException(status_code=404, detail=f"Clip not found: {request.file}")
+        raise HTTPException(status_code=404, detail=f"Clip not found: {file}")
+    return clip_path
+
+
+@app.post("/dev/analyze-clip", response_model=AnalyzeResponse)
+def dev_analyze_clip(request: DevAnalyzeRequest):
+    require_dev_ui()
+    clip_path = resolve_clip_path(request.file)
 
     return analyze_regular_jump_file(
         session_id=f"dev-{re.sub(r'[^A-Za-z0-9_-]', '-', request.file)}",
@@ -224,6 +229,249 @@ def dev_analyze_clip(request: DevAnalyzeRequest):
         crop_preset="full_side_view",
         include_frames=True,
     )
+
+
+# --- AI keyframe search (search first, measure second) ------------------------
+
+EVENT_PHASE: dict[str, Phase] = {
+    "approach": "approach",
+    "compression": "compression",
+    "takeoff": "takeoff",
+    "peak_air": "air",
+    "landing": "landing",
+    "crash": "crash",
+}
+
+
+def extract_frames_at(video_path: str, times: list[float]) -> list[tuple[float, object]]:
+    capture = cv2.VideoCapture(video_path)
+    if not capture.isOpened():
+        raise HTTPException(status_code=422, detail="Could not open video.")
+    frames: list[tuple[float, object]] = []
+    try:
+        for time_seconds in times:
+            capture.set(cv2.CAP_PROP_POS_MSEC, max(0.0, time_seconds) * 1000.0)
+            ok, frame = capture.read()
+            if ok:
+                frames.append((time_seconds, frame))
+    finally:
+        capture.release()
+    return frames
+
+
+def build_contact_sheet(
+    video_path: str, trim_start_seconds: float, trim_end_seconds: float | None, count: int = 24, width: int = 480
+) -> list[tuple[float, str]]:
+    """Uniformly sampled, downscaled frames with timestamps — the input for AI keyframe search."""
+    capture = cv2.VideoCapture(video_path)
+    if not capture.isOpened():
+        raise HTTPException(status_code=422, detail="Could not open video.")
+    fps = capture.get(cv2.CAP_PROP_FPS) or 30
+    frame_count = capture.get(cv2.CAP_PROP_FRAME_COUNT) or 0
+    capture.release()
+    duration_seconds = frame_count / fps if frame_count > 0 else 0
+
+    start = max(0.0, trim_start_seconds)
+    end = trim_end_seconds if trim_end_seconds is not None else duration_seconds
+    if duration_seconds > 0:
+        end = min(max(end, start + 0.5), duration_seconds)
+    window = max(end - start, 0.5)
+
+    times = [start + window * (index + 0.5) / count for index in range(count)]
+    sheet: list[tuple[float, str]] = []
+    for time_seconds, frame in extract_frames_at(video_path, times):
+        height, frame_width = frame.shape[:2]
+        scale = width / frame_width
+        small = cv2.resize(frame, (width, max(1, int(height * scale))))
+        image = encode_frame_jpeg(small)
+        if image:
+            sheet.append((round(time_seconds, 2), image))
+    return sheet
+
+
+def build_metric_without_pose(session_id: str, phase: Phase, frame, time_seconds: float) -> Metric:
+    """Metric for a frame where no trustworthy rider pose exists (e.g. post-crash): body angles
+    zeroed with confidence 0, bike/floor geometry from the pose-independent detectors only."""
+    height, width = frame.shape[:2]
+    gray = cv2.medianBlur(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY), 5)
+
+    bike_box = detect_bike_box(frame)
+    bike_box_norm: FrameRect | None = None
+    tires_detected = False
+    if bike_box is not None:
+        box_x0, box_y0, box_x1, box_y1 = bike_box
+        bike_box_norm = FrameRect(
+            x=clamp(box_x0 / width, 0, 1),
+            y=clamp(box_y0 / height, 0, 1),
+            w=clamp((box_x1 - box_x0) / width, 0, 1),
+            h=clamp((box_y1 - box_y0) / height, 0, 1),
+        )
+        wheel_radius = max(6.0, min(0.33 * (box_y1 - box_y0), 0.18 * (box_x1 - box_x0)))
+        first_pred = (box_x0 + wheel_radius, box_y1 - wheel_radius)
+        second_pred = (box_x1 - wheel_radius, box_y1 - wheel_radius)
+        first_hit = confirm_wheel_circle(gray, first_pred, wheel_radius)
+        second_hit = confirm_wheel_circle(gray, second_pred, wheel_radius)
+        tires_detected = first_hit is not None and second_hit is not None
+        first_center = first_hit if tires_detected else first_pred
+        second_center = second_hit if tires_detected else second_pred
+        tire_baseline = px_line(first_center, second_center, width, height)
+        wheel_bottom_y = box_y1
+        bike_x_range = (box_x0, box_x1)
+    else:
+        baseline_y = height * 0.85
+        tire_baseline = px_line((width * 0.3, baseline_y), (width * 0.7, baseline_y), width, height)
+        wheel_bottom_y = height * 0.9
+        bike_x_range = (width * 0.2, width * 0.8)
+
+    detected_floor = detect_floor_line(frame, wheel_bottom_y, bike_x_range) if bike_box is not None else None
+    floor = detected_floor or estimated_floor_line(wheel_bottom_y, bike_x_range, width, height)
+
+    center = FramePoint(x=0.5, y=0.5)
+    degenerate = FrameLine(start=center, end=center)
+    geometry = FrameGeometry(
+        floor=floor,
+        tireBaseline=tire_baseline,
+        torso=degenerate,
+        kneeUpper=degenerate,
+        kneeLower=degenerate,
+        landing=floor,
+    )
+
+    return Metric(
+        phase=phase,
+        frameTime=round(time_seconds, 2),
+        torsoAngle=0,
+        hipAngle=0,
+        kneeAngle=0,
+        elbowAngle=0,
+        bikePitchAngle=round(line_angle(tire_baseline)),
+        floorAngle=round(line_angle(floor)),
+        tireBaselineAngle=round(line_angle(tire_baseline)),
+        landingAlignmentAngle=round(line_angle(floor)),
+        geometrySource="detected" if tires_detected and bike_box is not None else "estimated",
+        geometry=geometry,
+        bikeBox=bike_box_norm,
+        confidence=0.0,
+    )
+
+
+class DevKeyframesRequest(BaseModel):
+    file: str
+    trim_start_seconds: float = Field(default=0, ge=0)
+    trim_end_seconds: float | None = Field(default=None, ge=0)
+
+
+@app.post("/dev/find-key-frames")
+def dev_find_key_frames(request: DevKeyframesRequest):
+    require_dev_ui()
+    clip_path = resolve_clip_path(request.file)
+    if cv2 is None or mp is None or np is None:
+        raise HTTPException(status_code=503, detail="Install worker dependencies: mediapipe, opencv-python-headless, numpy.")
+
+    from .ai_review import AIReviewError, find_key_frames_ai
+
+    sheet = build_contact_sheet(str(clip_path), request.trim_start_seconds, request.trim_end_seconds)
+    if not sheet:
+        raise HTTPException(status_code=422, detail="Could not extract frames from this clip.")
+
+    try:
+        search = find_key_frames_ai(sheet)
+    except AIReviewError as error:
+        raise HTTPException(status_code=error.status_code, detail=str(error))
+
+    pose_frames, fps, _duration = extract_pose_frames(str(clip_path), request.trim_start_seconds, request.trim_end_seconds)
+    session_id = f"kf-{re.sub(r'[^A-Za-z0-9_-]', '-', request.file)}"
+
+    metrics: list[Metric] = []
+    for event in search.get("events", []):
+        phase = EVENT_PHASE.get(event.get("name", ""))
+        if phase is None:
+            continue
+        target = float(event["time_seconds"])
+        nearest = min(pose_frames, key=lambda pose_frame: abs(pose_frame.time_seconds - target)) if pose_frames else None
+        if nearest is not None and abs(nearest.time_seconds - target) <= 0.4:
+            metric = build_metric(session_id, phase, nearest, fps)
+            metric.frameImage = encode_frame_jpeg(nearest.frame)
+        else:
+            frames = extract_frames_at(str(clip_path), [target])
+            if not frames:
+                continue
+            _, frame = frames[0]
+            metric = build_metric_without_pose(session_id, phase, frame, target)
+            metric.frameImage = encode_frame_jpeg(frame)
+        metrics.append(metric)
+
+    return {
+        "eventType": search["event_type"],
+        "summary": search["summary"],
+        "model": search.get("model"),
+        "events": search["events"],
+        "metrics": metrics,
+    }
+
+
+MANIFEST_PATH = CLIPS_DIR / "manifest.json"
+LABELS_PATH = CLIPS_DIR / "labels.json"
+
+
+class SaveGroundTruthRequest(BaseModel):
+    file: str
+    event_type: str
+    events: list[dict]
+    model: str | None = None
+
+
+@app.post("/dev/save-ground-truth")
+def dev_save_ground_truth(request: SaveGroundTruthRequest):
+    require_dev_ui()
+    if not MANIFEST_PATH.exists():
+        raise HTTPException(status_code=404, detail="clips/manifest.json not found.")
+    manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
+    entry = next((clip for clip in manifest.get("clips", []) if clip.get("file") == request.file), None)
+    if entry is None:
+        raise HTTPException(status_code=404, detail=f"Clip not in manifest: {request.file}")
+
+    entry["groundTruth"] = {
+        "source": "ai",
+        "model": request.model,
+        "eventType": request.event_type,
+        "events": request.events,
+        "savedAt": datetime.now(timezone.utc).isoformat(),
+    }
+    MANIFEST_PATH.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    return {"ok": True}
+
+
+class SaveLabelsRequest(BaseModel):
+    file: str
+    frame_time: float
+    phase: str
+    geometry: dict
+
+
+@app.post("/dev/save-labels")
+def dev_save_labels(request: SaveLabelsRequest):
+    require_dev_ui()
+    resolve_clip_path(request.file)
+
+    labels = {"labels": []}
+    if LABELS_PATH.exists():
+        labels = json.loads(LABELS_PATH.read_text(encoding="utf-8"))
+    entries = labels.setdefault("labels", [])
+    key = (request.file, round(request.frame_time, 2))
+    entries[:] = [entry for entry in entries if (entry.get("file"), round(entry.get("frameTime", -1), 2)) != key]
+    entries.append(
+        {
+            "file": request.file,
+            "frameTime": round(request.frame_time, 2),
+            "phase": request.phase,
+            "geometry": request.geometry,
+            "savedAt": datetime.now(timezone.utc).isoformat(),
+        }
+    )
+    entries.sort(key=lambda entry: (entry["file"], entry["frameTime"]))
+    LABELS_PATH.write_text(json.dumps(labels, indent=2) + "\n", encoding="utf-8")
+    return {"ok": True, "count": len(entries)}
 
 
 @app.post("/analysis/regular-jump", response_model=AnalyzeResponse)

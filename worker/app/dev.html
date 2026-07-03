@@ -73,6 +73,7 @@
       <label>Trim end (s) — empty = full clip</label>
       <input type="number" id="trimEnd" min="0" step="0.1" />
       <button id="run">Analyze</button>
+      <button id="runKeyframes" style="background:var(--cyan)">AI key frames</button>
       <div id="status"></div>
     </div>
   </div>
@@ -85,8 +86,10 @@
         <span><i style="background:#22d3ee"></i>torso</span>
         <span><i style="background:#c4b5fd"></i>knee</span>
         <span><i style="background:#f87171"></i>landing</span>
+        <span><i style="background:#b6ff2e"></i>takeoff lip</span>
         <span><i style="background:#ffffff"></i>bike box</span>
       </div>
+      <div id="kfSummary"></div>
       <div id="frames"><span style="color:var(--muted)">Run an analysis to see annotated frames.</span></div>
     </div>
     <div class="panel" style="margin-top:16px">
@@ -105,6 +108,23 @@
     </div>
   </div>
 </main>
+<div id="editor" class="hidden" style="position:fixed;inset:0;background:rgba(9,13,15,0.8);z-index:10;display:flex;align-items:center;justify-content:center">
+  <div style="background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:14px;max-width:96vw;max-height:94vh;overflow:auto">
+    <h2 style="font-size:12px;text-transform:uppercase;letter-spacing:0.06em;color:var(--muted);margin:0 0 8px">
+      Edit geometry — drag the round handles (hub R/F = wheel centers)
+    </h2>
+    <div style="position:relative;line-height:0">
+      <img id="edImg" style="display:block" />
+      <canvas id="edCanvas" style="position:absolute;inset:0;cursor:crosshair"></canvas>
+    </div>
+    <div id="edReadout" class="num" style="margin:10px 0;font-size:12px;color:var(--muted)"></div>
+    <div style="display:flex;gap:10px">
+      <button id="edSave" style="max-width:220px;margin-top:0">Save labels</button>
+      <button id="edClose" style="max-width:120px;margin-top:0;background:var(--bg);color:var(--text);border:1px solid var(--border)">Close</button>
+    </div>
+    <div id="edStatus" style="font-size:12px;color:var(--muted);margin-top:8px"></div>
+  </div>
+</div>
 <script>
 const LINE_COLORS = {
   floor: "#4ade80",
@@ -117,6 +137,7 @@ const LINE_COLORS = {
 
 let selectedClip = null;
 let lastAnalysis = null;
+let lastAnalysisSource = null; // library clip path, or null for uploads
 
 async function loadClips() {
   const box = document.getElementById("clips");
@@ -200,9 +221,11 @@ async function runAnalysis() {
     const elapsed = ((performance.now() - startedAt) / 1000).toFixed(1);
     setStatus(`Done in ${elapsed}s — ${data.metrics.length} key frames.`);
     lastAnalysis = data;
+    lastAnalysisSource = uploadInput.files.length > 0 ? null : selectedClip;
     document.getElementById("aiReview").disabled = false;
     document.getElementById("aiResult").innerHTML = "";
     document.getElementById("aiStatus").textContent = "";
+    document.getElementById("kfSummary").innerHTML = "";
     renderFrames(data.metrics);
     renderMetrics(data.metrics);
     renderReport(data.report);
@@ -235,10 +258,89 @@ function renderFrames(metrics) {
       `<span><b>${metric.phase}</b> <span class="num" style="color:var(--muted)">${metric.frameTime.toFixed(2)}s</span></span>` +
       `<span><span class="badge ${metric.geometrySource}">${metric.geometrySource}</span> ` +
       `<span class="num" style="color:var(--muted)">${(metric.confidence * 100).toFixed(0)}%</span></span>`;
+    const editButton = document.createElement("button");
+    editButton.textContent = "edit lines";
+    editButton.style.cssText =
+      "width:auto;margin:0;padding:2px 9px;font-size:11px;font-weight:600;background:var(--bg);color:var(--cyan);border:1px solid var(--border)";
+    editButton.onclick = () => openEditor(metric);
+    cap.appendChild(editButton);
     card.appendChild(media);
     card.appendChild(cap);
     box.appendChild(card);
   }
+}
+
+async function runKeyframes() {
+  if (selectedClip == null) {
+    setStatus("AI key frames works on library clips — pick one on the left first.", true);
+    return;
+  }
+  const trimStart = parseFloat(document.getElementById("trimStart").value || "0");
+  const trimEndRaw = document.getElementById("trimEnd").value;
+  const button = document.getElementById("runKeyframes");
+  const startedAt = performance.now();
+  button.disabled = true;
+  setStatus("Sampling the clip and asking Claude to find the key moments…");
+  try {
+    const response = await fetch("/dev/find-key-frames", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        file: selectedClip,
+        trim_start_seconds: trimStart,
+        trim_end_seconds: trimEndRaw === "" ? null : parseFloat(trimEndRaw)
+      })
+    });
+    if (!response.ok) {
+      let detail = `Worker responded ${response.status}`;
+      try { detail = (await response.json()).detail || detail; } catch {}
+      setStatus(detail, true);
+      return;
+    }
+    const data = await response.json();
+    const elapsed = ((performance.now() - startedAt) / 1000).toFixed(1);
+    setStatus(`AI key frames done in ${elapsed}s — ${data.metrics.length} events found.`);
+    lastAnalysis = data;
+    lastAnalysisSource = selectedClip;
+    document.getElementById("aiReview").disabled = false;
+    document.getElementById("aiResult").innerHTML = "";
+    document.getElementById("aiStatus").textContent = "";
+    document.getElementById("report").innerHTML = '<span style="color:var(--muted)">—</span>';
+    renderKfSummary(data);
+    renderFrames(data.metrics);
+    renderMetrics(data.metrics);
+  } catch (err) {
+    setStatus(`Request failed: ${err}`, true);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function renderKfSummary(data) {
+  const box = document.getElementById("kfSummary");
+  const crash = data.eventType === "crash";
+  const rows = data.events
+    .map((e) => `<li><b>${e.name}</b> <span class="num" style="color:var(--muted)">${e.time_seconds.toFixed(2)}s</span> — ${e.why}</li>`)
+    .join("");
+  box.innerHTML =
+    `<p><span class="badge ${crash ? "estimated" : "detected"}" style="${crash ? "background:#3d2323;color:var(--red)" : ""}">` +
+    `${data.eventType.replace(/_/g, " ")}</span> ${data.summary}</p>` +
+    `<ul style="color:var(--muted);font-size:13px;padding-left:18px">${rows}</ul>` +
+    `<button id="saveGt" style="max-width:240px;margin-top:0">Save as ground truth</button>` +
+    `<span id="gtStatus" style="margin-left:10px;font-size:12px;color:var(--muted)"></span>`;
+  document.getElementById("saveGt").onclick = async () => {
+    const status = document.getElementById("gtStatus");
+    try {
+      const response = await fetch("/dev/save-ground-truth", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ file: selectedClip, event_type: data.eventType, events: data.events, model: data.model })
+      });
+      status.textContent = response.ok ? "saved to clips/manifest.json" : `failed (${response.status})`;
+    } catch (err) {
+      status.textContent = `failed: ${err}`;
+    }
+  };
 }
 
 function drawGeometry(canvas, img, geometry, bikeBox) {
@@ -339,6 +441,182 @@ async function runAiReview() {
   }
 }
 
+// --- Manual geometry editor --------------------------------------------------
+// Draggable line endpoints over the frame. The tire-baseline endpoints ARE the
+// wheel hub centers (R = rear/left end, F = front/right end). Angles use the
+// same normalized-coordinate convention as the worker so numbers stay comparable.
+
+const ED_ELEMENTS = {
+  tireBaseline: { color: "#fbbf24", label: "wheel hubs" },
+  floor: { color: "#4ade80", label: "floor" },
+  takeoff: { color: "#b6ff2e", label: "takeoff lip" },
+  landing: { color: "#f87171", label: "landing" }
+};
+let ed = null;
+
+function cloneLine(line) {
+  return { start: { x: line.start.x, y: line.start.y }, end: { x: line.end.x, y: line.end.y } };
+}
+
+function openEditor(metric) {
+  const g = metric.geometry;
+  ed = {
+    metric,
+    geometry: {
+      tireBaseline: cloneLine(g.tireBaseline),
+      floor: cloneLine(g.floor),
+      takeoff: { start: { x: 0.38, y: 0.62 }, end: { x: 0.58, y: 0.52 } },
+      landing: cloneLine(g.landing)
+    },
+    dragging: null
+  };
+  document.getElementById("editor").classList.remove("hidden");
+  const img = document.getElementById("edImg");
+  img.style.width = Math.min(1000, window.innerWidth * 0.9) + "px";
+  img.src = metric.frameImage;
+  const ready = () => { sizeEditorCanvas(); drawEditor(); };
+  img.onload = ready;
+  if (img.complete && img.naturalWidth) ready();
+  const save = document.getElementById("edSave");
+  save.disabled = !lastAnalysisSource;
+  document.getElementById("edStatus").textContent = lastAnalysisSource
+    ? "Corrections are saved to clips/labels.json and become detector ground truth."
+    : "Labels can only be saved for library clips (uploads have no stable identity).";
+}
+
+function sizeEditorCanvas() {
+  const img = document.getElementById("edImg");
+  const canvas = document.getElementById("edCanvas");
+  canvas.width = img.clientWidth;
+  canvas.height = img.clientHeight;
+}
+
+function editorHandles() {
+  const handles = [];
+  for (const [name, line] of Object.entries(ed.geometry)) {
+    handles.push({ element: name, end: "start", point: line.start });
+    handles.push({ element: name, end: "end", point: line.end });
+  }
+  return handles;
+}
+
+function drawEditor() {
+  const canvas = document.getElementById("edCanvas");
+  const ctx = canvas.getContext("2d");
+  const w = canvas.width;
+  const h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+  for (const [name, config] of Object.entries(ED_ELEMENTS)) {
+    const line = ed.geometry[name];
+    ctx.strokeStyle = config.color;
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(line.start.x * w, line.start.y * h);
+    ctx.lineTo(line.end.x * w, line.end.y * h);
+    ctx.stroke();
+    for (const end of ["start", "end"]) {
+      const p = line[end];
+      ctx.beginPath();
+      ctx.arc(p.x * w, p.y * h, 7, 0, Math.PI * 2);
+      ctx.fillStyle = config.color;
+      ctx.fill();
+      ctx.strokeStyle = "#111613";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+  }
+  // Hub labels on the tire baseline
+  const tb = ed.geometry.tireBaseline;
+  ctx.font = "bold 12px monospace";
+  ctx.fillStyle = "#fbbf24";
+  ctx.fillText("R", tb.start.x * w - 4, tb.start.y * h - 12);
+  ctx.fillText("F", tb.end.x * w - 4, tb.end.y * h - 12);
+  renderEditorReadout();
+}
+
+function lineAngleDeg(line) {
+  let angle = (Math.atan2(line.end.y - line.start.y, line.end.x - line.start.x) * 180) / Math.PI;
+  while (angle > 180) angle -= 360;
+  while (angle < -180) angle += 360;
+  return angle;
+}
+
+function renderEditorReadout() {
+  const g = ed.geometry;
+  document.getElementById("edReadout").textContent =
+    `bike pitch ${lineAngleDeg(g.tireBaseline).toFixed(1)}°  |  floor ${lineAngleDeg(g.floor).toFixed(1)}°  |  ` +
+    `takeoff lip ${lineAngleDeg(g.takeoff).toFixed(1)}°  |  landing ${lineAngleDeg(g.landing).toFixed(1)}°`;
+}
+
+function editorPointer(event) {
+  const canvas = document.getElementById("edCanvas");
+  const rect = canvas.getBoundingClientRect();
+  return {
+    x: Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width)),
+    y: Math.min(1, Math.max(0, (event.clientY - rect.top) / rect.height))
+  };
+}
+
+document.getElementById("edCanvas").addEventListener("mousedown", (event) => {
+  if (!ed) return;
+  const canvas = document.getElementById("edCanvas");
+  const rect = canvas.getBoundingClientRect();
+  const px = event.clientX - rect.left;
+  const py = event.clientY - rect.top;
+  let best = null;
+  let bestDistance = 16;
+  for (const handle of editorHandles()) {
+    const distance = Math.hypot(handle.point.x * rect.width - px, handle.point.y * rect.height - py);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      best = handle;
+    }
+  }
+  ed.dragging = best;
+});
+document.getElementById("edCanvas").addEventListener("mousemove", (event) => {
+  if (!ed || !ed.dragging) return;
+  const point = editorPointer(event);
+  ed.geometry[ed.dragging.element][ed.dragging.end] = point;
+  ed.dragging.point = point;
+  drawEditor();
+});
+window.addEventListener("mouseup", () => { if (ed) ed.dragging = null; });
+
+document.getElementById("edClose").onclick = () => {
+  document.getElementById("editor").classList.add("hidden");
+  ed = null;
+};
+
+document.getElementById("edSave").onclick = async () => {
+  if (!ed || !lastAnalysisSource) return;
+  const status = document.getElementById("edStatus");
+  status.textContent = "Saving…";
+  try {
+    const response = await fetch("/dev/save-labels", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        file: lastAnalysisSource,
+        frame_time: ed.metric.frameTime,
+        phase: ed.metric.phase,
+        geometry: ed.geometry
+      })
+    });
+    if (!response.ok) {
+      let detail = `failed (${response.status})`;
+      try { detail = (await response.json()).detail || detail; } catch {}
+      status.textContent = `Save ${detail}`;
+      return;
+    }
+    const result = await response.json();
+    status.textContent = `Saved — ${result.count} labeled frame(s) in clips/labels.json.`;
+  } catch (err) {
+    status.textContent = `Save failed: ${err}`;
+  }
+};
+
+document.getElementById("runKeyframes").onclick = runKeyframes;
 document.getElementById("aiReview").onclick = runAiReview;
 document.getElementById("run").onclick = runAnalysis;
 document.getElementById("upload").onchange = () => {

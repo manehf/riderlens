@@ -59,3 +59,54 @@ def test_ai_review_requires_frame_images():
     response = client.post("/dev/ai-review", json={"metrics": [metric]})
     assert response.status_code == 422
     assert "frame images" in response.json()["detail"]
+
+
+def test_find_key_frames_rejects_path_traversal():
+    response = client.post("/dev/find-key-frames", json={"file": "../.env"})
+    assert response.status_code == 400
+
+
+def test_contact_sheet_samples_frames_in_order():
+    sheet = main.build_contact_sheet("../clips/regular_jump/fail/jump_fail.mp4", 0, None, count=8, width=320)
+    assert len(sheet) == 8
+    times = [time_seconds for time_seconds, _ in sheet]
+    assert times == sorted(times)
+    assert all(image.startswith("data:image/jpeg;base64,") for _, image in sheet)
+
+
+def test_save_labels_writes_labels_file(tmp_path, monkeypatch):
+    monkeypatch.setattr(main, "LABELS_PATH", tmp_path / "labels.json")
+    payload = {
+        "file": "regular_jump/fail/jump_fail.mp4",
+        "frame_time": 4.33,
+        "phase": "takeoff",
+        "geometry": {"floor": {"start": {"x": 0, "y": 0.9}, "end": {"x": 1, "y": 0.9}}},
+    }
+    first = client.post("/dev/save-labels", json=payload)
+    assert first.status_code == 200 and first.json()["count"] == 1
+    # Saving the same frame again replaces the entry instead of duplicating it.
+    second = client.post("/dev/save-labels", json=payload)
+    assert second.json()["count"] == 1
+    import json as json_module
+
+    saved = json_module.loads((tmp_path / "labels.json").read_text())
+    assert saved["labels"][0]["frameTime"] == 4.33
+
+
+def test_save_ground_truth_updates_manifest(tmp_path, monkeypatch):
+    import json as json_module
+
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(json_module.dumps({"clips": [{"file": "a.mp4", "label": "crash"}]}))
+    monkeypatch.setattr(main, "MANIFEST_PATH", manifest_path)
+
+    response = client.post(
+        "/dev/save-ground-truth",
+        json={"file": "a.mp4", "event_type": "crash", "events": [{"name": "crash", "time_seconds": 6.1, "why": "x"}]},
+    )
+    assert response.status_code == 200
+    saved = json_module.loads(manifest_path.read_text())
+    assert saved["clips"][0]["groundTruth"]["eventType"] == "crash"
+
+    missing = client.post("/dev/save-ground-truth", json={"file": "nope.mp4", "event_type": "crash", "events": []})
+    assert missing.status_code == 404
