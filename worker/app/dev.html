@@ -54,6 +54,8 @@
   #report ul { margin: 4px 0 10px; padding-left: 18px; color: var(--muted); }
   #report .head { color: var(--text); font-weight: 700; margin-top: 10px; }
   .hidden { display: none; }
+  #editor { display: flex; align-items: center; justify-content: center; }
+  #editor.hidden { display: none; }
 </style>
 </head>
 <body>
@@ -108,7 +110,7 @@
     </div>
   </div>
 </main>
-<div id="editor" class="hidden" style="position:fixed;inset:0;background:rgba(9,13,15,0.8);z-index:10;display:flex;align-items:center;justify-content:center">
+<div id="editor" class="hidden" style="position:fixed;inset:0;background:rgba(9,13,15,0.8);z-index:10">
   <div style="background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:14px;max-width:96vw;max-height:94vh;overflow:auto">
     <h2 style="font-size:12px;text-transform:uppercase;letter-spacing:0.06em;color:var(--muted);margin:0 0 8px">
       Edit geometry — drag the round handles (hub R/F = wheel centers)
