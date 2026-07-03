@@ -15,6 +15,16 @@ from typing import Literal
 
 os.environ.setdefault("MPLCONFIGDIR", os.path.join(tempfile.gettempdir(), "riderlens-matplotlib"))
 
+# Load env vars (ANTHROPIC_API_KEY, RIDERLENS_*) from the repo root .env and worker/.env
+# so the worker picks them up without shell prefixes. Existing env vars win.
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv(FilePath(__file__).resolve().parents[2] / ".env")
+    load_dotenv(FilePath(__file__).resolve().parents[1] / ".env")
+except ImportError:  # pragma: no cover - dotenv ships with pydantic-settings
+    pass
+
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
