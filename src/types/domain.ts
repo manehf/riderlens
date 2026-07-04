@@ -9,7 +9,7 @@ export type JobStatus = "queued" | "processing" | "completed" | "failed";
 
 export type SessionStatus = "draft" | "uploaded" | "analyzing" | "analysis_failed" | "complete";
 
-export type MetricPhase = "approach" | "compression" | "takeoff" | "air" | "landing";
+export type MetricPhase = "approach" | "compression" | "takeoff" | "air" | "landing" | "crash";
 export type GeometrySource = "detected" | "manual" | "estimated";
 
 export type FramePoint = {
@@ -75,7 +75,57 @@ export type PoseMetric = {
   landingAlignmentAngle?: number;
   geometrySource?: GeometrySource;
   geometry?: FrameGeometry;
+  bikeBox?: { x: number; y: number; w: number; h: number };
   confidence: number;
+  frameImage?: string;
+};
+
+// --- Capture records (the product: find the moment, crop it, keep it) --------
+
+export type CaptureEvent = {
+  name: "approach" | "compression" | "takeoff" | "peak_air" | "landing" | "crash";
+  time_seconds: number;
+  why: string;
+};
+
+export type SeriesPoint = {
+  t: number;
+  kneeAngle: number | null;
+  torsoAngle: number | null;
+  hipHeight: number | null;
+  pitch: number | null;
+  confidence: number;
+};
+
+export type FilmstripFrame = {
+  t: number;
+  image: string;
+};
+
+export type RecordStatus = "pending" | "processing" | "ready" | "failed";
+
+// Light metadata kept in the index; heavy payload (metrics/series/filmstrip) lives
+// in each record's detail file on disk.
+export type JumpRecord = {
+  id: string;
+  createdAt: string;
+  skillType: SkillType;
+  status: RecordStatus;
+  sourceVideoUri: string;
+  windowStart: number;
+  windowEnd: number;
+  aiWindow: boolean;
+  eventType?: string;
+  summary?: string;
+  events?: CaptureEvent[];
+  clipUri?: string;
+  error?: string;
+};
+
+export type JumpRecordDetail = {
+  metrics: PoseMetric[];
+  series: SeriesPoint[];
+  filmstrip: FilmstripFrame[];
 };
 
 export type CoachingReport = {

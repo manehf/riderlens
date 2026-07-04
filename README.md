@@ -17,15 +17,13 @@ The MVP is intentionally narrow:
 
 ## Current Implementation
 
-Implemented in the Expo app:
+Implemented in the Expo app (capture-first — see `riderlens-product-plan.md`):
 
-- Coach tab with Record and Upload actions.
-- Pre-upload clip review with trim window controls and crop/framing presets.
-- Uploaded clip persistence in the local app video library.
-- FastAPI MediaPipe worker integration for uploaded regular-jump clips.
-- Honest failure handling: when the worker is unavailable or a clip cannot be analyzed, the session is marked failed with retry and manual frame calibration — no placeholder metrics.
-- Analysis preview with video frame background, pose/geometry overlays, frame time, confidence state, and key metric tiles.
-- Sessions tab with saved uploaded analyses.
+- Capture tab: record live or pick from the photo library.
+- Window step: AI-proposed trim (worker + Claude) with silent timeout fallback to manual start/end controls, over on-device thumbnails.
+- Records: the worker crops the moment (FFmpeg), measures pose on every frame in the window, and the app stores the trimmed clip + key frames with skeleton overlays + filmstrip + timeline curves on-device.
+- Offline-tolerant: when processing fails, the record stays pending with a retry — capture never blocks on connectivity.
+- History tab: all records with status, review, share (native share sheet with the clip), and delete.
 - Garage tab with bike setup, suspension settings, cockpit/tire/service data, and shareable setup-sheet text.
 - Tools tab with inclinometer/level, calibration, saved measurements, and sag calculator.
 - Supabase schema draft in `supabase/schema.sql`.

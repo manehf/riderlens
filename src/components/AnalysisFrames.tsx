@@ -124,11 +124,13 @@ function VideoFrameStill({ uri, frameTime, onError }: { uri: string; frameTime: 
 
 function FrameCard({ metric, mediaSource }: { metric: PoseMetric; mediaSource?: FrameMediaSource }) {
   const verifiedGeometry = hasVerifiedGeometry(metric);
+  // Records carry the exact frame per metric; fall back to seeking the shared video.
+  const effectiveSource = metric.frameImage ? { imageUri: metric.frameImage } : mediaSource;
 
   return (
     <View style={styles.frameCard}>
       <View style={styles.frameSurface}>
-        <FrameMediaBackground mediaSource={mediaSource} frameTime={metric.frameTime} />
+        <FrameMediaBackground mediaSource={effectiveSource} frameTime={metric.frameTime} />
         <View style={styles.gridLineOne} />
         <View style={styles.gridLineTwo} />
         {verifiedGeometry ? <FrameGeometryOverlay metric={metric} variant="compact" /> : <CalibrationOverlay />}
