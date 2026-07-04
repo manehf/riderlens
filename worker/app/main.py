@@ -365,12 +365,40 @@ class DevKeyframesRequest(BaseModel):
 def dev_find_key_frames(request: DevKeyframesRequest):
     require_dev_ui()
     clip_path = resolve_clip_path(request.file)
+    return run_keyframe_search(str(clip_path), request.trim_start_seconds, request.trim_end_seconds, request.file)
+
+
+@app.post("/dev/find-key-frames-upload")
+async def dev_find_key_frames_upload(
+    video: UploadFile = File(...),
+    trim_start_seconds: float = Form(0),
+    trim_end_seconds: float | None = Form(None),
+):
+    require_dev_ui()
+    if not video.content_type or not video.content_type.startswith("video/"):
+        raise HTTPException(status_code=415, detail="Upload a video file.")
+
+    suffix = os.path.splitext(video.filename or "clip.mp4")[1] or ".mp4"
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp_file:
+        shutil.copyfileobj(video.file, temp_file)
+        temp_path = temp_file.name
+
+    try:
+        return run_keyframe_search(temp_path, trim_start_seconds, trim_end_seconds, video.filename or "upload")
+    finally:
+        try:
+            os.unlink(temp_path)
+        except OSError:
+            pass
+
+
+def run_keyframe_search(video_path: str, trim_start_seconds: float, trim_end_seconds: float | None, label: str):
     if cv2 is None or mp is None or np is None:
         raise HTTPException(status_code=503, detail="Install worker dependencies: mediapipe, opencv-python-headless, numpy.")
 
     from .ai_review import AIReviewError, find_key_frames_ai
 
-    sheet = build_contact_sheet(str(clip_path), request.trim_start_seconds, request.trim_end_seconds)
+    sheet = build_contact_sheet(video_path, trim_start_seconds, trim_end_seconds)
     if not sheet:
         raise HTTPException(status_code=422, detail="Could not extract frames from this clip.")
 
@@ -379,8 +407,8 @@ def dev_find_key_frames(request: DevKeyframesRequest):
     except AIReviewError as error:
         raise HTTPException(status_code=error.status_code, detail=str(error))
 
-    pose_frames, fps, _duration = extract_pose_frames(str(clip_path), request.trim_start_seconds, request.trim_end_seconds)
-    session_id = f"kf-{re.sub(r'[^A-Za-z0-9_-]', '-', request.file)}"
+    pose_frames, fps, _duration = extract_pose_frames(video_path, trim_start_seconds, trim_end_seconds)
+    session_id = f"kf-{re.sub(r'[^A-Za-z0-9_-]', '-', label)}"
 
     metrics: list[Metric] = []
     for event in search.get("events", []):
@@ -393,7 +421,7 @@ def dev_find_key_frames(request: DevKeyframesRequest):
             metric = build_metric(session_id, phase, nearest, fps)
             metric.frameImage = encode_frame_jpeg(nearest.frame)
         else:
-            frames = extract_frames_at(str(clip_path), [target])
+            frames = extract_frames_at(video_path, [target])
             if not frames:
                 continue
             _, frame = frames[0]

@@ -166,6 +166,11 @@ async function loadClips() {
         el.classList.add("selected");
       };
       box.appendChild(el);
+      // Auto-select the first available clip so the buttons work right away.
+      if (selectedClip == null && clip.available) {
+        selectedClip = clip.file;
+        el.classList.add("selected");
+      }
     }
   } catch (err) {
     box.innerHTML = `<span style="color:var(--red)">Could not load clips: ${err}</span>`;
@@ -273,8 +278,10 @@ function renderFrames(metrics) {
 }
 
 async function runKeyframes() {
-  if (selectedClip == null) {
-    setStatus("AI key frames works on library clips — pick one on the left first.", true);
+  const uploadInput = document.getElementById("upload");
+  const hasUpload = uploadInput.files.length > 0;
+  if (!hasUpload && selectedClip == null) {
+    setStatus("Pick a library clip or choose a video file first.", true);
     return;
   }
   const trimStart = parseFloat(document.getElementById("trimStart").value || "0");
@@ -284,15 +291,24 @@ async function runKeyframes() {
   button.disabled = true;
   setStatus("Sampling the clip and asking Claude to find the key moments…");
   try {
-    const response = await fetch("/dev/find-key-frames", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        file: selectedClip,
-        trim_start_seconds: trimStart,
-        trim_end_seconds: trimEndRaw === "" ? null : parseFloat(trimEndRaw)
-      })
-    });
+    let response;
+    if (hasUpload) {
+      const form = new FormData();
+      form.append("video", uploadInput.files[0]);
+      form.append("trim_start_seconds", String(trimStart));
+      if (trimEndRaw !== "") form.append("trim_end_seconds", trimEndRaw);
+      response = await fetch("/dev/find-key-frames-upload", { method: "POST", body: form });
+    } else {
+      response = await fetch("/dev/find-key-frames", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          file: selectedClip,
+          trim_start_seconds: trimStart,
+          trim_end_seconds: trimEndRaw === "" ? null : parseFloat(trimEndRaw)
+        })
+      });
+    }
     if (!response.ok) {
       let detail = `Worker responded ${response.status}`;
       try { detail = (await response.json()).detail || detail; } catch {}
@@ -303,7 +319,7 @@ async function runKeyframes() {
     const elapsed = ((performance.now() - startedAt) / 1000).toFixed(1);
     setStatus(`AI key frames done in ${elapsed}s — ${data.metrics.length} events found.`);
     lastAnalysis = data;
-    lastAnalysisSource = selectedClip;
+    lastAnalysisSource = hasUpload ? null : selectedClip;
     document.getElementById("aiReview").disabled = false;
     document.getElementById("aiResult").innerHTML = "";
     document.getElementById("aiStatus").textContent = "";
@@ -324,25 +340,30 @@ function renderKfSummary(data) {
   const rows = data.events
     .map((e) => `<li><b>${e.name}</b> <span class="num" style="color:var(--muted)">${e.time_seconds.toFixed(2)}s</span> — ${e.why}</li>`)
     .join("");
+  const canSave = Boolean(lastAnalysisSource);
   box.innerHTML =
     `<p><span class="badge ${crash ? "estimated" : "detected"}" style="${crash ? "background:#3d2323;color:var(--red)" : ""}">` +
     `${data.eventType.replace(/_/g, " ")}</span> ${data.summary}</p>` +
     `<ul style="color:var(--muted);font-size:13px;padding-left:18px">${rows}</ul>` +
-    `<button id="saveGt" style="max-width:240px;margin-top:0">Save as ground truth</button>` +
-    `<span id="gtStatus" style="margin-left:10px;font-size:12px;color:var(--muted)"></span>`;
-  document.getElementById("saveGt").onclick = async () => {
-    const status = document.getElementById("gtStatus");
-    try {
-      const response = await fetch("/dev/save-ground-truth", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ file: selectedClip, event_type: data.eventType, events: data.events, model: data.model })
-      });
-      status.textContent = response.ok ? "saved to clips/manifest.json" : `failed (${response.status})`;
-    } catch (err) {
-      status.textContent = `failed: ${err}`;
-    }
-  };
+    (canSave
+      ? `<button id="saveGt" style="max-width:240px;margin-top:0">Save as ground truth</button>` +
+        `<span id="gtStatus" style="margin-left:10px;font-size:12px;color:var(--muted)"></span>`
+      : `<span style="font-size:12px;color:var(--muted)">Add this clip to the library to save ground truth.</span>`);
+  if (canSave) {
+    document.getElementById("saveGt").onclick = async () => {
+      const status = document.getElementById("gtStatus");
+      try {
+        const response = await fetch("/dev/save-ground-truth", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ file: lastAnalysisSource, event_type: data.eventType, events: data.events, model: data.model })
+        });
+        status.textContent = response.ok ? "saved to clips/manifest.json" : `failed (${response.status})`;
+      } catch (err) {
+        status.textContent = `failed: ${err}`;
+      }
+    };
+  }
 }
 
 function drawGeometry(canvas, img, geometry, bikeBox) {
