@@ -113,7 +113,7 @@ def test_save_ground_truth_updates_manifest(tmp_path, monkeypatch):
 
 
 def test_measure_window_produces_series():
-    series, air_frames = main.measure_window("../clips/regular_jump/fail/jump_fail.mp4", 4.0, 5.5, (4.4, 5.1))
+    series, air_frames, filmstrip = main.measure_window("../clips/regular_jump/fail/jump_fail.mp4", 4.0, 5.5, (4.4, 5.1))
     assert len(series) > 20
     times = [row["t"] for row in series]
     assert times == sorted(times)
@@ -122,3 +122,5 @@ def test_measure_window_produces_series():
         set(row) == {"t", "kneeAngle", "torsoAngle", "hipHeight", "pitch", "confidence"} for row in series
     )
     assert 1 <= len(air_frames) <= 8
+    assert len(filmstrip) >= 20  # whole-window coverage for the user-facing strip
+    assert all(frame["image"].startswith("data:image/jpeg;base64,") for frame in filmstrip)

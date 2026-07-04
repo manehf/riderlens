@@ -56,6 +56,8 @@
   .hidden { display: none; }
   #editor { display: flex; align-items: center; justify-content: center; }
   #editor.hidden { display: none; }
+  #lightbox { display: flex; align-items: center; justify-content: center; position: fixed; inset: 0; background: rgba(9,13,15,0.88); z-index: 20; cursor: zoom-out; }
+  #lightbox.hidden { display: none; }
 </style>
 </head>
 <body>
@@ -75,7 +77,6 @@
       <label>Trim end (s) — empty = full clip</label>
       <input type="number" id="trimEnd" min="0" step="0.1" />
       <button id="run">Analyze</button>
-      <button id="runKeyframes" style="background:var(--cyan)">AI key frames</button>
       <div id="status"></div>
     </div>
   </div>
@@ -93,6 +94,10 @@
       </div>
       <div id="kfSummary"></div>
       <div id="frames"><span style="color:var(--muted)">Run an analysis to see annotated frames.</span></div>
+    </div>
+    <div class="panel hidden" style="margin-top:16px" id="filmstripPanel">
+      <h2>All jump frames</h2>
+      <div id="filmstrip" style="display:flex;gap:6px;overflow-x:auto;padding-bottom:6px"></div>
     </div>
     <div class="panel hidden" style="margin-top:16px" id="timelinePanel">
       <h2>Timeline — jump window</h2>
@@ -120,6 +125,7 @@
     </div>
   </div>
 </main>
+<div id="lightbox" class="hidden"><img id="lightboxImg" style="max-width:94vw;max-height:90vh" /></div>
 <div id="editor" class="hidden" style="position:fixed;inset:0;background:rgba(9,13,15,0.8);z-index:10">
   <div style="background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:14px;max-width:96vw;max-height:94vh;overflow:auto">
     <h2 style="font-size:12px;text-transform:uppercase;letter-spacing:0.06em;color:var(--muted);margin:0 0 8px">
@@ -195,64 +201,107 @@ function setStatus(text, isError) {
 
 async function runAnalysis() {
   const uploadInput = document.getElementById("upload");
+  const hasUpload = uploadInput.files.length > 0;
+  if (!hasUpload && selectedClip == null) {
+    setStatus("Pick a library clip or choose a video file first.", true);
+    return;
+  }
   const trimStart = parseFloat(document.getElementById("trimStart").value || "0");
   const trimEndRaw = document.getElementById("trimEnd").value;
   const button = document.getElementById("run");
   const startedAt = performance.now();
-
   button.disabled = true;
-  setStatus("Analyzing… (MediaPipe runs on every sampled frame)");
+  setStatus("Analyzing — Claude finds the key moments, then every frame in the jump window is measured…");
   try {
-    let response;
-    if (uploadInput.files.length > 0) {
-      const form = new FormData();
-      form.append("video", uploadInput.files[0]);
-      form.append("session_id", "dev-upload");
-      form.append("trim_start_seconds", String(trimStart));
-      if (trimEndRaw !== "") form.append("trim_end_seconds", trimEndRaw);
-      form.append("include_frames", "true");
-      response = await fetch("/analysis/regular-jump", { method: "POST", body: form });
-    } else if (selectedClip) {
-      response = await fetch("/dev/analyze-clip", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          file: selectedClip,
-          trim_start_seconds: trimStart,
-          trim_end_seconds: trimEndRaw === "" ? null : parseFloat(trimEndRaw)
-        })
-      });
-    } else {
-      setStatus("Pick a library clip or choose a file first.", true);
-      return;
-    }
-
-    if (!response.ok) {
-      let detail = `Worker responded ${response.status}`;
+    let response = await requestAiAnalysis(hasUpload, trimStart, trimEndRaw);
+    if (response.status === 503) {
+      let detail = "AI unavailable";
       try { detail = (await response.json()).detail || detail; } catch {}
-      setStatus(detail, true);
+      response = await requestClassicAnalysis(hasUpload, trimStart, trimEndRaw);
+      if (!response.ok) { await showError(response); return; }
+      finishAnalysis(await response.json(), hasUpload, startedAt, false);
+      setStatus(`${detail} — ran the basic analysis instead.`, true);
       return;
     }
-
-    const data = await response.json();
-    const elapsed = ((performance.now() - startedAt) / 1000).toFixed(1);
-    setStatus(`Done in ${elapsed}s — ${data.metrics.length} key frames.`);
-    lastAnalysis = data;
-    lastAnalysisSource = uploadInput.files.length > 0 ? null : selectedClip;
-    document.getElementById("aiReview").disabled = false;
-    document.getElementById("aiResult").innerHTML = "";
-    document.getElementById("aiStatus").textContent = "";
-    document.getElementById("kfSummary").innerHTML = "";
-    document.getElementById("timelinePanel").classList.add("hidden");
-    renderFrames(data.metrics);
-    renderMetrics(data.metrics);
-    renderReport(data.report);
+    if (!response.ok) { await showError(response); return; }
+    finishAnalysis(await response.json(), hasUpload, startedAt, true);
   } catch (err) {
     setStatus(`Request failed: ${err}`, true);
   } finally {
     button.disabled = false;
   }
 }
+
+function requestAiAnalysis(hasUpload, trimStart, trimEndRaw) {
+  if (hasUpload) {
+    const form = new FormData();
+    form.append("video", document.getElementById("upload").files[0]);
+    form.append("trim_start_seconds", String(trimStart));
+    if (trimEndRaw !== "") form.append("trim_end_seconds", trimEndRaw);
+    return fetch("/dev/find-key-frames-upload", { method: "POST", body: form });
+  }
+  return fetch("/dev/find-key-frames", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      file: selectedClip,
+      trim_start_seconds: trimStart,
+      trim_end_seconds: trimEndRaw === "" ? null : parseFloat(trimEndRaw)
+    })
+  });
+}
+
+function requestClassicAnalysis(hasUpload, trimStart, trimEndRaw) {
+  if (hasUpload) {
+    const form = new FormData();
+    form.append("video", document.getElementById("upload").files[0]);
+    form.append("session_id", "dev-upload");
+    form.append("trim_start_seconds", String(trimStart));
+    if (trimEndRaw !== "") form.append("trim_end_seconds", trimEndRaw);
+    form.append("include_frames", "true");
+    return fetch("/analysis/regular-jump", { method: "POST", body: form });
+  }
+  return fetch("/dev/analyze-clip", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      file: selectedClip,
+      trim_start_seconds: trimStart,
+      trim_end_seconds: trimEndRaw === "" ? null : parseFloat(trimEndRaw)
+    })
+  });
+}
+
+async function showError(response) {
+  let detail = `Worker responded ${response.status}`;
+  try { detail = (await response.json()).detail || detail; } catch {}
+  setStatus(detail, true);
+}
+
+function finishAnalysis(data, hasUpload, startedAt, ai) {
+  const elapsed = ((performance.now() - startedAt) / 1000).toFixed(1);
+  lastAnalysis = data;
+  lastAnalysisSource = hasUpload ? null : selectedClip;
+  document.getElementById("aiReview").disabled = false;
+  document.getElementById("aiResult").innerHTML = "";
+  document.getElementById("aiStatus").textContent = "";
+  renderFrames(data.metrics);
+  renderMetrics(data.metrics);
+  if (ai) {
+    setStatus(`Done in ${elapsed}s — ${data.metrics.length} key moments found.`);
+    document.getElementById("report").innerHTML = '<span style="color:var(--muted)">—</span>';
+    renderKfSummary(data);
+    renderChart(data);
+    renderFilmstrip(data);
+  } else {
+    setStatus(`Basic analysis done in ${elapsed}s — ${data.metrics.length} key frames (fixed sampling).`);
+    document.getElementById("kfSummary").innerHTML = "";
+    document.getElementById("timelinePanel").classList.add("hidden");
+    document.getElementById("filmstripPanel").classList.add("hidden");
+    renderReport(data.report);
+  }
+}
+
 
 function renderFrames(metrics) {
   const box = document.getElementById("frames");
@@ -288,63 +337,38 @@ function renderFrames(metrics) {
   }
 }
 
-async function runKeyframes() {
-  const uploadInput = document.getElementById("upload");
-  const hasUpload = uploadInput.files.length > 0;
-  if (!hasUpload && selectedClip == null) {
-    setStatus("Pick a library clip or choose a video file first.", true);
+function renderFilmstrip(data) {
+  const panel = document.getElementById("filmstripPanel");
+  const strip = document.getElementById("filmstrip");
+  const frames = data.filmstrip || [];
+  if (!frames.length) {
+    panel.classList.add("hidden");
     return;
   }
-  const trimStart = parseFloat(document.getElementById("trimStart").value || "0");
-  const trimEndRaw = document.getElementById("trimEnd").value;
-  const button = document.getElementById("runKeyframes");
-  const startedAt = performance.now();
-  button.disabled = true;
-  setStatus("Sampling the clip and asking Claude to find the key moments…");
-  try {
-    let response;
-    if (hasUpload) {
-      const form = new FormData();
-      form.append("video", uploadInput.files[0]);
-      form.append("trim_start_seconds", String(trimStart));
-      if (trimEndRaw !== "") form.append("trim_end_seconds", trimEndRaw);
-      response = await fetch("/dev/find-key-frames-upload", { method: "POST", body: form });
-    } else {
-      response = await fetch("/dev/find-key-frames", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          file: selectedClip,
-          trim_start_seconds: trimStart,
-          trim_end_seconds: trimEndRaw === "" ? null : parseFloat(trimEndRaw)
-        })
-      });
-    }
-    if (!response.ok) {
-      let detail = `Worker responded ${response.status}`;
-      try { detail = (await response.json()).detail || detail; } catch {}
-      setStatus(detail, true);
-      return;
-    }
-    const data = await response.json();
-    const elapsed = ((performance.now() - startedAt) / 1000).toFixed(1);
-    setStatus(`AI key frames done in ${elapsed}s — ${data.metrics.length} events found.`);
-    lastAnalysis = data;
-    lastAnalysisSource = hasUpload ? null : selectedClip;
-    document.getElementById("aiReview").disabled = false;
-    document.getElementById("aiResult").innerHTML = "";
-    document.getElementById("aiStatus").textContent = "";
-    document.getElementById("report").innerHTML = '<span style="color:var(--muted)">—</span>';
-    renderKfSummary(data);
-    renderFrames(data.metrics);
-    renderMetrics(data.metrics);
-    renderChart(data);
-  } catch (err) {
-    setStatus(`Request failed: ${err}`, true);
-  } finally {
-    button.disabled = false;
+  panel.classList.remove("hidden");
+  strip.innerHTML = "";
+  for (const frame of frames) {
+    const cell = document.createElement("div");
+    cell.style.cssText = "flex:0 0 auto;text-align:center";
+    const img = document.createElement("img");
+    img.src = frame.image;
+    img.loading = "lazy";
+    img.style.cssText = "height:96px;border:1px solid var(--border);border-radius:4px;cursor:zoom-in;display:block";
+    img.onclick = () => {
+      document.getElementById("lightboxImg").src = frame.image;
+      document.getElementById("lightbox").classList.remove("hidden");
+    };
+    const cap = document.createElement("div");
+    cap.className = "num";
+    cap.style.cssText = "font-size:10px;color:var(--muted);margin-top:2px";
+    cap.textContent = frame.t.toFixed(2) + "s";
+    cell.appendChild(img);
+    cell.appendChild(cap);
+    strip.appendChild(cell);
   }
 }
+document.getElementById("lightbox").onclick = () => document.getElementById("lightbox").classList.add("hidden");
+
 
 function renderKfSummary(data) {
   const box = document.getElementById("kfSummary");
@@ -754,7 +778,6 @@ document.getElementById("edSave").onclick = async () => {
   }
 };
 
-document.getElementById("runKeyframes").onclick = runKeyframes;
 document.getElementById("aiReview").onclick = runAiReview;
 document.getElementById("run").onclick = runAnalysis;
 document.getElementById("upload").onchange = () => {

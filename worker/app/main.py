@@ -359,12 +359,13 @@ def build_metric_without_pose(session_id: str, phase: Phase, frame, time_seconds
 
 def measure_window(
     video_path: str, window_start: float, window_end: float, air_span: tuple[float, float]
-) -> tuple[list[dict], list[dict]]:
+) -> tuple[list[dict], list[dict], list[dict]]:
     """Dense per-frame measurement between the anchored window bounds.
 
     Pose runs on every sampled frame (~30/s, capped at 120); the bike detector runs on
     every third sample and pitch is reported only when both wheels pair-confirm.
-    Returns (series, air_frames) where air_frames are small thumbnails inside air_span.
+    Returns (series, air_frames, filmstrip): air_frames are small thumbnails inside
+    air_span for the AI review; filmstrip covers the whole window for the user.
     """
     capture = cv2.VideoCapture(video_path)
     if not capture.isOpened():
@@ -388,6 +389,8 @@ def measure_window(
     )
     series: list[dict] = []
     air_candidates: list[tuple[float, object]] = []
+    filmstrip: list[dict] = []
+    thumb_step = max(1, count // 36)
     capture = cv2.VideoCapture(video_path)
     try:
         for index in range(count):
@@ -435,6 +438,11 @@ def measure_window(
 
             if air_span[0] <= time_seconds <= air_span[1]:
                 air_candidates.append((time_seconds, frame))
+            if index % thumb_step == 0:
+                small = cv2.resize(frame, (320, max(1, int(height * 320 / width))))
+                image = encode_frame_jpeg(small)
+                if image:
+                    filmstrip.append({"t": round(time_seconds, 2), "image": image})
             series.append(entry)
     finally:
         pose.close()
@@ -449,7 +457,7 @@ def measure_window(
             image = encode_frame_jpeg(small)
             if image:
                 air_frames.append({"t": round(time_seconds, 2), "image": image})
-    return series, air_frames
+    return series, air_frames, filmstrip
 
 
 class DevKeyframesRequest(BaseModel):
@@ -528,6 +536,7 @@ def run_keyframe_search(video_path: str, trim_start_seconds: float, trim_end_sec
 
     series: list[dict] = []
     air_frames: list[dict] = []
+    filmstrip: list[dict] = []
     window: dict | None = None
     event_times = {
         event["name"]: float(event["time_seconds"])
@@ -539,7 +548,9 @@ def run_keyframe_search(video_path: str, trim_start_seconds: float, trim_end_sec
         end_anchor = event_times.get("landing") or event_times.get("crash") or max(event_times.values())
         end_anchor = max(end_anchor, start_anchor)
         window = {"start": round(max(0.0, start_anchor - 0.7), 2), "end": round(end_anchor + 0.7, 2)}
-        series, air_frames = measure_window(video_path, window["start"], window["end"], (start_anchor, end_anchor))
+        series, air_frames, filmstrip = measure_window(
+            video_path, window["start"], window["end"], (start_anchor, end_anchor)
+        )
 
     return {
         "eventType": search["event_type"],
@@ -550,6 +561,7 @@ def run_keyframe_search(video_path: str, trim_start_seconds: float, trim_end_sec
         "window": window,
         "series": series,
         "airFrames": air_frames,
+        "filmstrip": filmstrip,
     }
 
 
