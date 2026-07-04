@@ -1,8 +1,11 @@
 import type { CaptureEvent, FilmstripFrame, SeriesPoint } from "../types/domain";
 import { getAnalysisWorkerUrl } from "./analysisWorker";
 
-// Window proposal must never block a rider at the trail: short timeout, silent fallback.
-const ANALYZE_TIMEOUT_MS = 15_000;
+// Reachability is decided by a fast /health pre-flight so a stale or unreachable
+// worker IP fails in seconds instead of hanging until the big-upload timeouts below.
+const HEALTH_TIMEOUT_MS = 4_000;
+// Upload + contact sheet + AI window-finding legitimately takes 15-25s when connected.
+const ANALYZE_TIMEOUT_MS = 60_000;
 // Processing uploads the clip and runs the full pipeline; allow more, still bounded.
 const RECORD_TIMEOUT_MS = 180_000;
 
@@ -50,11 +53,21 @@ async function readDetail(response: Response): Promise<string> {
   }
 }
 
+async function workerReachable(workerUrl: string): Promise<boolean> {
+  try {
+    const response = await fetchWithTimeout(`${workerUrl}/health`, { method: "GET" }, HEALTH_TIMEOUT_MS);
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
 /** Upload the clip and get an AI-proposed window. Returns undefined when the worker
  * is unreachable, slow, or has no AI credentials — the caller falls back to manual trim. */
 export async function proposeWindow(videoUri: string): Promise<WindowProposal | undefined> {
   const workerUrl = getAnalysisWorkerUrl();
   if (!workerUrl) return undefined;
+  if (!(await workerReachable(workerUrl))) return undefined;
 
   const formData = new FormData();
   formData.append("video", videoFormPart(videoUri));
@@ -86,6 +99,9 @@ export async function processRecord(input: ProcessRecordInput): Promise<RecordPa
   const workerUrl = getAnalysisWorkerUrl();
   if (!workerUrl) {
     throw new Error("No analysis worker configured. Set EXPO_PUBLIC_ANALYSIS_WORKER_URL.");
+  }
+  if (!(await workerReachable(workerUrl))) {
+    throw new Error("Could not reach the worker. The record is saved and will be retried.");
   }
 
   const formData = new FormData();
