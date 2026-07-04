@@ -14,6 +14,10 @@ import os
 from pathlib import Path
 
 AI_MODEL = os.getenv("RIDERLENS_AI_MODEL", "claude-opus-4-8")
+# Window-finding needs capture precision, not coaching precision — a cheaper model may
+# suffice (claude-haiku-4-5 matched the Opus window on the first test clip). Default stays
+# AI_MODEL until more ground-truth clips validate the switch.
+WINDOW_MODEL = os.getenv("RIDERLENS_WINDOW_MODEL", AI_MODEL)
 
 # Distilled from the how_to_jump/ transcripts by worker/scripts/distill_knowledge.py.
 KNOWLEDGE_PATH = Path(__file__).resolve().parent / "knowledge" / "regular_jump.md"
@@ -97,7 +101,7 @@ REVIEW_SCHEMA = {
 }
 
 
-def _call_structured(system_prompt: str, content: list[dict], schema: dict) -> dict:
+def _call_structured(system_prompt: str, content: list[dict], schema: dict, model: str | None = None) -> dict:
     """Send one vision request to the Claude API and return the parsed structured output."""
     try:
         import anthropic
@@ -112,15 +116,21 @@ def _call_structured(system_prompt: str, content: list[dict], schema: dict) -> d
             status_code=503,
         )
 
+    request = dict(
+        model=model or AI_MODEL,
+        max_tokens=16000,
+        system=system_prompt,
+        messages=[{"role": "user", "content": content}],
+        output_config={"format": {"type": "json_schema", "schema": schema}},
+    )
     try:
-        response = client.messages.create(
-            model=AI_MODEL,
-            max_tokens=16000,
-            thinking={"type": "adaptive"},
-            system=system_prompt,
-            messages=[{"role": "user", "content": content}],
-            output_config={"format": {"type": "json_schema", "schema": schema}},
-        )
+        try:
+            response = client.messages.create(thinking={"type": "adaptive"}, **request)
+        except anthropic.BadRequestError as error:
+            # Smaller models (e.g. Haiku) reject adaptive thinking; retry without it.
+            if "adaptive thinking is not supported" not in str(error):
+                raise
+            response = client.messages.create(**request)
     except TypeError:
         # The SDK resolves credentials at request time; no key/profile raises TypeError here.
         raise AIReviewError(
@@ -285,4 +295,4 @@ def find_key_frames_ai(sampled_frames: list[tuple[float, str]]) -> dict:
                 "source": {"type": "base64", "media_type": "image/jpeg", "data": data_url.split(",", 1)[1]},
             }
         )
-    return _call_structured(_with_knowledge(KEYFRAME_SYSTEM), content, KEYFRAME_SCHEMA)
+    return _call_structured(_with_knowledge(KEYFRAME_SYSTEM), content, KEYFRAME_SCHEMA, model=WINDOW_MODEL)

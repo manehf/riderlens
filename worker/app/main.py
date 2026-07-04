@@ -6,8 +6,11 @@ import math
 import os
 import re
 import shutil
+import subprocess
 import tempfile
+import time
 import urllib.request
+import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path as FilePath
@@ -346,10 +349,10 @@ def build_metric_without_pose(session_id: str, phase: Phase, frame, time_seconds
         hipAngle=0,
         kneeAngle=0,
         elbowAngle=0,
-        bikePitchAngle=round(line_angle(tire_baseline)),
-        floorAngle=round(line_angle(floor)),
-        tireBaselineAngle=round(line_angle(tire_baseline)),
-        landingAlignmentAngle=round(line_angle(floor)),
+        bikePitchAngle=round(px_line_angle(tire_baseline, width, height)),
+        floorAngle=round(px_line_angle(floor, width, height)),
+        tireBaselineAngle=round(px_line_angle(tire_baseline, width, height)),
+        landingAlignmentAngle=round(px_line_angle(floor, width, height)),
         geometrySource="detected" if tires_detected and bike_box is not None else "estimated",
         geometry=geometry,
         bikeBox=bike_box_norm,
@@ -420,8 +423,10 @@ def measure_window(
                 knee = landmark_point(landmarks, 25 if side == "left" else 26)
                 ankle = landmark_point(landmarks, 27 if side == "left" else 28)
                 horizontal = FrameLine(start=FramePoint(x=0, y=hip.y), end=FramePoint(x=1, y=hip.y))
-                entry["kneeAngle"] = round(joint_angle(hip, knee, ankle), 1)
-                entry["torsoAngle"] = round(angle_between_lines(FrameLine(start=hip, end=shoulder), horizontal), 1)
+                entry["kneeAngle"] = round(px_joint_angle(hip, knee, ankle, width, height), 1)
+                entry["torsoAngle"] = round(
+                    px_angle_between_lines(FrameLine(start=hip, end=shoulder), horizontal, width, height), 1
+                )
                 entry["hipHeight"] = round(1.0 - hip.y, 3)
                 entry["confidence"] = round(get_pose_confidence(landmarks, side), 2)
 
@@ -434,7 +439,9 @@ def measure_window(
                     first_hit = confirm_wheel_circle(gray, (box_x0 + wheel_radius, box_y1 - wheel_radius), wheel_radius)
                     second_hit = confirm_wheel_circle(gray, (box_x1 - wheel_radius, box_y1 - wheel_radius), wheel_radius)
                     if first_hit is not None and second_hit is not None:
-                        entry["pitch"] = round(line_angle(px_line(first_hit, second_hit, width, height)), 1)
+                        entry["pitch"] = round(
+                            px_line_angle(px_line(first_hit, second_hit, width, height), width, height), 1
+                        )
 
             if air_span[0] <= time_seconds <= air_span[1]:
                 air_candidates.append((time_seconds, frame))
@@ -458,6 +465,51 @@ def measure_window(
             if image:
                 air_frames.append({"t": round(time_seconds, 2), "image": image})
     return series, air_frames, filmstrip
+
+
+def window_from_events(events: list[dict]) -> dict | None:
+    """Crop window from AI events: takeoff-0.7s to landing/crash+0.7s (plus anchors)."""
+    event_times = {
+        event["name"]: float(event["time_seconds"]) for event in events if event.get("name") in EVENT_PHASE
+    }
+    if not event_times:
+        return None
+    start_anchor = event_times.get("takeoff", min(event_times.values()))
+    end_anchor = event_times.get("landing") or event_times.get("crash") or max(event_times.values())
+    end_anchor = max(end_anchor, start_anchor)
+    return {
+        "start": round(max(0.0, start_anchor - 0.7), 2),
+        "end": round(end_anchor + 0.7, 2),
+        "anchorStart": start_anchor,
+        "anchorEnd": end_anchor,
+    }
+
+
+def metrics_at_times(
+    video_path: str,
+    labeled_times: list[tuple[Phase, float]],
+    trim_start_seconds: float,
+    trim_end_seconds: float | None,
+    session_id: str,
+) -> list[Metric]:
+    """Measured key-frame metrics at specific times: nearest tracked pose frame when one
+    exists within 0.4s, otherwise a poseless metric from the exact frame."""
+    pose_frames, fps, _duration = extract_pose_frames(video_path, trim_start_seconds, trim_end_seconds)
+    metrics: list[Metric] = []
+    for phase, target in labeled_times:
+        nearest = min(pose_frames, key=lambda pose_frame: abs(pose_frame.time_seconds - target)) if pose_frames else None
+        if nearest is not None and abs(nearest.time_seconds - target) <= 0.4:
+            metric = build_metric(session_id, phase, nearest, fps)
+            metric.frameImage = encode_frame_jpeg(nearest.frame)
+        else:
+            frames = extract_frames_at(video_path, [target])
+            if not frames:
+                continue
+            _, frame = frames[0]
+            metric = build_metric_without_pose(session_id, phase, frame, target)
+            metric.frameImage = encode_frame_jpeg(frame)
+        metrics.append(metric)
+    return metrics
 
 
 class DevKeyframesRequest(BaseModel):
@@ -512,44 +564,22 @@ def run_keyframe_search(video_path: str, trim_start_seconds: float, trim_end_sec
     except AIReviewError as error:
         raise HTTPException(status_code=error.status_code, detail=str(error))
 
-    pose_frames, fps, _duration = extract_pose_frames(video_path, trim_start_seconds, trim_end_seconds)
-    session_id = f"kf-{re.sub(r'[^A-Za-z0-9_-]', '-', label)}"
-
-    metrics: list[Metric] = []
-    for event in search.get("events", []):
-        phase = EVENT_PHASE.get(event.get("name", ""))
-        if phase is None:
-            continue
-        target = float(event["time_seconds"])
-        nearest = min(pose_frames, key=lambda pose_frame: abs(pose_frame.time_seconds - target)) if pose_frames else None
-        if nearest is not None and abs(nearest.time_seconds - target) <= 0.4:
-            metric = build_metric(session_id, phase, nearest, fps)
-            metric.frameImage = encode_frame_jpeg(nearest.frame)
-        else:
-            frames = extract_frames_at(video_path, [target])
-            if not frames:
-                continue
-            _, frame = frames[0]
-            metric = build_metric_without_pose(session_id, phase, frame, target)
-            metric.frameImage = encode_frame_jpeg(frame)
-        metrics.append(metric)
+    labeled_times = [
+        (EVENT_PHASE[event["name"]], float(event["time_seconds"]))
+        for event in search.get("events", [])
+        if event.get("name") in EVENT_PHASE
+    ]
+    metrics = metrics_at_times(
+        video_path, labeled_times, trim_start_seconds, trim_end_seconds, f"kf-{re.sub(r'[^A-Za-z0-9_-]', '-', label)}"
+    )
 
     series: list[dict] = []
     air_frames: list[dict] = []
     filmstrip: list[dict] = []
-    window: dict | None = None
-    event_times = {
-        event["name"]: float(event["time_seconds"])
-        for event in search.get("events", [])
-        if event.get("name") in EVENT_PHASE
-    }
-    if event_times:
-        start_anchor = event_times.get("takeoff", min(event_times.values()))
-        end_anchor = event_times.get("landing") or event_times.get("crash") or max(event_times.values())
-        end_anchor = max(end_anchor, start_anchor)
-        window = {"start": round(max(0.0, start_anchor - 0.7), 2), "end": round(end_anchor + 0.7, 2)}
+    window = window_from_events(search.get("events", []))
+    if window is not None:
         series, air_frames, filmstrip = measure_window(
-            video_path, window["start"], window["end"], (start_anchor, end_anchor)
+            video_path, window["start"], window["end"], (window["anchorStart"], window["anchorEnd"])
         )
 
     return {
@@ -934,13 +964,13 @@ def build_metric(session_id: str, phase: Phase, pose_frame: PoseFrame, fps: floa
         landing=landing,
     )
 
-    floor_angle = line_angle(floor)
-    tire_angle = line_angle(tire_baseline)
-    landing_angle = line_angle(landing)
-    torso_angle = angle_between_lines(FrameLine(start=hip, end=shoulder), floor)
-    hip_angle = joint_angle(shoulder, hip, knee)
-    knee_angle = joint_angle(hip, knee, ankle)
-    elbow_angle = joint_angle(shoulder, elbow, wrist)
+    floor_angle = px_line_angle(floor, width, height)
+    tire_angle = px_line_angle(tire_baseline, width, height)
+    landing_angle = px_line_angle(landing, width, height)
+    torso_angle = px_angle_between_lines(FrameLine(start=hip, end=shoulder), floor, width, height)
+    hip_angle = px_joint_angle(shoulder, hip, knee, width, height)
+    knee_angle = px_joint_angle(hip, knee, ankle, width, height)
+    elbow_angle = px_joint_angle(shoulder, elbow, wrist, width, height)
     confidence = clamp(pose_frame.confidence, 0, 1)
 
     return Metric(
@@ -1212,6 +1242,35 @@ def px_line(first: tuple[float, float], second: tuple[float, float], width: int,
     )
 
 
+# Pixel-space angle math. Normalized coordinates distort angles by the frame's
+# aspect ratio (a 45-degree visual line reads ~29 degrees on 16:9), so all angle
+# *numbers* are computed in pixel space; normalized lines remain for overlays.
+
+
+def px_line_angle(line: FrameLine, width: int, height: int) -> float:
+    return normalize_angle(
+        math.degrees(math.atan2((line.end.y - line.start.y) * height, (line.end.x - line.start.x) * width))
+    )
+
+
+def px_angle_between_lines(first: FrameLine, second: FrameLine, width: int, height: int) -> float:
+    diff = abs(normalize_angle(px_line_angle(first, width, height) - px_line_angle(second, width, height)))
+    return min(diff, 180 - diff)
+
+
+def px_joint_angle(first: FramePoint, joint: FramePoint, second: FramePoint, width: int, height: int) -> float:
+    first_vector = ((first.x - joint.x) * width, (first.y - joint.y) * height)
+    second_vector = ((second.x - joint.x) * width, (second.y - joint.y) * height)
+    first_magnitude = math.hypot(*first_vector)
+    second_magnitude = math.hypot(*second_vector)
+    if first_magnitude == 0 or second_magnitude == 0:
+        return 0
+    cosine = (first_vector[0] * second_vector[0] + first_vector[1] * second_vector[1]) / (
+        first_magnitude * second_magnitude
+    )
+    return math.degrees(math.acos(clamp(cosine, -1, 1)))
+
+
 def line_angle(line: FrameLine) -> float:
     return normalize_angle(math.degrees(math.atan2(line.end.y - line.start.y, line.end.x - line.start.x)))
 
@@ -1244,3 +1303,216 @@ def normalize_angle(angle: float) -> float:
 
 def clamp(value: float, minimum: float, maximum: float) -> float:
     return min(maximum, max(minimum, value))
+
+
+# --- Capture endpoints (production: the mobile capture loop) ------------------
+# /capture/analyze uploads once and proposes a window (AI when credentials exist,
+# null otherwise so the app falls back to manual trim). /capture/record turns a
+# confirmed window into the record: trimmed clip + key frames + filmstrip + series.
+
+CAPTURE_DIR = FilePath(tempfile.gettempdir()) / "riderlens-captures"
+CAPTURE_TTL_SECONDS = 45 * 60
+UPLOAD_ID_PATTERN = re.compile(r"^[0-9a-f]{32}$")
+
+
+def _cleanup_captures() -> None:
+    if not CAPTURE_DIR.exists():
+        return
+    now = time.time()
+    for path in CAPTURE_DIR.iterdir():
+        try:
+            if now - path.stat().st_mtime > CAPTURE_TTL_SECONDS:
+                path.unlink()
+        except OSError:
+            pass
+
+
+def _save_capture_upload(video: UploadFile) -> str:
+    CAPTURE_DIR.mkdir(parents=True, exist_ok=True)
+    _cleanup_captures()
+    upload_id = uuid.uuid4().hex
+    suffix = os.path.splitext(video.filename or "clip.mp4")[1] or ".mp4"
+    with open(CAPTURE_DIR / f"{upload_id}{suffix}", "wb") as out:
+        shutil.copyfileobj(video.file, out)
+    return upload_id
+
+
+def _capture_path(upload_id: str) -> FilePath:
+    if not UPLOAD_ID_PATTERN.match(upload_id):
+        raise HTTPException(status_code=400, detail="Invalid upload id.")
+    path = next(CAPTURE_DIR.glob(f"{upload_id}.*"), None)
+    if path is None:
+        raise HTTPException(status_code=410, detail="Upload expired. Send the video again.")
+    return path
+
+
+def video_duration_seconds(video_path: str) -> float:
+    capture = cv2.VideoCapture(video_path)
+    if not capture.isOpened():
+        raise HTTPException(status_code=422, detail="Could not open video.")
+    fps = capture.get(cv2.CAP_PROP_FPS) or 30
+    frame_count = capture.get(cv2.CAP_PROP_FRAME_COUNT) or 0
+    capture.release()
+    return frame_count / fps if frame_count > 0 else 0.0
+
+
+def crop_clip(video_path: str, start_seconds: float, end_seconds: float) -> bytes:
+    """The trimmed moment clip. FFmpeg stream copy (fast, keyframe-aligned — margins
+    absorb the imprecision); cv2 re-encode fallback (no audio) when ffmpeg is missing."""
+    with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp:
+        output_path = tmp.name
+    try:
+        if shutil.which("ffmpeg"):
+            result = subprocess.run(
+                [
+                    "ffmpeg", "-y",
+                    "-ss", f"{max(0.0, start_seconds):.3f}",
+                    "-to", f"{end_seconds:.3f}",
+                    "-i", video_path,
+                    "-c", "copy", "-movflags", "+faststart",
+                    output_path,
+                ],
+                capture_output=True,
+                timeout=120,
+            )
+            if result.returncode == 0 and os.path.getsize(output_path) > 0:
+                with open(output_path, "rb") as clip:
+                    return clip.read()
+
+        capture = cv2.VideoCapture(video_path)
+        if not capture.isOpened():
+            raise HTTPException(status_code=422, detail="Could not open video for cropping.")
+        fps = capture.get(cv2.CAP_PROP_FPS) or 30
+        width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        writer = cv2.VideoWriter(output_path, cv2.VideoWriter_fourcc(*"mp4v"), fps, (width, height))
+        capture.set(cv2.CAP_PROP_POS_MSEC, max(0.0, start_seconds) * 1000.0)
+        try:
+            while capture.get(cv2.CAP_PROP_POS_MSEC) <= end_seconds * 1000.0:
+                ok, frame = capture.read()
+                if not ok:
+                    break
+                writer.write(frame)
+        finally:
+            writer.release()
+            capture.release()
+        if os.path.getsize(output_path) == 0:
+            raise HTTPException(status_code=422, detail="Could not produce the trimmed clip.")
+        with open(output_path, "rb") as clip:
+            return clip.read()
+    finally:
+        try:
+            os.unlink(output_path)
+        except OSError:
+            pass
+
+
+@app.post("/capture/analyze")
+async def capture_analyze(
+    video: UploadFile = File(...),
+    trim_start_seconds: float = Form(0),
+    trim_end_seconds: float | None = Form(None),
+):
+    if not video.content_type or not video.content_type.startswith("video/"):
+        raise HTTPException(status_code=415, detail="Upload a video file.")
+    if cv2 is None or mp is None or np is None:
+        raise HTTPException(status_code=503, detail="Install worker dependencies: mediapipe, opencv-python-headless, numpy.")
+
+    upload_id = _save_capture_upload(video)
+    video_path = str(_capture_path(upload_id))
+    duration = video_duration_seconds(video_path)
+
+    from .ai_review import AIReviewError, find_key_frames_ai
+
+    window = None
+    events: list[dict] = []
+    event_type = None
+    summary = None
+    ai_available = False
+    ai_reason = None
+    try:
+        sheet = build_contact_sheet(video_path, trim_start_seconds, trim_end_seconds)
+        if sheet:
+            search = find_key_frames_ai(sheet)
+            events = search.get("events", [])
+            event_type = search.get("event_type")
+            summary = search.get("summary")
+            window = window_from_events(events)
+            ai_available = True
+    except AIReviewError as error:
+        ai_reason = str(error)
+
+    return {
+        "uploadId": upload_id,
+        "durationSeconds": round(duration, 2),
+        "aiAvailable": ai_available,
+        "aiReason": ai_reason,
+        "window": window,
+        "events": events,
+        "eventType": event_type,
+        "summary": summary,
+    }
+
+
+@app.post("/capture/record")
+async def capture_record(
+    start_seconds: float = Form(...),
+    end_seconds: float = Form(...),
+    upload_id: str | None = Form(None),
+    video: UploadFile | None = File(None),
+    events_json: str | None = Form(None),
+):
+    if cv2 is None or mp is None or np is None:
+        raise HTTPException(status_code=503, detail="Install worker dependencies: mediapipe, opencv-python-headless, numpy.")
+    if upload_id is None and video is None:
+        raise HTTPException(status_code=422, detail="Provide upload_id or a video file.")
+    if video is not None and (not video.content_type or not video.content_type.startswith("video/")):
+        raise HTTPException(status_code=415, detail="Upload a video file.")
+
+    if upload_id is not None:
+        video_path = str(_capture_path(upload_id))
+    else:
+        video_path = str(_capture_path(_save_capture_upload(video)))
+
+    duration = video_duration_seconds(video_path)
+    start = max(0.0, min(start_seconds, duration))
+    end = max(start + 0.3, min(end_seconds, duration or end_seconds))
+
+    events: list[dict] = []
+    if events_json:
+        try:
+            events = json.loads(events_json)
+        except json.JSONDecodeError:
+            raise HTTPException(status_code=422, detail="events_json is not valid JSON.")
+
+    labeled_times = [
+        (EVENT_PHASE[event["name"]], float(event["time_seconds"]))
+        for event in events
+        if event.get("name") in EVENT_PHASE and start <= float(event["time_seconds"]) <= end
+    ]
+    if not labeled_times:
+        # Manual window: fixed ratios are acceptable inside a human-confirmed tight window.
+        span = end - start
+        labeled_times = [
+            (phase, round(start + span * ratio, 2))
+            for phase, ratio in [
+                ("approach", 0.08),
+                ("compression", 0.28),
+                ("takeoff", 0.45),
+                ("air", 0.65),
+                ("landing", 0.88),
+            ]
+        ]
+
+    metrics = metrics_at_times(video_path, labeled_times, max(0.0, start - 0.3), end + 0.3, "capture")
+    series, _air_frames, filmstrip = measure_window(video_path, start, end, (start, end))
+    clip_bytes = crop_clip(video_path, start, end)
+
+    return {
+        "clip": "data:video/mp4;base64," + base64.b64encode(clip_bytes).decode("ascii"),
+        "window": {"start": round(start, 2), "end": round(end, 2)},
+        "metrics": metrics,
+        "series": series,
+        "filmstrip": filmstrip,
+        "events": events,
+    }
