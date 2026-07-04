@@ -401,7 +401,7 @@ def measure_window(
     window_end: float,
     air_span: tuple[float, float],
     include_bike: bool = True,
-    filmstrip_width: int = 320,
+    filmstrip_width: int | None = None,
 ) -> tuple[list[dict], list[dict], list[dict]]:
     """Dense per-frame measurement between the anchored window bounds.
 
@@ -487,10 +487,13 @@ def measure_window(
             if air_span[0] <= time_seconds <= air_span[1]:
                 air_candidates.append((time_seconds, frame))
             if index % thumb_step == 0:
-                small = cv2.resize(frame, (filmstrip_width, max(1, int(height * filmstrip_width / width))))
+                # Source resolution capped at 1280px: sharp in the big player without
+                # 4K-sized payloads. Higher JPEG quality — these frames ARE the record.
+                target_width = filmstrip_width if filmstrip_width is not None else min(width, 1280)
+                small = cv2.resize(frame, (target_width, max(1, int(height * target_width / width)))) if target_width < width else frame.copy()
                 if result.pose_landmarks:
                     draw_skeleton(small, result.pose_landmarks.landmark)
-                image = encode_frame_jpeg(small)
+                image = encode_frame_jpeg(small, quality=86)
                 if image:
                     filmstrip.append({"t": round(time_seconds, 2), "image": image})
             series.append(entry)
@@ -626,8 +629,7 @@ def run_keyframe_search(video_path: str, trim_start_seconds: float, trim_end_sec
             window["start"],
             window["end"],
             (window["anchorStart"], window["anchorEnd"]),
-            filmstrip_width=640,
-        )
+            )
 
     return {
         "eventType": search["event_type"],
@@ -1073,8 +1075,8 @@ def build_report(metrics: list[Metric]) -> Report:
     )
 
 
-def encode_frame_jpeg(frame) -> str | None:
-    ok, encoded = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
+def encode_frame_jpeg(frame, quality: int = 80) -> str | None:
+    ok, encoded = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), quality])
     if not ok:
         return None
     return "data:image/jpeg;base64," + base64.b64encode(encoded.tobytes()).decode("ascii")
@@ -1536,7 +1538,7 @@ async def capture_record(
     # geometry (unreliable on real footage) and no separate key-frame metrics — the
     # AI events label frames in the strip instead.
     series, _air_frames, filmstrip = measure_window(
-        video_path, start, end, (start, end), include_bike=False, filmstrip_width=640
+        video_path, start, end, (start, end), include_bike=False
     )
     clip_bytes = crop_clip(video_path, start, end)
 
