@@ -1,13 +1,12 @@
 import { useVideoPlayer, VideoView } from "expo-video";
-import { AlertTriangle, RefreshCcw, Share2, Trash2 } from "lucide-react-native";
+import { AlertTriangle, RefreshCcw, Share2, Trash2, X } from "lucide-react-native";
 import { useEffect, useState } from "react";
-import { Image, ScrollView, StyleSheet, View } from "react-native";
+import { Image, Modal, Pressable, ScrollView, StyleSheet, View } from "react-native";
 
-import { loadRecordDetail } from "../services/recordStore";
 import { getSkillLabel } from "../services/analysis";
+import { loadRecordDetail } from "../services/recordStore";
 import { spacing, tokens } from "../theme/tokens";
-import type { JumpRecord, JumpRecordDetail } from "../types/domain";
-import { AnalysisFrames } from "./AnalysisFrames";
+import type { FilmstripFrame, JumpRecord, JumpRecordDetail } from "../types/domain";
 import { TimelineChart } from "./TimelineChart";
 import { AppText, Button, Card, Chip, NumberText } from "./ui";
 
@@ -27,8 +26,29 @@ function ClipPlayer({ clipUri }: { clipUri: string }) {
   return <VideoView player={player} style={styles.player} contentFit="contain" nativeControls />;
 }
 
+/** Label each event with the closest filmstrip frame so tags render on the strip. */
+function eventLabels(record: JumpRecord, filmstrip: FilmstripFrame[]): Map<number, string> {
+  const labels = new Map<number, string>();
+  for (const event of record.events ?? []) {
+    let bestIndex = -1;
+    let bestDistance = Number.POSITIVE_INFINITY;
+    filmstrip.forEach((frame, index) => {
+      const distance = Math.abs(frame.t - event.time_seconds);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        bestIndex = index;
+      }
+    });
+    if (bestIndex >= 0 && bestDistance <= 0.25 && !labels.has(bestIndex)) {
+      labels.set(bestIndex, event.name.replace(/_/g, " "));
+    }
+  }
+  return labels;
+}
+
 export function RecordCard({ record, onShare, onRetry, onDelete }: RecordCardProps) {
   const [detail, setDetail] = useState<JumpRecordDetail | undefined>();
+  const [zoomed, setZoomed] = useState<FilmstripFrame | undefined>();
 
   useEffect(() => {
     let active = true;
@@ -52,6 +72,7 @@ export function RecordCard({ record, onShare, onRetry, onDelete }: RecordCardPro
         : record.status === "failed"
           ? "Failed"
           : "Waiting for connection";
+  const labels = detail ? eventLabels(record, detail.filmstrip) : new Map<number, string>();
 
   return (
     <Card style={styles.card}>
@@ -79,19 +100,23 @@ export function RecordCard({ record, onShare, onRetry, onDelete }: RecordCardPro
 
       {record.status === "ready" && detail ? (
         <>
-          <AnalysisFrames metrics={detail.metrics} emptyText="No key frames in this record." />
-          {detail.filmstrip.length > 0 ? (
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filmstrip}>
-              {detail.filmstrip.map((frame) => (
-                <View key={frame.t} style={styles.filmstripCell}>
-                  <Image source={{ uri: frame.image }} style={styles.filmstripImage} />
-                  <NumberText size={10} color={tokens.textMuted}>
-                    {frame.t.toFixed(2)}s
-                  </NumberText>
-                </View>
-              ))}
-            </ScrollView>
-          ) : null}
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filmstrip}>
+            {detail.filmstrip.map((frame, index) => (
+              <Pressable key={frame.t} onPress={() => setZoomed(frame)} style={styles.filmstripCell}>
+                <Image source={{ uri: frame.image }} style={styles.filmstripImage} />
+                {labels.has(index) ? (
+                  <View style={styles.eventTag}>
+                    <AppText size={10} weight="bold" color={tokens.graphite}>
+                      {labels.get(index)}
+                    </AppText>
+                  </View>
+                ) : null}
+                <NumberText size={10} color={tokens.textMuted}>
+                  {frame.t.toFixed(2)}s
+                </NumberText>
+              </Pressable>
+            ))}
+          </ScrollView>
           <TimelineChart series={detail.series} events={record.events} />
         </>
       ) : null}
@@ -122,6 +147,22 @@ export function RecordCard({ record, onShare, onRetry, onDelete }: RecordCardPro
           </Button>
         ) : null}
       </View>
+
+      <Modal visible={Boolean(zoomed)} transparent animationType="fade" onRequestClose={() => setZoomed(undefined)}>
+        <Pressable style={styles.zoomOverlay} onPress={() => setZoomed(undefined)}>
+          {zoomed ? (
+            <View style={styles.zoomContent}>
+              <Image source={{ uri: zoomed.image }} style={styles.zoomImage} resizeMode="contain" />
+              <View style={styles.zoomCaption}>
+                <NumberText color={tokens.surface} weight="bold">
+                  {zoomed.t.toFixed(2)}s
+                </NumberText>
+                <X color={tokens.surface} size={18} />
+              </View>
+            </View>
+          ) : null}
+        </Pressable>
+      </Modal>
     </Card>
   );
 }
@@ -154,10 +195,19 @@ const styles = StyleSheet.create({
     gap: 2
   },
   filmstripImage: {
-    width: 120,
-    height: 68,
+    width: 168,
+    height: 95,
     borderRadius: 6,
     backgroundColor: tokens.graphite
+  },
+  eventTag: {
+    position: "absolute",
+    top: 6,
+    left: 6,
+    backgroundColor: tokens.electric,
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 2
   },
   pendingRow: {
     flexDirection: "row",
@@ -174,5 +224,26 @@ const styles = StyleSheet.create({
   actionButton: {
     flex: 1,
     minHeight: 42
+  },
+  zoomOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(9, 13, 15, 0.92)",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: spacing.lg
+  },
+  zoomContent: {
+    width: "100%",
+    gap: spacing.sm
+  },
+  zoomImage: {
+    width: "100%",
+    height: 320,
+    borderRadius: 10
+  },
+  zoomCaption: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between"
   }
 });

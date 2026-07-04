@@ -59,7 +59,6 @@ export async function persistRecordPayload(id: string, payload: RecordPayload): 
   await FileSystem.writeAsStringAsync(clipUri, base64, { encoding: FileSystem.EncodingType.Base64 });
 
   const detail: JumpRecordDetail = {
-    metrics: payload.metrics,
     series: payload.series,
     filmstrip: payload.filmstrip
   };

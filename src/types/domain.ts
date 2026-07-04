@@ -123,7 +123,6 @@ export type JumpRecord = {
 };
 
 export type JumpRecordDetail = {
-  metrics: PoseMetric[];
   series: SeriesPoint[];
   filmstrip: FilmstripFrame[];
 };

@@ -360,14 +360,55 @@ def build_metric_without_pose(session_id: str, phase: Phase, frame, time_seconds
     )
 
 
+# Full-body skeleton (both sides): shoulders, elbows, wrists, hips, knees, ankles.
+SKELETON_CONNECTIONS = [
+    (11, 12), (11, 13), (13, 15), (12, 14), (14, 16),
+    (11, 23), (12, 24), (23, 24),
+    (23, 25), (25, 27), (24, 26), (26, 28),
+]
+SKELETON_COLOR = (46, 255, 182)  # electric green, BGR
+SKELETON_OUTLINE = (19, 22, 17)
+
+
+def draw_skeleton(frame, landmarks, visibility_threshold: float = 0.5) -> None:
+    """Burn the full-body pose skeleton into a frame (in place)."""
+    height, width = frame.shape[:2]
+    thickness = max(2, width // 320)
+
+    def point(index: int):
+        landmark = landmarks[index]
+        if getattr(landmark, "visibility", 0) < visibility_threshold:
+            return None
+        return (int(clamp(float(landmark.x), 0, 1) * width), int(clamp(float(landmark.y), 0, 1) * height))
+
+    for start_index, end_index in SKELETON_CONNECTIONS:
+        start = point(start_index)
+        end = point(end_index)
+        if start is None or end is None:
+            continue
+        cv2.line(frame, start, end, SKELETON_OUTLINE, thickness + 2, cv2.LINE_AA)
+        cv2.line(frame, start, end, SKELETON_COLOR, thickness, cv2.LINE_AA)
+    for index in {index for connection in SKELETON_CONNECTIONS for index in connection}:
+        joint = point(index)
+        if joint is not None:
+            cv2.circle(frame, joint, thickness + 1, SKELETON_OUTLINE, -1, cv2.LINE_AA)
+            cv2.circle(frame, joint, thickness, SKELETON_COLOR, -1, cv2.LINE_AA)
+
+
 def measure_window(
-    video_path: str, window_start: float, window_end: float, air_span: tuple[float, float]
+    video_path: str,
+    window_start: float,
+    window_end: float,
+    air_span: tuple[float, float],
+    include_bike: bool = True,
+    filmstrip_width: int = 320,
 ) -> tuple[list[dict], list[dict], list[dict]]:
     """Dense per-frame measurement between the anchored window bounds.
 
-    Pose runs on every sampled frame (~30/s, capped at 120); the bike detector runs on
-    every third sample and pitch is reported only when both wheels pair-confirm.
-    Returns (series, air_frames, filmstrip): air_frames are small thumbnails inside
+    Pose runs on every sampled frame (~30/s, capped at 120) and the full-body skeleton
+    is burned into every filmstrip thumbnail. The bike detector (pitch) only runs when
+    include_bike is set — the capture path skips it (pose-only records).
+    Returns (series, air_frames, filmstrip): air_frames are small raw thumbnails inside
     air_span for the AI review; filmstrip covers the whole window for the user.
     """
     capture = cv2.VideoCapture(video_path)
@@ -430,7 +471,7 @@ def measure_window(
                 entry["hipHeight"] = round(1.0 - hip.y, 3)
                 entry["confidence"] = round(get_pose_confidence(landmarks, side), 2)
 
-            if index % 3 == 0:
+            if include_bike and index % 3 == 0:
                 bike_box = detect_bike_box(frame)
                 if bike_box is not None:
                     box_x0, box_y0, box_x1, box_y1 = bike_box
@@ -446,7 +487,9 @@ def measure_window(
             if air_span[0] <= time_seconds <= air_span[1]:
                 air_candidates.append((time_seconds, frame))
             if index % thumb_step == 0:
-                small = cv2.resize(frame, (320, max(1, int(height * 320 / width))))
+                small = cv2.resize(frame, (filmstrip_width, max(1, int(height * filmstrip_width / width))))
+                if result.pose_landmarks:
+                    draw_skeleton(small, result.pose_landmarks.landmark)
                 image = encode_frame_jpeg(small)
                 if image:
                     filmstrip.append({"t": round(time_seconds, 2), "image": image})
@@ -1485,33 +1528,17 @@ async def capture_record(
         except json.JSONDecodeError:
             raise HTTPException(status_code=422, detail="events_json is not valid JSON.")
 
-    labeled_times = [
-        (EVENT_PHASE[event["name"]], float(event["time_seconds"]))
-        for event in events
-        if event.get("name") in EVENT_PHASE and start <= float(event["time_seconds"]) <= end
-    ]
-    if not labeled_times:
-        # Manual window: fixed ratios are acceptable inside a human-confirmed tight window.
-        span = end - start
-        labeled_times = [
-            (phase, round(start + span * ratio, 2))
-            for phase, ratio in [
-                ("approach", 0.08),
-                ("compression", 0.28),
-                ("takeoff", 0.45),
-                ("air", 0.65),
-                ("landing", 0.88),
-            ]
-        ]
-
-    metrics = metrics_at_times(video_path, labeled_times, max(0.0, start - 0.3), end + 0.3, "capture")
-    series, _air_frames, filmstrip = measure_window(video_path, start, end, (start, end))
+    # Pose-only records: every filmstrip frame carries the full skeleton; no bike
+    # geometry (unreliable on real footage) and no separate key-frame metrics — the
+    # AI events label frames in the strip instead.
+    series, _air_frames, filmstrip = measure_window(
+        video_path, start, end, (start, end), include_bike=False, filmstrip_width=480
+    )
     clip_bytes = crop_clip(video_path, start, end)
 
     return {
         "clip": "data:video/mp4;base64," + base64.b64encode(clip_bytes).decode("ascii"),
         "window": {"start": round(start, 2), "end": round(end, 2)},
-        "metrics": metrics,
         "series": series,
         "filmstrip": filmstrip,
         "events": events,

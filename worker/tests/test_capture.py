@@ -46,7 +46,7 @@ def test_capture_record_manual_window_produces_record():
     assert response.status_code == 200
     body = response.json()
     assert body["clip"].startswith("data:video/mp4;base64,")
-    assert len(body["metrics"]) == 5
+    assert "metrics" not in body  # pose-only records: no key-frame metrics
     assert len(body["series"]) > 10
     assert len(body["filmstrip"]) > 5
     assert body["window"] == {"start": 4.4, "end": 5.4}

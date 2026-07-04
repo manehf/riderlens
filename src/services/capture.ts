@@ -1,4 +1,4 @@
-import type { CaptureEvent, FilmstripFrame, PoseMetric, SeriesPoint } from "../types/domain";
+import type { CaptureEvent, FilmstripFrame, SeriesPoint } from "../types/domain";
 import { getAnalysisWorkerUrl } from "./analysisWorker";
 
 // Window proposal must never block a rider at the trail: short timeout, silent fallback.
@@ -19,9 +19,8 @@ export type WindowProposal = {
 export type RecordPayload = {
   clip: string; // data URL, video/mp4 base64
   window: { start: number; end: number };
-  metrics: PoseMetric[];
   series: SeriesPoint[];
-  filmstrip: FilmstripFrame[];
+  filmstrip: FilmstripFrame[]; // full-body skeleton burned into every frame
   events: CaptureEvent[];
 };
 
