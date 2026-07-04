@@ -185,7 +185,7 @@ Use electric green for primary actions and scan states, graphite for video/analy
 
 ## Product Docs
 
-- Current product & technical plan (roadmap, MediaPipe Tasks migration, rider measurements): `riderlens-product-plan.md`
+- Current product & technical plan (capture-first: find the moment, crop, pose overlay, tag, share): `riderlens-product-plan.md`
 - Reference clip library conventions and CLI testing: `clips/README.md`
 - Original product scope, risks, data model, and visual system: `bike-technique-app-prerequisites.md`
 - Worker details: `worker/README.md`
