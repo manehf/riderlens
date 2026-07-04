@@ -622,7 +622,11 @@ def run_keyframe_search(video_path: str, trim_start_seconds: float, trim_end_sec
     window = window_from_events(search.get("events", []))
     if window is not None:
         series, air_frames, filmstrip = measure_window(
-            video_path, window["start"], window["end"], (window["anchorStart"], window["anchorEnd"])
+            video_path,
+            window["start"],
+            window["end"],
+            (window["anchorStart"], window["anchorEnd"]),
+            filmstrip_width=640,
         )
 
     return {
@@ -1532,7 +1536,7 @@ async def capture_record(
     # geometry (unreliable on real footage) and no separate key-frame metrics — the
     # AI events label frames in the strip instead.
     series, _air_frames, filmstrip = measure_window(
-        video_path, start, end, (start, end), include_bike=False, filmstrip_width=480
+        video_path, start, end, (start, end), include_bike=False, filmstrip_width=640
     )
     clip_bytes = crop_clip(video_path, start, end)
 

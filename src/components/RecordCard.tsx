@@ -1,6 +1,7 @@
+import Slider from "@react-native-community/slider";
 import { useVideoPlayer, VideoView } from "expo-video";
-import { AlertTriangle, RefreshCcw, Share2, Trash2, X } from "lucide-react-native";
-import { useEffect, useState } from "react";
+import { AlertTriangle, Pause, Play, RefreshCcw, Share2, Trash2, X } from "lucide-react-native";
+import { useEffect, useMemo, useState } from "react";
 import { Image, Modal, Pressable, ScrollView, StyleSheet, View } from "react-native";
 
 import { getSkillLabel } from "../services/analysis";
@@ -31,7 +32,7 @@ function eventLabels(record: JumpRecord, filmstrip: FilmstripFrame[]): Map<numbe
   const labels = new Map<number, string>();
   for (const event of record.events ?? []) {
     let bestIndex = -1;
-    let bestDistance = Number.POSITIVE_INFINITY;
+    let bestDistance = 0.25;
     filmstrip.forEach((frame, index) => {
       const distance = Math.abs(frame.t - event.time_seconds);
       if (distance < bestDistance) {
@@ -39,20 +40,27 @@ function eventLabels(record: JumpRecord, filmstrip: FilmstripFrame[]): Map<numbe
         bestIndex = index;
       }
     });
-    if (bestIndex >= 0 && bestDistance <= 0.25 && !labels.has(bestIndex)) {
+    if (bestIndex >= 0 && !labels.has(bestIndex)) {
       labels.set(bestIndex, event.name.replace(/_/g, " "));
     }
   }
   return labels;
 }
 
+// Playback runs at half speed: slow enough to read body position, fast enough to feel motion.
+const PLAYBACK_SPEED = 0.5;
+
 export function RecordCard({ record, onShare, onRetry, onDelete }: RecordCardProps) {
   const [detail, setDetail] = useState<JumpRecordDetail | undefined>();
   const [zoomed, setZoomed] = useState<FilmstripFrame | undefined>();
+  const [frameIndex, setFrameIndex] = useState(0);
+  const [playing, setPlaying] = useState(false);
 
   useEffect(() => {
     let active = true;
     setDetail(undefined);
+    setFrameIndex(0);
+    setPlaying(false);
     if (record.status === "ready") {
       loadRecordDetail(record.id).then((loaded) => {
         if (active) setDetail(loaded);
@@ -63,6 +71,25 @@ export function RecordCard({ record, onShare, onRetry, onDelete }: RecordCardPro
     };
   }, [record.id, record.status]);
 
+  const frames = detail?.filmstrip ?? [];
+  const labels = useMemo(() => (detail ? eventLabels(record, detail.filmstrip) : new Map<number, string>()), [detail, record]);
+
+  const frameIntervalMs = useMemo(() => {
+    if (frames.length < 2) return 120;
+    const realInterval = ((frames[frames.length - 1].t - frames[0].t) / (frames.length - 1)) * 1000;
+    return Math.max(40, realInterval / PLAYBACK_SPEED);
+  }, [frames]);
+
+  useEffect(() => {
+    if (!playing || frames.length < 2) return;
+    const timer = setInterval(() => {
+      setFrameIndex((index) => (index + 1) % frames.length);
+    }, frameIntervalMs);
+    return () => clearInterval(timer);
+  }, [frames.length, frameIntervalMs, playing]);
+
+  const currentFrame = frames[Math.min(frameIndex, Math.max(0, frames.length - 1))];
+
   const statusTone = record.status === "ready" ? "green" : record.status === "failed" ? "red" : "amber";
   const statusLabel =
     record.status === "ready"
@@ -72,7 +99,6 @@ export function RecordCard({ record, onShare, onRetry, onDelete }: RecordCardPro
         : record.status === "failed"
           ? "Failed"
           : "Waiting for connection";
-  const labels = detail ? eventLabels(record, detail.filmstrip) : new Map<number, string>();
 
   return (
     <Card style={styles.card}>
@@ -98,12 +124,63 @@ export function RecordCard({ record, onShare, onRetry, onDelete }: RecordCardPro
 
       {record.status === "ready" && record.clipUri ? <ClipPlayer clipUri={record.clipUri} /> : null}
 
-      {record.status === "ready" && detail ? (
+      {record.status === "ready" && detail && currentFrame ? (
         <>
+          {/* Sequence player: frame-by-frame with the skeleton. Tap the frame to zoom. */}
+          <View>
+            <Pressable onPress={() => setZoomed(currentFrame)}>
+              <Image source={{ uri: currentFrame.image }} style={styles.sequenceFrame} resizeMode="contain" />
+              {labels.has(frameIndex) ? (
+                <View style={styles.eventTagLarge}>
+                  <AppText size={11} weight="bold" color={tokens.graphite}>
+                    {labels.get(frameIndex)}
+                  </AppText>
+                </View>
+              ) : null}
+            </Pressable>
+            <View style={styles.playerControls}>
+              <Button
+                icon={playing ? Pause : Play}
+                variant="secondary"
+                onPress={() => setPlaying((value) => !value)}
+                style={styles.playButton}
+              >
+                {playing ? "Pause" : "Play"}
+              </Button>
+              <Slider
+                style={styles.slider}
+                minimumValue={0}
+                maximumValue={Math.max(0, frames.length - 1)}
+                step={1}
+                value={frameIndex}
+                minimumTrackTintColor={tokens.electric}
+                maximumTrackTintColor={tokens.border}
+                thumbTintColor={tokens.electric}
+                onValueChange={(value) => {
+                  setPlaying(false);
+                  setFrameIndex(Math.round(value));
+                }}
+              />
+              <NumberText size={12} color={tokens.textMuted} style={styles.playerTime}>
+                {currentFrame.t.toFixed(2)}s
+              </NumberText>
+            </View>
+          </View>
+
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filmstrip}>
-            {detail.filmstrip.map((frame, index) => (
-              <Pressable key={frame.t} onPress={() => setZoomed(frame)} style={styles.filmstripCell}>
-                <Image source={{ uri: frame.image }} style={styles.filmstripImage} />
+            {frames.map((frame, index) => (
+              <Pressable
+                key={frame.t}
+                onPress={() => {
+                  setPlaying(false);
+                  setFrameIndex(index);
+                }}
+                style={styles.filmstripCell}
+              >
+                <Image
+                  source={{ uri: frame.image }}
+                  style={[styles.filmstripImage, index === frameIndex && styles.filmstripImageActive]}
+                />
                 {labels.has(index) ? (
                   <View style={styles.eventTag}>
                     <AppText size={10} weight="bold" color={tokens.graphite}>
@@ -187,6 +264,40 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     backgroundColor: tokens.graphite
   },
+  sequenceFrame: {
+    width: "100%",
+    aspectRatio: 16 / 9,
+    borderRadius: 10,
+    backgroundColor: tokens.graphite
+  },
+  eventTagLarge: {
+    position: "absolute",
+    top: 10,
+    left: 10,
+    backgroundColor: tokens.electric,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 3
+  },
+  playerControls: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    marginTop: spacing.sm
+  },
+  playButton: {
+    minHeight: 40,
+    minWidth: 96,
+    paddingHorizontal: spacing.md
+  },
+  slider: {
+    flex: 1,
+    height: 36
+  },
+  playerTime: {
+    minWidth: 48,
+    textAlign: "right"
+  },
   filmstrip: {
     gap: spacing.sm
   },
@@ -195,10 +306,15 @@ const styles = StyleSheet.create({
     gap: 2
   },
   filmstripImage: {
-    width: 168,
-    height: 95,
+    width: 132,
+    height: 74,
     borderRadius: 6,
-    backgroundColor: tokens.graphite
+    backgroundColor: tokens.graphite,
+    borderWidth: 2,
+    borderColor: "transparent"
+  },
+  filmstripImageActive: {
+    borderColor: tokens.electric
   },
   eventTag: {
     position: "absolute",
@@ -238,7 +354,7 @@ const styles = StyleSheet.create({
   },
   zoomImage: {
     width: "100%",
-    height: 320,
+    height: 340,
     borderRadius: 10
   },
   zoomCaption: {

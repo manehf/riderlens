@@ -100,7 +100,23 @@
     </div>
     <div class="panel hidden" style="margin-top:16px" id="filmstripPanel">
       <h2>All jump frames</h2>
-      <div id="filmstrip" style="display:flex;gap:6px;overflow-x:auto;padding-bottom:6px"></div>
+      <div id="player" class="hidden">
+        <div style="position:relative">
+          <img id="playerFrame" style="width:100%;border-radius:8px;display:block;cursor:zoom-in" title="Click to zoom" />
+          <div id="playerTag" class="hidden" style="position:absolute;top:10px;left:10px;background:var(--accent);color:#101411;font-size:12px;font-weight:700;padding:2px 10px;border-radius:999px"></div>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;margin-top:10px">
+          <button id="playBtn" style="width:92px;margin:0;padding:8px">Play</button>
+          <input type="range" id="playerSlider" min="0" value="0" step="1" style="flex:1;accent-color:var(--accent)" />
+          <select id="playerSpeed" style="background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:7px">
+            <option value="0.25">0.25x</option>
+            <option value="0.5" selected>0.5x</option>
+            <option value="1">1x</option>
+          </select>
+          <span id="playerTime" class="num" style="color:var(--muted);font-size:12px;min-width:52px;text-align:right"></span>
+        </div>
+      </div>
+      <div id="filmstrip" style="display:flex;gap:6px;overflow-x:auto;padding:10px 0 6px"></div>
     </div>
     <div class="panel hidden" style="margin-top:16px" id="timelinePanel">
       <h2>Timeline — jump window</h2>
@@ -371,23 +387,25 @@ function renderFilmstrip(data) {
     if (bestIndex >= 0 && !labels.has(bestIndex)) labels.set(bestIndex, event.name.replace(/_/g, " "));
   }
 
+  const cells = [];
   frames.forEach((frame, index) => {
     const cell = document.createElement("div");
     cell.style.cssText = "flex:0 0 auto;text-align:center;position:relative";
     const img = document.createElement("img");
     img.src = frame.image;
     img.loading = "lazy";
-    img.style.cssText = "height:120px;border:1px solid var(--border);border-radius:4px;cursor:zoom-in;display:block";
+    img.style.cssText = "height:132px;border:2px solid var(--border);border-radius:4px;cursor:pointer;display:block";
+    img.title = "Show in the player";
     img.onclick = () => {
-      document.getElementById("lightboxImg").src = frame.image;
-      document.getElementById("lightbox").classList.remove("hidden");
+      stopPlayback();
+      showPlayerFrame(index);
     };
     cell.appendChild(img);
     if (labels.has(index)) {
       const tag = document.createElement("div");
       tag.textContent = labels.get(index);
       tag.style.cssText =
-        "position:absolute;top:5px;left:5px;background:var(--accent);color:#101411;font-size:10px;font-weight:700;padding:1px 7px;border-radius:999px";
+        "position:absolute;top:6px;left:6px;background:var(--accent);color:#101411;font-size:10px;font-weight:700;padding:1px 7px;border-radius:999px";
       cell.appendChild(tag);
     }
     const cap = document.createElement("div");
@@ -396,8 +414,89 @@ function renderFilmstrip(data) {
     cap.textContent = frame.t.toFixed(2) + "s";
     cell.appendChild(cap);
     strip.appendChild(cell);
+    cells.push(img);
   });
+
+  setupPlayer(frames, labels, cells);
 }
+
+// --- Sequence player ----------------------------------------------------------
+
+const player = { frames: [], labels: new Map(), cells: [], index: 0, timer: null };
+
+function setupPlayer(frames, labels, cells) {
+  stopPlayback();
+  player.frames = frames;
+  player.labels = labels;
+  player.cells = cells;
+  const slider = document.getElementById("playerSlider");
+  slider.max = String(Math.max(0, frames.length - 1));
+  document.getElementById("player").classList.toggle("hidden", frames.length === 0);
+  if (frames.length > 0) showPlayerFrame(0);
+}
+
+function showPlayerFrame(index) {
+  const count = player.frames.length;
+  if (count === 0) return;
+  player.index = ((index % count) + count) % count;
+  const frame = player.frames[player.index];
+  document.getElementById("playerFrame").src = frame.image;
+  document.getElementById("playerTime").textContent = frame.t.toFixed(2) + "s";
+  document.getElementById("playerSlider").value = String(player.index);
+  const tag = document.getElementById("playerTag");
+  if (player.labels.has(player.index)) {
+    tag.textContent = player.labels.get(player.index);
+    tag.classList.remove("hidden");
+  } else {
+    tag.classList.add("hidden");
+  }
+  player.cells.forEach((cell, cellIndex) => {
+    cell.style.borderColor = cellIndex === player.index ? "var(--accent)" : "var(--border)";
+  });
+  const selected = player.cells[player.index];
+  if (selected && selected.scrollIntoView) {
+    selected.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }
+}
+
+function frameIntervalMs() {
+  const frames = player.frames;
+  if (frames.length < 2) return 120;
+  const speed = parseFloat(document.getElementById("playerSpeed").value || "0.5");
+  const realInterval = ((frames[frames.length - 1].t - frames[0].t) / (frames.length - 1)) * 1000;
+  return Math.max(35, realInterval / speed);
+}
+
+function startPlayback() {
+  if (player.frames.length < 2) return;
+  stopPlayback();
+  document.getElementById("playBtn").textContent = "Pause";
+  player.timer = setInterval(() => showPlayerFrame(player.index + 1), frameIntervalMs());
+}
+
+function stopPlayback() {
+  if (player.timer) clearInterval(player.timer);
+  player.timer = null;
+  document.getElementById("playBtn").textContent = "Play";
+}
+
+document.getElementById("playBtn").onclick = () => {
+  if (player.timer) stopPlayback();
+  else startPlayback();
+};
+document.getElementById("playerSlider").oninput = (event) => {
+  stopPlayback();
+  showPlayerFrame(parseInt(event.target.value, 10) || 0);
+};
+document.getElementById("playerSpeed").onchange = () => {
+  if (player.timer) startPlayback();
+};
+document.getElementById("playerFrame").onclick = () => {
+  const frame = player.frames[player.index];
+  if (!frame) return;
+  document.getElementById("lightboxImg").src = frame.image;
+  document.getElementById("lightbox").classList.remove("hidden");
+};
 document.getElementById("lightbox").onclick = () => document.getElementById("lightbox").classList.add("hidden");
 
 
