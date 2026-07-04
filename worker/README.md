@@ -163,6 +163,14 @@ ANTHROPIC_API_KEY=sk-ant-... RIDERLENS_SNAPSHOT_DIR=./snapshots uvicorn app.main
 
 Without a key the endpoint returns a clear 503 and everything else keeps working. Cost is roughly a cent or two per review (five 720p frames + a structured response).
 
+## Coaching Knowledge Base
+
+`app/knowledge/regular_jump.md` is distilled from the coaching transcripts in `how_to_jump/` and is injected into both AI prompts (keyframe search and review). It defines correct technique per phase with visual cues, named mistakes with their visual signatures (dead sailor, nose dive, spud hop, ...), frame-selection guidance, and coaching voice. Regenerate after adding transcripts:
+
+```bash
+.venv/bin/python scripts/distill_knowledge.py
+```
+
 ## Debug Snapshots
 
 Set `RIDERLENS_SNAPSHOT_DIR` to archive every analysis (request metadata + full response JSON) for debugging real clips:

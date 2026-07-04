@@ -454,6 +454,11 @@ async function runAiReview() {
       `<p>${review.event_summary}</p>` +
       `<table><thead><tr><th>frame</th><th style="text-align:left">rider state</th><th style="text-align:left">what is happening</th><th>label</th></tr></thead><tbody>${frameRows}</tbody></table>` +
       `<div id="report"><div class="head">Coaching</div><p>${review.coaching.summary}</p>` +
+      ((review.coaching.identified_mistakes || []).length
+        ? `<div class="head">Identified mistakes</div><p>${review.coaching.identified_mistakes
+            .map((m) => `<span class="badge" style="background:#3d2323;color:var(--red);margin-right:6px">${m}</span>`)
+            .join("")}</p>`
+        : "") +
       `<div class="head">Positives</div>${list(review.coaching.positives)}` +
       `<div class="head">Improvements</div>${list(review.coaching.improvements)}</div>`;
   } catch (err) {

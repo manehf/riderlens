@@ -11,8 +11,27 @@ from __future__ import annotations
 
 import json
 import os
+from pathlib import Path
 
 AI_MODEL = os.getenv("RIDERLENS_AI_MODEL", "claude-opus-4-8")
+
+# Distilled from the how_to_jump/ transcripts by worker/scripts/distill_knowledge.py.
+KNOWLEDGE_PATH = Path(__file__).resolve().parent / "knowledge" / "regular_jump.md"
+
+
+def _with_knowledge(system_prompt: str) -> str:
+    """Append the distilled coaching knowledge base to a system prompt when available."""
+    if not KNOWLEDGE_PATH.exists():
+        return system_prompt
+    knowledge = KNOWLEDGE_PATH.read_text(encoding="utf-8")
+    return (
+        system_prompt
+        + "\n\nUse this coaching knowledge base (distilled from expert MTB coaching videos) as your reference for"
+        " correct technique per phase, named mistakes and their visual signatures, which moments are most"
+        " diagnostic, and how to phrase coaching:\n\n<coaching_knowledge>\n"
+        + knowledge
+        + "\n</coaching_knowledge>"
+    )
 
 
 class AIReviewError(Exception):
@@ -27,6 +46,7 @@ Rules:
 - Trust your eyes over the labels and the numbers. The pipeline currently picks frames at fixed time offsets, so its phase labels are often wrong. Pose measurements on motion-blurred or post-crash frames are unreliable; pose confidence below ~80% usually means the "rider" the pipeline saw is not really there.
 - If the rider and bike separate, or the bike is tumbling or lying on the ground without the rider, that is a crash. Say so plainly, and do not produce body-technique coaching from post-crash frames.
 - Coaching language: constructive, specific, coach-like. Reference what is visible in the frames. No medical claims, no safety guarantees — feedback is educational.
+- When a frame or sequence shows a named mistake from the coaching knowledge base, call it by name in identified_mistakes and coach the fix using the coaching voice. Only name mistakes you can actually see.
 - Be honest about uncertainty and about what cannot be judged from these few frames."""
 
 REVIEW_SCHEMA = {
@@ -60,11 +80,16 @@ REVIEW_SCHEMA = {
         "coaching": {
             "type": "object",
             "additionalProperties": False,
-            "required": ["summary", "positives", "improvements"],
+            "required": ["summary", "positives", "improvements", "identified_mistakes"],
             "properties": {
                 "summary": {"type": "string"},
                 "positives": {"type": "array", "items": {"type": "string"}},
                 "improvements": {"type": "array", "items": {"type": "string"}},
+                "identified_mistakes": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Named mistakes from the coaching knowledge base visible in these frames; empty if none.",
+                },
             },
         },
     },
@@ -166,7 +191,7 @@ def review_key_frames(metrics: list) -> dict:
             }
         )
 
-    return _call_structured(SYSTEM_PROMPT, content, REVIEW_SCHEMA)
+    return _call_structured(_with_knowledge(SYSTEM_PROMPT), content, REVIEW_SCHEMA)
 
 
 KEYFRAME_SYSTEM = """You are an expert mountain-bike coach scanning a contact sheet: frames sampled uniformly from one riding clip (side view), in chronological order, each labeled with its timestamp. Your job is to find the timestamps of the key moments of the jump attempt.
@@ -175,6 +200,7 @@ Rules:
 - Choose time_seconds values ONLY from the timestamps printed with the frames.
 - Include an event only when a frame actually shows it: approach (riding toward the feature), compression (lowest body position pressing into the lip), takeoff (wheels leaving the lip), peak_air (most airborne frame), landing (touchdown), crash (rider and bike separating or down).
 - If the clip ends in a crash: include the real events that happened before it, then one crash event at the first clearly-crashed frame. Do not invent takeoff, peak_air, or landing that never happened.
+- Prefer the most diagnostic frames per the knowledge base's frame-selection guidance: deepest compression at the base of the lip, front wheel leaving the lip, peak of the arc, just before touchdown.
 - Pick the single best frame per event. It is fine to return only two or three events if that is all the clip shows."""
 
 KEYFRAME_SCHEMA = {
@@ -223,4 +249,4 @@ def find_key_frames_ai(sampled_frames: list[tuple[float, str]]) -> dict:
                 "source": {"type": "base64", "media_type": "image/jpeg", "data": data_url.split(",", 1)[1]},
             }
         )
-    return _call_structured(KEYFRAME_SYSTEM, content, KEYFRAME_SCHEMA)
+    return _call_structured(_with_knowledge(KEYFRAME_SYSTEM), content, KEYFRAME_SCHEMA)
