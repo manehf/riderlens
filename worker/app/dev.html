@@ -85,8 +85,8 @@
   </div>
   <div>
     <div class="panel">
-      <h2>Key frames</h2>
-      <div class="legend">
+      <h2>Jump</h2>
+      <div class="legend" id="geoLegend">
         <span><i style="background:#4ade80"></i>floor</span>
         <span><i style="background:#fbbf24"></i>tire baseline</span>
         <span><i style="background:#22d3ee"></i>torso</span>
@@ -288,19 +288,24 @@ function finishAnalysis(data, hasUpload, startedAt, ai) {
   document.getElementById("aiReview").disabled = false;
   document.getElementById("aiResult").innerHTML = "";
   document.getElementById("aiStatus").textContent = "";
-  renderFrames(data.metrics);
-  renderMetrics(data.metrics);
   if (ai) {
-    setStatus(`Done in ${elapsed}s — ${data.metrics.length} key moments found.`);
+    // One strip: the skeleton filmstrip (with event labels) is the only frame view.
+    setStatus(`Done in ${elapsed}s — ${data.events.length} key moments found.`);
+    document.getElementById("geoLegend").classList.add("hidden");
+    document.getElementById("frames").innerHTML = "";
+    document.getElementById("metrics").innerHTML = '<span style="color:var(--muted)">—</span>';
     document.getElementById("report").innerHTML = '<span style="color:var(--muted)">—</span>';
     renderKfSummary(data);
     renderChart(data);
     renderFilmstrip(data);
   } else {
     setStatus(`Basic analysis done in ${elapsed}s — ${data.metrics.length} key frames (fixed sampling).`);
+    document.getElementById("geoLegend").classList.remove("hidden");
     document.getElementById("kfSummary").innerHTML = "";
     document.getElementById("timelinePanel").classList.add("hidden");
     document.getElementById("filmstripPanel").classList.add("hidden");
+    renderFrames(data.metrics);
+    renderMetrics(data.metrics);
     renderReport(data.report);
   }
 }
@@ -350,25 +355,48 @@ function renderFilmstrip(data) {
   }
   panel.classList.remove("hidden");
   strip.innerHTML = "";
-  for (const frame of frames) {
+
+  // Tag each event onto its closest frame so key moments read inline in the strip.
+  const labels = new Map();
+  for (const event of data.events || []) {
+    let bestIndex = -1;
+    let bestDistance = 0.25;
+    frames.forEach((frame, index) => {
+      const distance = Math.abs(frame.t - event.time_seconds);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        bestIndex = index;
+      }
+    });
+    if (bestIndex >= 0 && !labels.has(bestIndex)) labels.set(bestIndex, event.name.replace(/_/g, " "));
+  }
+
+  frames.forEach((frame, index) => {
     const cell = document.createElement("div");
-    cell.style.cssText = "flex:0 0 auto;text-align:center";
+    cell.style.cssText = "flex:0 0 auto;text-align:center;position:relative";
     const img = document.createElement("img");
     img.src = frame.image;
     img.loading = "lazy";
-    img.style.cssText = "height:96px;border:1px solid var(--border);border-radius:4px;cursor:zoom-in;display:block";
+    img.style.cssText = "height:120px;border:1px solid var(--border);border-radius:4px;cursor:zoom-in;display:block";
     img.onclick = () => {
       document.getElementById("lightboxImg").src = frame.image;
       document.getElementById("lightbox").classList.remove("hidden");
     };
+    cell.appendChild(img);
+    if (labels.has(index)) {
+      const tag = document.createElement("div");
+      tag.textContent = labels.get(index);
+      tag.style.cssText =
+        "position:absolute;top:5px;left:5px;background:var(--accent);color:#101411;font-size:10px;font-weight:700;padding:1px 7px;border-radius:999px";
+      cell.appendChild(tag);
+    }
     const cap = document.createElement("div");
     cap.className = "num";
     cap.style.cssText = "font-size:10px;color:var(--muted);margin-top:2px";
     cap.textContent = frame.t.toFixed(2) + "s";
-    cell.appendChild(img);
     cell.appendChild(cap);
     strip.appendChild(cell);
-  }
+  });
 }
 document.getElementById("lightbox").onclick = () => document.getElementById("lightbox").classList.add("hidden");
 
