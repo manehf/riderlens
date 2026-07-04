@@ -18,6 +18,9 @@
   header h1 { font-size: 16px; margin: 0; }
   header span { color: var(--muted); font-size: 12px; }
   main { display: grid; grid-template-columns: 300px 1fr; gap: 16px; padding: 16px 20px; align-items: start; }
+  /* Without min-width:0, wide content (the filmstrip) blows the 1fr column out to its
+     intrinsic width instead of scrolling inside it. */
+  main > div { min-width: 0; }
   .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 14px; }
   .panel h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 0 0 10px; }
   .clip { padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; margin-bottom: 6px; cursor: pointer; }
