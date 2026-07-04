@@ -187,6 +187,8 @@ def dev_clips():
 
 class AIReviewRequest(BaseModel):
     metrics: list[Metric]
+    series: list[dict] | None = None
+    air_frames: list[dict] | None = None
 
 
 @app.post("/dev/ai-review")
@@ -195,7 +197,7 @@ def dev_ai_review(request: AIReviewRequest):
     from .ai_review import AIReviewError, review_key_frames
 
     try:
-        return review_key_frames(request.metrics)
+        return review_key_frames(request.metrics, series=request.series, air_frames=request.air_frames)
     except AIReviewError as error:
         raise HTTPException(status_code=error.status_code, detail=str(error))
 
@@ -355,6 +357,101 @@ def build_metric_without_pose(session_id: str, phase: Phase, frame, time_seconds
     )
 
 
+def measure_window(
+    video_path: str, window_start: float, window_end: float, air_span: tuple[float, float]
+) -> tuple[list[dict], list[dict]]:
+    """Dense per-frame measurement between the anchored window bounds.
+
+    Pose runs on every sampled frame (~30/s, capped at 120); the bike detector runs on
+    every third sample and pitch is reported only when both wheels pair-confirm.
+    Returns (series, air_frames) where air_frames are small thumbnails inside air_span.
+    """
+    capture = cv2.VideoCapture(video_path)
+    if not capture.isOpened():
+        raise HTTPException(status_code=422, detail="Could not open video.")
+    fps = capture.get(cv2.CAP_PROP_FPS) or 30
+    capture.release()
+
+    span = max(window_end - window_start, 0.2)
+    step = 1.0 / min(fps, 30.0)
+    count = int(span / step) + 1
+    if count > 120:
+        count = 120
+        step = span / (count - 1)
+
+    pose = mp.solutions.pose.Pose(
+        static_image_mode=False,
+        model_complexity=1,
+        enable_segmentation=False,
+        min_detection_confidence=0.3,
+        min_tracking_confidence=0.3,
+    )
+    series: list[dict] = []
+    air_candidates: list[tuple[float, object]] = []
+    capture = cv2.VideoCapture(video_path)
+    try:
+        for index in range(count):
+            time_seconds = window_start + index * step
+            if time_seconds < 0:
+                continue
+            capture.set(cv2.CAP_PROP_POS_MSEC, time_seconds * 1000.0)
+            ok, frame = capture.read()
+            if not ok:
+                continue
+            height, width = frame.shape[:2]
+            entry: dict = {
+                "t": round(time_seconds, 3),
+                "kneeAngle": None,
+                "torsoAngle": None,
+                "hipHeight": None,
+                "pitch": None,
+                "confidence": 0.0,
+            }
+
+            result = pose.process(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+            if result.pose_landmarks:
+                landmarks = result.pose_landmarks.landmark
+                side = get_visible_side(landmarks)
+                shoulder = landmark_point(landmarks, 11 if side == "left" else 12)
+                hip = landmark_point(landmarks, 23 if side == "left" else 24)
+                knee = landmark_point(landmarks, 25 if side == "left" else 26)
+                ankle = landmark_point(landmarks, 27 if side == "left" else 28)
+                horizontal = FrameLine(start=FramePoint(x=0, y=hip.y), end=FramePoint(x=1, y=hip.y))
+                entry["kneeAngle"] = round(joint_angle(hip, knee, ankle), 1)
+                entry["torsoAngle"] = round(angle_between_lines(FrameLine(start=hip, end=shoulder), horizontal), 1)
+                entry["hipHeight"] = round(1.0 - hip.y, 3)
+                entry["confidence"] = round(get_pose_confidence(landmarks, side), 2)
+
+            if index % 3 == 0:
+                bike_box = detect_bike_box(frame)
+                if bike_box is not None:
+                    box_x0, box_y0, box_x1, box_y1 = bike_box
+                    wheel_radius = max(6.0, min(0.33 * (box_y1 - box_y0), 0.18 * (box_x1 - box_x0)))
+                    gray = cv2.medianBlur(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY), 5)
+                    first_hit = confirm_wheel_circle(gray, (box_x0 + wheel_radius, box_y1 - wheel_radius), wheel_radius)
+                    second_hit = confirm_wheel_circle(gray, (box_x1 - wheel_radius, box_y1 - wheel_radius), wheel_radius)
+                    if first_hit is not None and second_hit is not None:
+                        entry["pitch"] = round(line_angle(px_line(first_hit, second_hit, width, height)), 1)
+
+            if air_span[0] <= time_seconds <= air_span[1]:
+                air_candidates.append((time_seconds, frame))
+            series.append(entry)
+    finally:
+        pose.close()
+        capture.release()
+
+    air_frames: list[dict] = []
+    if air_candidates:
+        keep = max(1, len(air_candidates) // 8)
+        for time_seconds, frame in air_candidates[::keep][:8]:
+            height, width = frame.shape[:2]
+            small = cv2.resize(frame, (480, max(1, int(height * 480 / width))))
+            image = encode_frame_jpeg(small)
+            if image:
+                air_frames.append({"t": round(time_seconds, 2), "image": image})
+    return series, air_frames
+
+
 class DevKeyframesRequest(BaseModel):
     file: str
     trim_start_seconds: float = Field(default=0, ge=0)
@@ -429,12 +526,30 @@ def run_keyframe_search(video_path: str, trim_start_seconds: float, trim_end_sec
             metric.frameImage = encode_frame_jpeg(frame)
         metrics.append(metric)
 
+    series: list[dict] = []
+    air_frames: list[dict] = []
+    window: dict | None = None
+    event_times = {
+        event["name"]: float(event["time_seconds"])
+        for event in search.get("events", [])
+        if event.get("name") in EVENT_PHASE
+    }
+    if event_times:
+        start_anchor = event_times.get("takeoff", min(event_times.values()))
+        end_anchor = event_times.get("landing") or event_times.get("crash") or max(event_times.values())
+        end_anchor = max(end_anchor, start_anchor)
+        window = {"start": round(max(0.0, start_anchor - 0.7), 2), "end": round(end_anchor + 0.7, 2)}
+        series, air_frames = measure_window(video_path, window["start"], window["end"], (start_anchor, end_anchor))
+
     return {
         "eventType": search["event_type"],
         "summary": search["summary"],
         "model": search.get("model"),
         "events": search["events"],
         "metrics": metrics,
+        "window": window,
+        "series": series,
+        "airFrames": air_frames,
     }
 
 

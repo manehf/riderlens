@@ -94,6 +94,16 @@
       <div id="kfSummary"></div>
       <div id="frames"><span style="color:var(--muted)">Run an analysis to see annotated frames.</span></div>
     </div>
+    <div class="panel hidden" style="margin-top:16px" id="timelinePanel">
+      <h2>Timeline — jump window</h2>
+      <div class="legend">
+        <span><i style="background:#c4b5fd"></i>knee angle</span>
+        <span><i style="background:#22d3ee"></i>torso angle</span>
+        <span><i style="background:#4ade80"></i>hip height</span>
+        <span><i style="background:#fbbf24"></i>bike pitch (when wheels confirmed)</span>
+      </div>
+      <canvas id="chart" style="width:100%;display:block"></canvas>
+    </div>
     <div class="panel" style="margin-top:16px">
       <h2>Metrics</h2>
       <div id="metrics"><span style="color:var(--muted)">—</span></div>
@@ -233,6 +243,7 @@ async function runAnalysis() {
     document.getElementById("aiResult").innerHTML = "";
     document.getElementById("aiStatus").textContent = "";
     document.getElementById("kfSummary").innerHTML = "";
+    document.getElementById("timelinePanel").classList.add("hidden");
     renderFrames(data.metrics);
     renderMetrics(data.metrics);
     renderReport(data.report);
@@ -327,6 +338,7 @@ async function runKeyframes() {
     renderKfSummary(data);
     renderFrames(data.metrics);
     renderMetrics(data.metrics);
+    renderChart(data);
   } catch (err) {
     setStatus(`Request failed: ${err}`, true);
   } finally {
@@ -426,7 +438,11 @@ async function runAiReview() {
     const response = await fetch("/dev/ai-review", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ metrics: lastAnalysis.metrics })
+      body: JSON.stringify({
+        metrics: lastAnalysis.metrics,
+        series: lastAnalysis.series || null,
+        air_frames: lastAnalysis.airFrames || null
+      })
     });
     if (!response.ok) {
       let detail = `Worker responded ${response.status}`;
@@ -466,6 +482,100 @@ async function runAiReview() {
     status.style.color = "var(--red)";
   } finally {
     button.disabled = false;
+  }
+}
+
+// --- Timeline chart -----------------------------------------------------------
+// Angles plot 0..180; hip height (0..1) is scaled to the same axis; pitch is
+// centered on the 90 line (i.e. plotted as pitch + 90) so level = mid-chart.
+
+function renderChart(data) {
+  const panel = document.getElementById("timelinePanel");
+  const series = data.series || [];
+  if (series.length < 3) {
+    panel.classList.add("hidden");
+    return;
+  }
+  panel.classList.remove("hidden");
+  const canvas = document.getElementById("chart");
+  const width = (canvas.parentElement.clientWidth || 800) - 8;
+  const height = 260;
+  canvas.width = width;
+  canvas.height = height;
+  canvas.style.height = height + "px";
+  const ctx = canvas.getContext("2d");
+  ctx.clearRect(0, 0, width, height);
+
+  const pad = { left: 36, right: 10, top: 18, bottom: 22 };
+  const t0 = series[0].t;
+  const t1 = series[series.length - 1].t;
+  const x = (t) => pad.left + ((t - t0) / (t1 - t0)) * (width - pad.left - pad.right);
+  const y = (v) => pad.top + (1 - v / 180) * (height - pad.top - pad.bottom);
+
+  // grid
+  ctx.font = "10px monospace";
+  for (const g of [0, 45, 90, 135, 180]) {
+    ctx.strokeStyle = g === 90 ? "#3a463b" : "#242c25";
+    ctx.beginPath();
+    ctx.moveTo(pad.left, y(g));
+    ctx.lineTo(width - pad.right, y(g));
+    ctx.stroke();
+    ctx.fillStyle = "#5d6a5e";
+    ctx.fillText(String(g), 8, y(g) + 3);
+  }
+  // time ticks
+  for (let t = Math.ceil(t0 * 2) / 2; t <= t1; t += 0.5) {
+    ctx.fillStyle = "#5d6a5e";
+    ctx.fillText(t.toFixed(1) + "s", x(t) - 10, height - 8);
+  }
+
+  const drawCurve = (key, color, transform) => {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    let pen = false;
+    for (const row of series) {
+      const value = row[key];
+      if (value == null || (key !== "pitch" && row.confidence < 0.35)) {
+        pen = false;
+        continue;
+      }
+      const px = x(row.t);
+      const py = y(transform(value));
+      if (pen) ctx.lineTo(px, py);
+      else ctx.moveTo(px, py);
+      pen = true;
+    }
+    ctx.stroke();
+    // pitch is sparse — add dots so isolated confirmations are visible
+    if (key === "pitch") {
+      ctx.fillStyle = color;
+      for (const row of series) {
+        if (row.pitch == null) continue;
+        ctx.beginPath();
+        ctx.arc(x(row.t), y(transform(row.pitch)), 3, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  };
+  drawCurve("kneeAngle", "#c4b5fd", (v) => v);
+  drawCurve("torsoAngle", "#22d3ee", (v) => v);
+  drawCurve("hipHeight", "#4ade80", (v) => v * 180);
+  drawCurve("pitch", "#fbbf24", (v) => v + 90);
+
+  // event markers
+  for (const event of data.events || []) {
+    const t = event.time_seconds;
+    if (t < t0 || t > t1) continue;
+    ctx.strokeStyle = "rgba(232,236,231,0.45)";
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.moveTo(x(t), pad.top);
+    ctx.lineTo(x(t), height - pad.bottom);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = "#e8ece7";
+    ctx.fillText(event.name, Math.min(x(t) + 3, width - 60), pad.top - 6);
   }
 }
 

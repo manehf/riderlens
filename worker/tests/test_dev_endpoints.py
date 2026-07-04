@@ -110,3 +110,15 @@ def test_save_ground_truth_updates_manifest(tmp_path, monkeypatch):
 
     missing = client.post("/dev/save-ground-truth", json={"file": "nope.mp4", "event_type": "crash", "events": []})
     assert missing.status_code == 404
+
+
+def test_measure_window_produces_series():
+    series, air_frames = main.measure_window("../clips/regular_jump/fail/jump_fail.mp4", 4.0, 5.5, (4.4, 5.1))
+    assert len(series) > 20
+    times = [row["t"] for row in series]
+    assert times == sorted(times)
+    assert any(row["kneeAngle"] is not None for row in series)
+    assert all(
+        set(row) == {"t", "kneeAngle", "torsoAngle", "hipHeight", "pitch", "confidence"} for row in series
+    )
+    assert 1 <= len(air_frames) <= 8

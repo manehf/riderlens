@@ -47,6 +47,7 @@ Rules:
 - If the rider and bike separate, or the bike is tumbling or lying on the ground without the rider, that is a crash. Say so plainly, and do not produce body-technique coaching from post-crash frames.
 - Coaching language: constructive, specific, coach-like. Reference what is visible in the frames. No medical claims, no safety guarantees — feedback is educational.
 - When a frame or sequence shows a named mistake from the coaching knowledge base, call it by name in identified_mistakes and coach the fix using the coaching voice. Only name mistakes you can actually see.
+- You may also receive a dense per-frame measurement series across the jump window (knee angle, torso angle, hip height, bike pitch when wheels were confirmed, pose confidence) and additional small in-air frames. Use the series for timing-based judgments — compression depth, extension speed through the lip, pitch progression in the air, absorption after touchdown — and quote concrete times/values when they support a coaching point. Treat low-confidence rows as unreliable.
 - Be honest about uncertainty and about what cannot be judged from these few frames."""
 
 REVIEW_SCHEMA = {
@@ -149,7 +150,7 @@ def _call_structured(system_prompt: str, content: list[dict], schema: dict) -> d
     return result
 
 
-def review_key_frames(metrics: list) -> dict:
+def review_key_frames(metrics: list, series: list[dict] | None = None, air_frames: list[dict] | None = None) -> dict:
     frames = [metric for metric in metrics if metric.frameImage]
     if not frames:
         raise AIReviewError(
@@ -188,6 +189,41 @@ def review_key_frames(metrics: list) -> dict:
                     "media_type": "image/jpeg",
                     "data": metric.frameImage.split(",", 1)[1],
                 },
+            }
+        )
+
+    if series:
+        rows = series
+        if len(rows) > 40:
+            keep = max(1, len(rows) // 40)
+            rows = rows[::keep]
+
+        def fmt(value, suffix=""):
+            return f"{value}{suffix}" if value is not None else "-"
+
+        table = "\n".join(
+            f"t={row['t']:.2f}s knee={fmt(row['kneeAngle'])} torso={fmt(row['torsoAngle'])} "
+            f"hipH={fmt(row['hipHeight'])} pitch={fmt(row['pitch'])} conf={row['confidence']:.2f}"
+            for row in rows
+        )
+        content.append(
+            {
+                "type": "text",
+                "text": (
+                    "Dense per-frame measurements across the jump window (pose-based, approximate; "
+                    "hipH is normalized hip height where higher = further up the frame):\n" + table
+                ),
+            }
+        )
+
+    for extra in air_frames or []:
+        if not extra.get("image"):
+            continue
+        content.append({"type": "text", "text": f"Additional in-air frame at t={extra['t']:.2f}s:"})
+        content.append(
+            {
+                "type": "image",
+                "source": {"type": "base64", "media_type": "image/jpeg", "data": extra["image"].split(",", 1)[1]},
             }
         )
 
