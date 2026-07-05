@@ -395,6 +395,100 @@ def draw_skeleton(frame, landmarks, visibility_threshold: float = 0.5) -> None:
             cv2.circle(frame, joint, thickness, SKELETON_COLOR, -1, cv2.LINE_AA)
 
 
+WATERMARK_TEXT = "riderlens.app"
+# Electric green + graphite outline, BGR (matches the skeleton palette).
+WATERMARK_COLOR = (46, 255, 182)
+WATERMARK_OUTLINE = (17, 20, 16)
+
+
+def draw_watermark(frame) -> None:
+    """Brand mark on the shareable overlay clip: bottom-right, outlined for
+    legibility on any footage."""
+    height, width = frame.shape[:2]
+    scale = max(0.5, width / 1280 * 0.85)
+    thickness = max(1, int(round(scale * 1.8)))
+    (text_width, _), _ = cv2.getTextSize(WATERMARK_TEXT, cv2.FONT_HERSHEY_SIMPLEX, scale, thickness)
+    x = width - text_width - max(10, int(0.02 * width))
+    y = height - max(12, int(0.03 * height))
+    cv2.putText(frame, WATERMARK_TEXT, (x, y), cv2.FONT_HERSHEY_SIMPLEX, scale, WATERMARK_OUTLINE, thickness + 2, cv2.LINE_AA)
+    cv2.putText(frame, WATERMARK_TEXT, (x, y), cv2.FONT_HERSHEY_SIMPLEX, scale, WATERMARK_COLOR, thickness, cv2.LINE_AA)
+
+
+class OverlayClipWriter:
+    """Streams skeleton-burned frames to ffmpeg (libx264, phone-friendly);
+    cv2 mp4v fallback when ffmpeg is missing. finalize() returns the mp4 bytes
+    or None — overlay rendering must never fail the record."""
+
+    def __init__(self, fps: float):
+        self.fps = max(1.0, min(fps, 60.0))
+        self.process = None
+        self.writer = None
+        self.output_path: str | None = None
+        self.size: tuple[int, int] | None = None
+        self.failed = False
+
+    def add(self, frame) -> None:
+        if self.failed:
+            return
+        try:
+            if self.size is None:
+                height, width = frame.shape[:2]
+                width -= width % 2  # yuv420p needs even dimensions
+                height -= height % 2
+                self.size = (width, height)
+                with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp:
+                    self.output_path = tmp.name
+                if shutil.which("ffmpeg"):
+                    self.process = subprocess.Popen(
+                        [
+                            "ffmpeg", "-y",
+                            "-f", "rawvideo", "-pix_fmt", "bgr24",
+                            "-s", f"{width}x{height}", "-r", f"{self.fps:.3f}",
+                            "-i", "-",
+                            "-c:v", "libx264", "-preset", "veryfast", "-crf", "22",
+                            "-pix_fmt", "yuv420p", "-movflags", "+faststart",
+                            self.output_path,
+                        ],
+                        stdin=subprocess.PIPE,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
+                else:
+                    self.writer = cv2.VideoWriter(
+                        self.output_path, cv2.VideoWriter_fourcc(*"mp4v"), self.fps, (width, height)
+                    )
+            cropped = frame[: self.size[1], : self.size[0]]
+            if self.process is not None:
+                self.process.stdin.write(cropped.tobytes())
+            elif self.writer is not None:
+                self.writer.write(cropped)
+        except Exception:
+            self.failed = True
+
+    def finalize(self) -> bytes | None:
+        try:
+            if self.process is not None:
+                self.process.stdin.close()
+                if self.process.wait(timeout=120) != 0:
+                    return None
+            elif self.writer is not None:
+                self.writer.release()
+            else:
+                return None
+            if self.failed or not self.output_path or os.path.getsize(self.output_path) == 0:
+                return None
+            with open(self.output_path, "rb") as rendered:
+                return rendered.read()
+        except Exception:
+            return None
+        finally:
+            if self.output_path:
+                try:
+                    os.unlink(self.output_path)
+                except OSError:
+                    pass
+
+
 def measure_window(
     video_path: str,
     window_start: float,
@@ -402,14 +496,17 @@ def measure_window(
     air_span: tuple[float, float],
     include_bike: bool = True,
     filmstrip_width: int | None = None,
-) -> tuple[list[dict], list[dict], list[dict]]:
+    render_overlay: bool = False,
+) -> tuple[list[dict], list[dict], list[dict], bytes | None]:
     """Dense per-frame measurement between the anchored window bounds.
 
     Pose runs on every sampled frame (~30/s, capped at 120) and the full-body skeleton
     is burned into every filmstrip thumbnail. The bike detector (pitch) only runs when
     include_bike is set — the capture path skips it (pose-only records).
-    Returns (series, air_frames, filmstrip): air_frames are small raw thumbnails inside
-    air_span for the AI review; filmstrip covers the whole window for the user.
+    Returns (series, air_frames, filmstrip, overlay_clip): air_frames are small raw
+    thumbnails inside air_span for the AI review; filmstrip covers the whole window for
+    the user; overlay_clip is the shareable skeleton-burned watermarked mp4 (bytes)
+    when render_overlay is set, else None.
     """
     capture = cv2.VideoCapture(video_path)
     if not capture.isOpened():
@@ -435,6 +532,7 @@ def measure_window(
     air_candidates: list[tuple[float, object]] = []
     filmstrip: list[dict] = []
     thumb_step = max(1, count // 36)
+    overlay = OverlayClipWriter(fps=1.0 / step) if render_overlay else None
     capture = cv2.VideoCapture(video_path)
     try:
         for index in range(count):
@@ -484,6 +582,19 @@ def measure_window(
                             px_line_angle(px_line(first_hit, second_hit, width, height), width, height), 1
                         )
 
+            if overlay is not None:
+                # Shareable overlay clip: every sampled frame, skeleton + watermark.
+                share_width = min(width, 1280)
+                share = (
+                    cv2.resize(frame, (share_width, max(1, int(height * share_width / width))))
+                    if share_width < width
+                    else frame.copy()
+                )
+                if result.pose_landmarks:
+                    draw_skeleton(share, result.pose_landmarks.landmark)
+                draw_watermark(share)
+                overlay.add(share)
+
             if air_span[0] <= time_seconds <= air_span[1]:
                 air_candidates.append((time_seconds, frame))
             if index % thumb_step == 0:
@@ -510,7 +621,8 @@ def measure_window(
             image = encode_frame_jpeg(small)
             if image:
                 air_frames.append({"t": round(time_seconds, 2), "image": image})
-    return series, air_frames, filmstrip
+    overlay_clip = overlay.finalize() if overlay is not None else None
+    return series, air_frames, filmstrip, overlay_clip
 
 
 def window_from_events(events: list[dict]) -> dict | None:
@@ -624,7 +736,7 @@ def run_keyframe_search(video_path: str, trim_start_seconds: float, trim_end_sec
     filmstrip: list[dict] = []
     window = window_from_events(search.get("events", []))
     if window is not None:
-        series, air_frames, filmstrip = measure_window(
+        series, air_frames, filmstrip, _overlay = measure_window(
             video_path,
             window["start"],
             window["end"],
@@ -1537,15 +1649,24 @@ async def capture_record(
     # Pose-only records: every filmstrip frame carries the full skeleton; no bike
     # geometry (unreliable on real footage) and no separate key-frame metrics — the
     # AI events label frames in the strip instead.
-    series, _air_frames, filmstrip = measure_window(
-        video_path, start, end, (start, end), include_bike=False
+    series, _air_frames, filmstrip, overlay_clip = measure_window(
+        video_path, start, end, (start, end), include_bike=False, render_overlay=True
     )
     clip_bytes = crop_clip(video_path, start, end)
 
+    # Airtime + estimated height from flight physics; null when the events
+    # don't describe a takeoff→landing flight (manual windows, no-jump clips).
+    from .flight import estimate_flight
+
     return {
         "clip": "data:video/mp4;base64," + base64.b64encode(clip_bytes).decode("ascii"),
+        # Skeleton-burned, watermarked share version; null if rendering failed.
+        "skeletonClip": (
+            "data:video/mp4;base64," + base64.b64encode(overlay_clip).decode("ascii") if overlay_clip else None
+        ),
         "window": {"start": round(start, 2), "end": round(end, 2)},
         "series": series,
         "filmstrip": filmstrip,
         "events": events,
+        "flight": estimate_flight(series, events),
     }

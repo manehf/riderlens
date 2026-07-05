@@ -113,7 +113,9 @@ def test_save_ground_truth_updates_manifest(tmp_path, monkeypatch):
 
 
 def test_measure_window_produces_series():
-    series, air_frames, filmstrip = main.measure_window("../clips/regular_jump/fail/jump_fail.mp4", 4.0, 5.5, (4.4, 5.1))
+    series, air_frames, filmstrip, overlay = main.measure_window(
+        "../clips/regular_jump/fail/jump_fail.mp4", 4.0, 5.5, (4.4, 5.1)
+    )
     assert len(series) > 20
     times = [row["t"] for row in series]
     assert times == sorted(times)
@@ -124,3 +126,13 @@ def test_measure_window_produces_series():
     assert 1 <= len(air_frames) <= 8
     assert len(filmstrip) >= 20  # whole-window coverage for the user-facing strip
     assert all(frame["image"].startswith("data:image/jpeg;base64,") for frame in filmstrip)
+    assert overlay is None  # not requested
+
+
+def test_measure_window_renders_shareable_overlay_clip():
+    _series, _air, _filmstrip, overlay = main.measure_window(
+        "../clips/regular_jump/fail/jump_fail.mp4", 4.0, 5.0, (4.4, 5.0), include_bike=False, render_overlay=True
+    )
+    assert overlay is not None
+    assert len(overlay) > 10_000  # a real encoded mp4, not an empty stub
+    assert overlay[4:8] == b"ftyp"  # mp4 container signature
