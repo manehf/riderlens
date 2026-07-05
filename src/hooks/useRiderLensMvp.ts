@@ -8,6 +8,7 @@ import { demoGarage } from "../data/demoData";
 import { createId } from "../services/analysis";
 import { processRecord, proposeWindow, type WindowProposal } from "../services/capture";
 import {
+  backfillPoster,
   deleteRecordFiles,
   loadRecords,
   persistRecordPayload,
@@ -36,8 +37,6 @@ export type PendingCapture = {
 
 export type RiderLensStore = {
   records: JumpRecord[];
-  activeRecord?: JumpRecord;
-  selectRecord: (recordId: string) => void;
   pendingCapture?: PendingCapture;
   selectedSkill: SkillType;
   setSelectedSkill: (skill: SkillType) => void;
@@ -47,7 +46,11 @@ export type RiderLensStore = {
   cancelPendingCapture: () => void;
   retryRecord: (recordId: string) => void;
   deleteRecord: (recordId: string) => void;
-  shareRecordClip: (record: JumpRecord) => Promise<void>;
+  addRecordTag: (recordId: string, tag: string) => void;
+  removeRecordTag: (recordId: string, tag: string) => void;
+  /** Distinct rider-added tags across all records, for one-tap suggestions. */
+  knownTags: string[];
+  shareRecordClip: (record: JumpRecord, preferSkeleton?: boolean) => Promise<void>;
   uploadVideoFromLibrary: () => Promise<void>;
   garage: GarageState;
   shareSetupSheet: (permission?: PermissionLevel) => Promise<void>;
@@ -61,7 +64,6 @@ const MIN_WINDOW_SECONDS = 0.5;
 export function useRiderLensMvp(): RiderLensStore {
   const [records, setRecords] = useState<JumpRecord[]>([]);
   const [garage, setGarage] = useState<GarageState>(demoGarage);
-  const [activeRecordId, setActiveRecordId] = useState("");
   const [selectedSkill, setSelectedSkill] = useState<SkillType>("regular_jump");
   const [pendingCapture, setPendingCapture] = useState<PendingCapture | undefined>();
   const [hydrated, setHydrated] = useState(false);
@@ -84,7 +86,6 @@ export function useRiderLensMvp(): RiderLensStore {
           if (legacy.garage) setGarage(legacy.garage);
         }
         setRecords(storedRecords);
-        setActiveRecordId(storedRecords[0]?.id ?? "");
       })
       .catch(() => undefined)
       .finally(() => setHydrated(true));
@@ -100,14 +101,25 @@ export function useRiderLensMvp(): RiderLensStore {
     saveRecords(records).catch(() => undefined);
   }, [hydrated, records]);
 
-  const activeRecord = useMemo(
-    () => records.find((record) => record.id === activeRecordId) ?? records[0],
-    [activeRecordId, records]
-  );
-
   const updateRecord = useCallback((recordId: string, updater: (record: JumpRecord) => JumpRecord) => {
     setRecords((current) => current.map((record) => (record.id === recordId ? updater(record) : record)));
   }, []);
+
+  // Records processed before posters existed get one generated from their stored
+  // filmstrip, once, in the background.
+  const backfilledRef = useRef(false);
+  useEffect(() => {
+    if (!hydrated || backfilledRef.current) return;
+    backfilledRef.current = true;
+    for (const record of records) {
+      if (record.status !== "ready" || record.posterUri) continue;
+      void backfillPoster(record.id)
+        .then((posterUri) => {
+          if (posterUri) updateRecord(record.id, (current) => ({ ...current, posterUri }));
+        })
+        .catch(() => undefined);
+    }
+  }, [hydrated, records, updateRecord]);
 
   const startCaptureFromUri = useCallback((uri: string, durationSeconds = 6) => {
     const safeDuration = Math.max(1, durationSeconds);
@@ -170,14 +182,17 @@ export function useRiderLensMvp(): RiderLensStore {
         events: record.events
       })
         .then(async (payload) => {
-          const { clipUri } = await persistRecordPayload(record.id, payload);
+          const { clipUri, skeletonClipUri, posterUri } = await persistRecordPayload(record.id, payload);
           updateRecord(record.id, (current) => ({
             ...current,
             status: "ready",
             clipUri,
+            skeletonClipUri,
+            posterUri,
             windowStart: payload.window.start,
             windowEnd: payload.window.end,
             events: payload.events.length > 0 ? payload.events : current.events,
+            flight: payload.flight ?? undefined,
             error: undefined
           }));
         })
@@ -220,7 +235,6 @@ export function useRiderLensMvp(): RiderLensStore {
     pendingUriRef.current = undefined;
     setPendingCapture(undefined);
     setRecords((current) => [record, ...current]);
-    setActiveRecordId(record.id);
     runRecordProcessing(record, pendingCapture.proposal?.uploadId);
   }, [pendingCapture, runRecordProcessing, selectedSkill]);
 
@@ -243,14 +257,51 @@ export function useRiderLensMvp(): RiderLensStore {
     void deleteRecordFiles(recordId);
   }, []);
 
-  const shareRecordClip = useCallback(async (record: JumpRecord) => {
-    if (record.clipUri && (await Sharing.isAvailableAsync())) {
-      await Sharing.shareAsync(record.clipUri, { mimeType: "video/mp4", dialogTitle: "Share your jump" });
+  const addRecordTag = useCallback(
+    (recordId: string, tag: string) => {
+      const cleaned = tag.trim();
+      if (!cleaned) return;
+      updateRecord(recordId, (current) => {
+        const existing = current.tags ?? [];
+        if (existing.some((item) => item.toLowerCase() === cleaned.toLowerCase())) return current;
+        return { ...current, tags: [...existing, cleaned] };
+      });
+    },
+    [updateRecord]
+  );
+
+  const removeRecordTag = useCallback(
+    (recordId: string, tag: string) => {
+      updateRecord(recordId, (current) => ({
+        ...current,
+        tags: (current.tags ?? []).filter((item) => item !== tag)
+      }));
+    },
+    [updateRecord]
+  );
+
+  const knownTags = useMemo(() => {
+    const seen = new Map<string, string>();
+    for (const record of records) {
+      for (const tag of record.tags ?? []) {
+        const key = tag.toLowerCase();
+        if (!seen.has(key)) seen.set(key, tag);
+      }
+    }
+    return [...seen.values()];
+  }, [records]);
+
+  // Share whichever lens is active: the skeleton version carries the watermark
+  // (the growth loop), the clean clip is just the footage.
+  const shareRecordClip = useCallback(async (record: JumpRecord, preferSkeleton = false) => {
+    const uri = preferSkeleton && record.skeletonClipUri ? record.skeletonClipUri : record.clipUri;
+    if (uri && (await Sharing.isAvailableAsync())) {
+      await Sharing.shareAsync(uri, { mimeType: "video/mp4", dialogTitle: "Share the moment" });
       return;
     }
     await Share.share({
       title: "RiderLens record",
-      message: record.summary ?? "My jump, captured with RiderLens."
+      message: "Captured with RiderLens — riderlens.app"
     });
   }, []);
 
@@ -332,8 +383,6 @@ export function useRiderLensMvp(): RiderLensStore {
 
   return {
     records,
-    activeRecord,
-    selectRecord: setActiveRecordId,
     pendingCapture,
     selectedSkill,
     setSelectedSkill,
@@ -343,6 +392,9 @@ export function useRiderLensMvp(): RiderLensStore {
     cancelPendingCapture,
     retryRecord,
     deleteRecord,
+    addRecordTag,
+    removeRecordTag,
+    knownTags,
     shareRecordClip,
     uploadVideoFromLibrary,
     garage,

@@ -268,32 +268,50 @@ type BottomTabsProps = {
   items: TabItem[];
   activeKey: string;
   onChange: (key: string) => void;
+  /** Prominent center action (e.g. quick capture) rendered between the tabs. */
+  centerAction?: { icon: IconType; label: string; onPress: () => void };
 };
 
-export function BottomTabs({ items, activeKey, onChange }: BottomTabsProps) {
+export function BottomTabs({ items, activeKey, onChange, centerAction }: BottomTabsProps) {
+  const middle = Math.ceil(items.length / 2);
+  const ActionIcon = centerAction?.icon;
+
+  const renderTab = (item: TabItem) => {
+    const active = item.key === activeKey;
+    const Icon = item.icon;
+    return (
+      <Pressable
+        key={item.key}
+        accessibilityRole="tab"
+        accessibilityState={{ selected: active }}
+        accessibilityLabel={item.label}
+        onPress={() => onChange(item.key)}
+        style={styles.tabItem}
+      >
+        <View style={[styles.tabIcon, active && styles.tabIconActive]}>
+          <Icon color={active ? tokens.graphite : tokens.textMuted} size={18} strokeWidth={2.5} />
+        </View>
+        <AppText weight="bold" size={11} color={active ? tokens.green : tokens.textMuted}>
+          {item.label}
+        </AppText>
+      </Pressable>
+    );
+  };
+
   return (
     <View style={styles.tabBar}>
-      {items.map((item) => {
-        const active = item.key === activeKey;
-        const Icon = item.icon;
-        return (
-          <Pressable
-            key={item.key}
-            accessibilityRole="tab"
-            accessibilityState={{ selected: active }}
-            accessibilityLabel={item.label}
-            onPress={() => onChange(item.key)}
-            style={styles.tabItem}
-          >
-            <View style={[styles.tabIcon, active && styles.tabIconActive]}>
-              <Icon color={active ? tokens.graphite : tokens.textMuted} size={18} strokeWidth={2.5} />
-            </View>
-            <AppText weight="bold" size={11} color={active ? tokens.green : tokens.textMuted}>
-              {item.label}
-            </AppText>
-          </Pressable>
-        );
-      })}
+      {items.slice(0, middle).map(renderTab)}
+      {centerAction && ActionIcon ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={centerAction.label}
+          onPress={centerAction.onPress}
+          style={({ pressed }) => [styles.tabAction, pressed && styles.pressed]}
+        >
+          <ActionIcon color={tokens.graphite} size={24} strokeWidth={2.6} />
+        </Pressable>
+      ) : null}
+      {items.slice(middle).map(renderTab)}
     </View>
   );
 }
@@ -446,6 +464,16 @@ const styles = StyleSheet.create({
     minWidth: 64,
     alignItems: "center",
     gap: 4
+  },
+  tabAction: {
+    width: 54,
+    height: 54,
+    marginTop: -18,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: radius.pill,
+    backgroundColor: tokens.electric,
+    ...shadows.card
   },
   tabIcon: {
     width: 32,

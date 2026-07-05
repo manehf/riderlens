@@ -5,6 +5,7 @@ import type {
   FrameGeometry,
   FrameLine,
   FramePoint,
+  JumpRecord,
   MetricPhase,
   PoseMetric,
   RideSession,
@@ -22,6 +23,29 @@ const skillLabels: Record<SkillType, string> = {
 
 export function getSkillLabel(skillType: SkillType): string {
   return skillLabels[skillType];
+}
+
+/** Records are titled by when they happened — that's how riders recall clips.
+ * The what-layer lives in tags (auto crash tag + user tags), not the title. */
+export function getRecordTitle(record: JumpRecord): string {
+  const created = new Date(record.createdAt);
+  const now = new Date();
+  const time = created.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  if (created.toDateString() === now.toDateString()) return `Today · ${time}`;
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  if (created.toDateString() === yesterday.toDateString()) return `Yesterday · ${time}`;
+  return `${created.toLocaleDateString([], { day: "numeric", month: "short" })} · ${time}`;
+}
+
+/** Tags the pipeline already knows without the rider typing anything: the AI
+ * review classifies each record (clean_jump / crash / …), so crashes and clean
+ * runs tag themselves. */
+export function getSystemTags(record: JumpRecord): string[] {
+  const crashed = record.eventType === "crash" || (record.events ?? []).some((event) => event.name === "crash");
+  if (crashed) return ["crash"];
+  if (record.eventType === "clean_jump") return ["clean"];
+  return [];
 }
 
 export function createId(prefix: string): string {

@@ -1,4 +1,4 @@
-import type { CaptureEvent, FilmstripFrame, SeriesPoint } from "../types/domain";
+import type { CaptureEvent, FilmstripFrame, FlightEstimate, SeriesPoint } from "../types/domain";
 import { getAnalysisWorkerUrl } from "./analysisWorker";
 
 // Reachability is decided by a fast /health pre-flight so a stale or unreachable
@@ -21,10 +21,12 @@ export type WindowProposal = {
 
 export type RecordPayload = {
   clip: string; // data URL, video/mp4 base64
+  skeletonClip: string | null; // skeleton-burned, watermarked share version
   window: { start: number; end: number };
   series: SeriesPoint[];
   filmstrip: FilmstripFrame[]; // full-body skeleton burned into every frame
   events: CaptureEvent[];
+  flight: FlightEstimate | null; // null when events don't describe a flight
 };
 
 function videoFormPart(videoUri: string) {

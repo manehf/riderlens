@@ -9,7 +9,7 @@ import {
   IBMPlexSans_700Bold,
   useFonts as useSansFonts
 } from "@expo-google-fonts/ibm-plex-sans";
-import { Bike, Gauge, ListVideo, Video } from "lucide-react-native";
+import { ListVideo, Plus, Video } from "lucide-react-native";
 import { useMemo, useState } from "react";
 import { StyleSheet, View } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
@@ -17,24 +17,24 @@ import { StatusBar } from "expo-status-bar";
 
 import { AppText, BottomTabs, Chip, Screen, type TabItem } from "./src/components/ui";
 import { useRiderLensMvp } from "./src/hooks/useRiderLensMvp";
-import { GarageScreen } from "./src/screens/GarageScreen";
 import { CoachScreen } from "./src/screens/CoachScreen";
 import { SessionsScreen } from "./src/screens/SessionsScreen";
-import { ToolsScreen } from "./src/screens/ToolsScreen";
 import { getSupabaseMode } from "./src/services/supabase";
 import { spacing, tokens } from "./src/theme/tokens";
 
-type TabKey = "coach" | "sessions" | "garage" | "tools";
+// MVP focus: capture and the library. The Garage and Tools screens still exist
+// in src/screens but are unrouted until the video loop is done.
+type TabKey = "coach" | "sessions";
 
 const tabs: TabItem[] = [
-  { key: "coach", label: "Coach", icon: Video },
-  { key: "sessions", label: "Sessions", icon: ListVideo },
-  { key: "garage", label: "Garage", icon: Bike },
-  { key: "tools", label: "Tools", icon: Gauge }
+  { key: "coach", label: "Capture", icon: Video },
+  { key: "sessions", label: "Library", icon: ListVideo }
 ];
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabKey>("coach");
+  // Bumped by the center (+) button: jump to Capture with the camera open.
+  const [captureSignal, setCaptureSignal] = useState(0);
   const store = useRiderLensMvp();
   const [sansLoaded] = useSansFonts({
     IBMPlexSans: IBMPlexSans_400Regular,
@@ -50,15 +50,11 @@ export default function App() {
     switch (activeTab) {
       case "sessions":
         return <SessionsScreen store={store} />;
-      case "garage":
-        return <GarageScreen store={store} />;
-      case "tools":
-        return <ToolsScreen store={store} />;
       case "coach":
       default:
-        return <CoachScreen store={store} />;
+        return <CoachScreen store={store} captureSignal={captureSignal} />;
     }
-  }, [activeTab, store]);
+  }, [activeTab, captureSignal, store]);
 
   if (!sansLoaded || !monoLoaded) {
     return (
@@ -87,7 +83,19 @@ export default function App() {
             </Chip>
           </View>
           {currentScreen}
-          <BottomTabs items={tabs} activeKey={activeTab} onChange={(key) => setActiveTab(key as TabKey)} />
+          <BottomTabs
+            items={tabs}
+            activeKey={activeTab}
+            onChange={(key) => setActiveTab(key as TabKey)}
+            centerAction={{
+              icon: Plus,
+              label: "Quick capture",
+              onPress: () => {
+                setActiveTab("coach");
+                setCaptureSignal((value) => value + 1);
+              }
+            }}
+          />
         </Screen>
       </SafeAreaView>
     </SafeAreaProvider>

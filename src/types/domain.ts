@@ -102,6 +102,18 @@ export type FilmstripFrame = {
   image: string;
 };
 
+/** Airtime + air height derived from flight physics (h = g·T²/8), timestamps
+ * snapped to the pose series by the worker. Estimated, never measured.
+ * A crash ends the flight too; height is then rise-only and may be null. */
+export type FlightEstimate = {
+  airtimeSeconds: number;
+  heightMeters: number | null;
+  method: "symmetric" | "rise_time";
+  endedIn: "landing" | "crash";
+  takeoffTime: number;
+  landingTime: number;
+};
+
 export type RecordStatus = "pending" | "processing" | "ready" | "failed";
 
 // Light metadata kept in the index; heavy payload (metrics/series/filmstrip) lives
@@ -119,6 +131,14 @@ export type JumpRecord = {
   summary?: string;
   events?: CaptureEvent[];
   clipUri?: string;
+  /** Skeleton-burned, watermarked share version of the clip. */
+  skeletonClipUri?: string;
+  /** Middle filmstrip frame saved to disk: the face of this record in lists. */
+  posterUri?: string;
+  /** Rider-added tags (trail, trick, "best", …) for finding records later. */
+  tags?: string[];
+  /** Present when the AI events describe a takeoff→landing flight. */
+  flight?: FlightEstimate;
   error?: string;
 };
 

@@ -1,30 +1,49 @@
 import Slider from "@react-native-community/slider";
+import { useEventListener } from "expo";
 import { useVideoPlayer, VideoView } from "expo-video";
-import { AlertTriangle, Pause, Play, RefreshCcw, Share2, Trash2, X } from "lucide-react-native";
-import { useEffect, useMemo, useState } from "react";
-import { Image, Modal, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import {
+  AlertTriangle,
+  ChevronLeft,
+  ChevronRight,
+  Film,
+  Pause,
+  PersonStanding,
+  Play,
+  Plus,
+  RefreshCcw,
+  Share2,
+  Sparkles,
+  Trash2,
+  X
+} from "lucide-react-native";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Image, Modal, Pressable, ScrollView, StyleSheet, TextInput, View } from "react-native";
 
-import { getSkillLabel } from "../services/analysis";
+import { getRecordTitle, getSystemTags } from "../services/analysis";
 import { loadRecordDetail } from "../services/recordStore";
-import { spacing, tokens } from "../theme/tokens";
+import { radius, spacing, tokens } from "../theme/tokens";
 import type { FilmstripFrame, JumpRecord, JumpRecordDetail } from "../types/domain";
-import { TimelineChart } from "./TimelineChart";
 import { AppText, Button, Card, Chip, NumberText } from "./ui";
 
 type RecordCardProps = {
   record: JumpRecord;
-  onShare?: (record: JumpRecord) => void;
+  onShare?: (record: JumpRecord, preferSkeleton?: boolean) => void;
   onRetry?: (record: JumpRecord) => void;
   onDelete?: (record: JumpRecord) => void;
+  onAddTag?: (recordId: string, tag: string) => void;
+  onRemoveTag?: (recordId: string, tag: string) => void;
+  /** Previously-used tags offered as one-tap suggestions in the editor. */
+  tagSuggestions?: string[];
 };
 
+/** Fallback when a record has a clip but no filmstrip to drive the viewer. */
 function ClipPlayer({ clipUri }: { clipUri: string }) {
   const player = useVideoPlayer(clipUri, (instance) => {
     instance.loop = true;
     instance.muted = true;
     instance.play();
   });
-  return <VideoView player={player} style={styles.player} contentFit="contain" nativeControls />;
+  return <VideoView player={player} style={styles.fallbackPlayer} contentFit="contain" nativeControls />;
 }
 
 /** Label each event with the closest filmstrip frame so tags render on the strip. */
@@ -47,20 +66,379 @@ function eventLabels(record: JumpRecord, filmstrip: FilmstripFrame[]): Map<numbe
   return labels;
 }
 
-// Playback runs at half speed: slow enough to read body position, fast enough to feel motion.
-const PLAYBACK_SPEED = 0.5;
+// Default playback is half speed: slow enough to read body position, fast enough
+// to feel motion. The speed button cycles through these for both lenses.
+const PLAYBACK_SPEEDS = [1, 0.5, 0.25];
+const DEFAULT_SPEED = 0.5;
 
-export function RecordCard({ record, onShare, onRetry, onDelete }: RecordCardProps) {
-  const [detail, setDetail] = useState<JumpRecordDetail | undefined>();
-  const [zoomed, setZoomed] = useState<FilmstripFrame | undefined>();
+function speedLabel(speed: number): string {
+  return speed === 1 ? "1×" : speed === 0.5 ? "½×" : "¼×";
+}
+
+type ViewerMode = "skeleton" | "video";
+
+type JumpViewerProps = {
+  /** Owned by RecordCard: the toggle lives in the card header. */
+  mode: ViewerMode;
+  clipUri?: string;
+  /** Source-video time of the clip's first frame: filmstrip `t` values are in
+   * source time, the clip starts at the confirmed window start. */
+  clipStartSeconds: number;
+  frames: FilmstripFrame[];
+  labels: Map<number, string>;
+  onZoom: (frame: FilmstripFrame) => void;
+};
+
+/** One viewport, two lenses on the same moment. `frameIndex` is the single source
+ * of truth for position: the skeleton mode steps it on a timer, the video mode
+ * syncs it from playback time, and the slider + filmstrip scrub it in both. */
+function JumpViewer({ mode, clipUri, clipStartSeconds, frames, labels, onZoom }: JumpViewerProps) {
   const [frameIndex, setFrameIndex] = useState(0);
   const [playing, setPlaying] = useState(false);
+  const [speed, setSpeed] = useState(DEFAULT_SPEED);
+
+  const player = useVideoPlayer(clipUri ?? null, (instance) => {
+    instance.loop = true;
+    instance.muted = true;
+    instance.playbackRate = DEFAULT_SPEED;
+    instance.timeUpdateEventInterval = 0.15;
+  });
+
+  // One speed for both lenses.
+  useEffect(() => {
+    if (clipUri) player.playbackRate = speed;
+  }, [clipUri, player, speed]);
+
+  const cycleSpeed = useCallback(() => {
+    setSpeed((current) => {
+      const index = PLAYBACK_SPEEDS.indexOf(current);
+      return PLAYBACK_SPEEDS[(index + 1) % PLAYBACK_SPEEDS.length];
+    });
+  }, []);
+
+  const frameIntervalMs = useMemo(() => {
+    if (frames.length < 2) return 120;
+    const realInterval = ((frames[frames.length - 1].t - frames[0].t) / (frames.length - 1)) * 1000;
+    return Math.max(40, realInterval / speed);
+  }, [frames, speed]);
+
+  const clipTimeOf = useCallback(
+    (frame: FilmstripFrame) => Math.max(0, frame.t - clipStartSeconds),
+    [clipStartSeconds]
+  );
+
+  // Skeleton playback: step through frames on a timer.
+  useEffect(() => {
+    if (mode !== "skeleton" || !playing || frames.length < 2) return;
+    const timer = setInterval(() => {
+      setFrameIndex((index) => (index + 1) % frames.length);
+    }, frameIntervalMs);
+    return () => clearInterval(timer);
+  }, [mode, playing, frames.length, frameIntervalMs]);
+
+  // Video playback follows the shared `playing` flag.
+  useEffect(() => {
+    if (!clipUri) return;
+    if (mode === "video" && playing) {
+      player.play();
+    } else {
+      player.pause();
+    }
+  }, [clipUri, mode, playing, player]);
+
+  // While the video plays, keep frameIndex (slider + strip highlight) in sync.
+  useEventListener(player, "timeUpdate", ({ currentTime }) => {
+    if (mode !== "video" || frames.length === 0) return;
+    const sourceTime = currentTime + clipStartSeconds;
+    let best = 0;
+    let bestDistance = Number.POSITIVE_INFINITY;
+    frames.forEach((frame, index) => {
+      const distance = Math.abs(frame.t - sourceTime);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        best = index;
+      }
+    });
+    setFrameIndex(best);
+  });
+
+  const seekToFrame = useCallback(
+    (index: number) => {
+      setPlaying(false);
+      setFrameIndex(index);
+      const frame = frames[index];
+      if (frame && clipUri) {
+        player.currentTime = clipTimeOf(frame);
+      }
+    },
+    [clipTimeOf, clipUri, frames, player]
+  );
+
+  // Carry the current moment across mode switches so the toggle never jumps in time.
+  const frameIndexRef = useRef(frameIndex);
+  frameIndexRef.current = frameIndex;
+  const previousModeRef = useRef(mode);
+  useEffect(() => {
+    if (previousModeRef.current === mode) return;
+    previousModeRef.current = mode;
+    if (mode === "video" && clipUri) {
+      const frame = frames[frameIndexRef.current];
+      if (frame) player.currentTime = clipTimeOf(frame);
+    }
+  }, [clipTimeOf, clipUri, frames, mode, player]);
+
+  const currentFrame = frames[Math.min(frameIndex, frames.length - 1)];
+
+  // Phase banner, not a blip: the latest event at or before the current frame
+  // stays visible until the next event replaces it, so it's readable mid-playback.
+  const label = useMemo(() => {
+    let current: string | undefined;
+    for (const [index, name] of [...labels.entries()].sort((a, b) => a[0] - b[0])) {
+      if (index > frameIndex) break;
+      current = name;
+    }
+    return current;
+  }, [frameIndex, labels]);
+
+  return (
+    <View style={styles.viewer}>
+      <View style={styles.viewport}>
+        {mode === "video" && clipUri ? (
+          <VideoView player={player} style={StyleSheet.absoluteFill} contentFit="contain" nativeControls={false} />
+        ) : (
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => onZoom(currentFrame)}>
+            <Image source={{ uri: currentFrame.image }} style={styles.viewportImage} resizeMode="contain" />
+          </Pressable>
+        )}
+        {label ? (
+          <View style={styles.eventTagLarge}>
+            <AppText size={11} weight="bold" color={tokens.graphite}>
+              {label}
+            </AppText>
+          </View>
+        ) : null}
+      </View>
+
+      <View style={styles.playerControls}>
+        <IconButton
+          icon={ChevronLeft}
+          label="Previous frame"
+          onPress={() => seekToFrame(Math.max(0, frameIndex - 1))}
+        />
+        <IconButton
+          icon={playing ? Pause : Play}
+          label={playing ? "Pause" : "Play"}
+          emphasis
+          onPress={() => setPlaying((value) => !value)}
+        />
+        <IconButton
+          icon={ChevronRight}
+          label="Next frame"
+          onPress={() => seekToFrame(Math.min(frames.length - 1, frameIndex + 1))}
+        />
+        <Slider
+          style={styles.slider}
+          minimumValue={0}
+          maximumValue={Math.max(0, frames.length - 1)}
+          step={1}
+          value={frameIndex}
+          minimumTrackTintColor={tokens.electric}
+          maximumTrackTintColor={tokens.border}
+          thumbTintColor={tokens.electric}
+          onValueChange={(value) => seekToFrame(Math.round(value))}
+        />
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Playback speed ${speedLabel(speed)}`}
+          onPress={cycleSpeed}
+          style={styles.speedButton}
+        >
+          <NumberText size={12} weight="bold">
+            {speedLabel(speed)}
+          </NumberText>
+        </Pressable>
+        <NumberText size={11} color={tokens.textMuted} style={styles.playerTime}>
+          {currentFrame.t.toFixed(2)}s
+        </NumberText>
+      </View>
+
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filmstrip}>
+        {frames.map((frame, index) => (
+          <Pressable key={frame.t} onPress={() => seekToFrame(index)} style={styles.filmstripCell}>
+            <Image
+              source={{ uri: frame.image }}
+              style={[styles.filmstripImage, index === frameIndex && styles.filmstripImageActive]}
+            />
+            {labels.has(index) ? (
+              <View style={styles.eventTag}>
+                <AppText size={10} weight="bold" color={tokens.graphite}>
+                  {labels.get(index)}
+                </AppText>
+              </View>
+            ) : null}
+          </Pressable>
+        ))}
+      </ScrollView>
+    </View>
+  );
+}
+
+type IconButtonProps = {
+  icon: typeof Film;
+  label: string;
+  onPress: () => void;
+  emphasis?: boolean;
+};
+
+function IconButton({ icon: Icon, label, onPress, emphasis = false }: IconButtonProps) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      onPress={onPress}
+      style={({ pressed }) => [styles.iconButton, emphasis && styles.iconButtonEmphasis, pressed && styles.iconButtonPressed]}
+    >
+      <Icon color={emphasis ? tokens.graphite : tokens.text} size={18} strokeWidth={2.4} />
+    </Pressable>
+  );
+}
+
+type SegmentButtonProps = {
+  icon: typeof Film;
+  label: string;
+  active: boolean;
+  onPress: () => void;
+};
+
+function SegmentButton({ icon: Icon, label, active, onPress }: SegmentButtonProps) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityState={{ selected: active }}
+      onPress={onPress}
+      style={[styles.segment, active && styles.segmentActive]}
+    >
+      <Icon color={active ? tokens.electric : tokens.textMuted} size={14} strokeWidth={2.4} />
+      <AppText size={12} weight="bold" color={active ? tokens.electric : tokens.textMuted}>
+        {label}
+      </AppText>
+    </Pressable>
+  );
+}
+
+type TagSectionProps = {
+  record: JumpRecord;
+  suggestions: string[];
+  onAdd: (recordId: string, tag: string) => void;
+  onRemove: (recordId: string, tag: string) => void;
+};
+
+/** System tags come from the AI review and are not removable; rider tags are
+ * one tap to remove, and adding is mostly one tap too (suggestions first). */
+function TagSection({ record, suggestions, onAdd, onRemove }: TagSectionProps) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+
+  const systemTags = getSystemTags(record);
+  const userTags = record.tags ?? [];
+  const applied = new Set([...systemTags, ...userTags].map((tag) => tag.toLowerCase()));
+  const available = suggestions.filter((tag) => !applied.has(tag.toLowerCase()));
+
+  const submitDraft = () => {
+    const cleaned = draft.trim();
+    if (cleaned) onAdd(record.id, cleaned);
+    setDraft("");
+  };
+
+  return (
+    <View style={styles.tagSection}>
+      <View style={styles.tagRow}>
+        {systemTags.map((tag) => (
+          <Chip key={`system-${tag}`} tone={tag === "crash" ? "red" : "cyan"} icon={Sparkles}>
+            {tag}
+          </Chip>
+        ))}
+        {userTags.map((tag) => (
+          <Pressable
+            key={tag}
+            accessibilityRole="button"
+            accessibilityLabel={`Remove tag ${tag}`}
+            onPress={() => onRemove(record.id, tag)}
+            style={styles.userTag}
+          >
+            <AppText size={12} weight="bold">
+              {tag}
+            </AppText>
+            <X color={tokens.textMuted} size={12} strokeWidth={2.6} />
+          </Pressable>
+        ))}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={editing ? "Close tag editor" : "Add a tag"}
+          onPress={() => setEditing((value) => !value)}
+          style={[styles.userTag, styles.addTag]}
+        >
+          {editing ? (
+            <X color={tokens.green} size={13} strokeWidth={2.6} />
+          ) : (
+            <Plus color={tokens.green} size={13} strokeWidth={2.6} />
+          )}
+          <AppText size={12} weight="bold" color={tokens.green}>
+            Tag
+          </AppText>
+        </Pressable>
+      </View>
+
+      {editing ? (
+        <View style={styles.tagEditor}>
+          {available.length > 0 ? (
+            <View style={styles.tagRow}>
+              {available.map((tag) => (
+                <Pressable
+                  key={tag}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Add tag ${tag}`}
+                  onPress={() => onAdd(record.id, tag)}
+                  style={styles.userTag}
+                >
+                  <Plus color={tokens.textMuted} size={12} strokeWidth={2.6} />
+                  <AppText size={12} weight="bold" color={tokens.textMuted}>
+                    {tag}
+                  </AppText>
+                </Pressable>
+              ))}
+            </View>
+          ) : null}
+          <View style={styles.tagInputRow}>
+            <TextInput
+              value={draft}
+              onChangeText={setDraft}
+              onSubmitEditing={submitDraft}
+              placeholder="Trail, trick, “best”…"
+              placeholderTextColor={tokens.textMuted}
+              autoCapitalize="none"
+              returnKeyType="done"
+              style={styles.tagInput}
+            />
+            <Button variant="secondary" onPress={submitDraft} style={styles.tagAddButton}>
+              Add
+            </Button>
+          </View>
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+export function RecordCard({ record, onShare, onRetry, onDelete, onAddTag, onRemoveTag, tagSuggestions }: RecordCardProps) {
+  const [detail, setDetail] = useState<JumpRecordDetail | undefined>();
+  const [zoomed, setZoomed] = useState<FilmstripFrame | undefined>();
+  const [mode, setMode] = useState<ViewerMode>("skeleton");
 
   useEffect(() => {
     let active = true;
     setDetail(undefined);
-    setFrameIndex(0);
-    setPlaying(false);
+    setMode("skeleton");
     if (record.status === "ready") {
       loadRecordDetail(record.id).then((loaded) => {
         if (active) setDetail(loaded);
@@ -74,22 +452,6 @@ export function RecordCard({ record, onShare, onRetry, onDelete }: RecordCardPro
   const frames = detail?.filmstrip ?? [];
   const labels = useMemo(() => (detail ? eventLabels(record, detail.filmstrip) : new Map<number, string>()), [detail, record]);
 
-  const frameIntervalMs = useMemo(() => {
-    if (frames.length < 2) return 120;
-    const realInterval = ((frames[frames.length - 1].t - frames[0].t) / (frames.length - 1)) * 1000;
-    return Math.max(40, realInterval / PLAYBACK_SPEED);
-  }, [frames]);
-
-  useEffect(() => {
-    if (!playing || frames.length < 2) return;
-    const timer = setInterval(() => {
-      setFrameIndex((index) => (index + 1) % frames.length);
-    }, frameIntervalMs);
-    return () => clearInterval(timer);
-  }, [frames.length, frameIntervalMs, playing]);
-
-  const currentFrame = frames[Math.min(frameIndex, Math.max(0, frames.length - 1))];
-
   const statusTone = record.status === "ready" ? "green" : record.status === "failed" ? "red" : "amber";
   const statusLabel =
     record.status === "ready"
@@ -99,103 +461,58 @@ export function RecordCard({ record, onShare, onRetry, onDelete }: RecordCardPro
         : record.status === "failed"
           ? "Failed"
           : "Waiting for connection";
+  // Once the record is ready the status chip says nothing new — its header slot
+  // becomes the lens toggle instead.
+  const showModeToggle = record.status === "ready" && Boolean(record.clipUri) && frames.length > 0;
 
   return (
     <Card style={styles.card}>
       <View style={styles.headerRow}>
         <View style={styles.headerText}>
-          <AppText weight="bold">{getSkillLabel(record.skillType)}</AppText>
+          <AppText weight="bold">{getRecordTitle(record)}</AppText>
           <AppText color={tokens.textMuted} size={12}>
-            {new Date(record.createdAt).toLocaleString()} ·{" "}
             <NumberText size={12} color={tokens.textMuted}>
               {record.windowStart.toFixed(1)}s–{record.windowEnd.toFixed(1)}s
             </NumberText>
             {record.aiWindow ? " · AI window" : " · manual window"}
           </AppText>
         </View>
-        <Chip tone={statusTone}>{statusLabel}</Chip>
+        {showModeToggle ? (
+          <View style={styles.segmented}>
+            <SegmentButton
+              icon={PersonStanding}
+              label="Skeleton"
+              active={mode === "skeleton"}
+              onPress={() => setMode("skeleton")}
+            />
+            <SegmentButton icon={Film} label="Video" active={mode === "video"} onPress={() => setMode("video")} />
+          </View>
+        ) : (
+          <Chip tone={statusTone}>{statusLabel}</Chip>
+        )}
       </View>
 
-      {record.summary ? (
-        <AppText color={tokens.textMuted} size={13}>
-          {record.summary}
-        </AppText>
+      {onAddTag && onRemoveTag ? (
+        <TagSection record={record} suggestions={tagSuggestions ?? []} onAdd={onAddTag} onRemove={onRemoveTag} />
       ) : null}
 
-      {record.status === "ready" && record.clipUri ? <ClipPlayer clipUri={record.clipUri} /> : null}
+      {record.status === "ready" && detail && frames.length > 0 ? (
+        // The series (detail.series) is still measured and stored; the timeline
+        // chart is hidden until the coaching layer can interpret it. MVP shows
+        // the self-explanatory lens: skeleton on every frame.
+        <JumpViewer
+          key={record.id}
+          mode={mode}
+          clipUri={record.clipUri}
+          clipStartSeconds={record.windowStart}
+          frames={frames}
+          labels={labels}
+          onZoom={setZoomed}
+        />
+      ) : null}
 
-      {record.status === "ready" && detail && currentFrame ? (
-        <>
-          {/* Sequence player: frame-by-frame with the skeleton. Tap the frame to zoom. */}
-          <View>
-            <Pressable onPress={() => setZoomed(currentFrame)}>
-              <Image source={{ uri: currentFrame.image }} style={styles.sequenceFrame} resizeMode="contain" />
-              {labels.has(frameIndex) ? (
-                <View style={styles.eventTagLarge}>
-                  <AppText size={11} weight="bold" color={tokens.graphite}>
-                    {labels.get(frameIndex)}
-                  </AppText>
-                </View>
-              ) : null}
-            </Pressable>
-            <View style={styles.playerControls}>
-              <Button
-                icon={playing ? Pause : Play}
-                variant="secondary"
-                onPress={() => setPlaying((value) => !value)}
-                style={styles.playButton}
-              >
-                {playing ? "Pause" : "Play"}
-              </Button>
-              <Slider
-                style={styles.slider}
-                minimumValue={0}
-                maximumValue={Math.max(0, frames.length - 1)}
-                step={1}
-                value={frameIndex}
-                minimumTrackTintColor={tokens.electric}
-                maximumTrackTintColor={tokens.border}
-                thumbTintColor={tokens.electric}
-                onValueChange={(value) => {
-                  setPlaying(false);
-                  setFrameIndex(Math.round(value));
-                }}
-              />
-              <NumberText size={12} color={tokens.textMuted} style={styles.playerTime}>
-                {currentFrame.t.toFixed(2)}s
-              </NumberText>
-            </View>
-          </View>
-
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filmstrip}>
-            {frames.map((frame, index) => (
-              <Pressable
-                key={frame.t}
-                onPress={() => {
-                  setPlaying(false);
-                  setFrameIndex(index);
-                }}
-                style={styles.filmstripCell}
-              >
-                <Image
-                  source={{ uri: frame.image }}
-                  style={[styles.filmstripImage, index === frameIndex && styles.filmstripImageActive]}
-                />
-                {labels.has(index) ? (
-                  <View style={styles.eventTag}>
-                    <AppText size={10} weight="bold" color={tokens.graphite}>
-                      {labels.get(index)}
-                    </AppText>
-                  </View>
-                ) : null}
-                <NumberText size={10} color={tokens.textMuted}>
-                  {frame.t.toFixed(2)}s
-                </NumberText>
-              </Pressable>
-            ))}
-          </ScrollView>
-          <TimelineChart series={detail.series} events={record.events} />
-        </>
+      {record.status === "ready" && detail && frames.length === 0 && record.clipUri ? (
+        <ClipPlayer clipUri={record.clipUri} />
       ) : null}
 
       {record.status === "pending" || record.status === "failed" ? (
@@ -207,10 +524,42 @@ export function RecordCard({ record, onShare, onRetry, onDelete }: RecordCardPro
         </View>
       ) : null}
 
+      {record.status === "ready" && record.flight ? (
+        <View style={styles.flightStrip}>
+          <View style={styles.flightStat}>
+            <AppText size={10} weight="bold" color={tokens.textMuted} style={styles.flightLabel}>
+              {record.flight.endedIn === "crash" ? "Air to impact" : "Airtime"}
+            </AppText>
+            <NumberText size={17} weight="bold">
+              {record.flight.airtimeSeconds.toFixed(2)}s
+            </NumberText>
+          </View>
+          {record.flight.heightMeters !== null ? (
+            <View style={styles.flightStat}>
+              <AppText size={10} weight="bold" color={tokens.textMuted} style={styles.flightLabel}>
+                Height
+              </AppText>
+              <NumberText size={17} weight="bold">
+                ~{record.flight.heightMeters.toFixed(1)}m
+              </NumberText>
+            </View>
+          ) : null}
+          <Chip tone="amber" style={styles.flightChip}>
+            est.
+          </Chip>
+        </View>
+      ) : null}
+
       <View style={styles.actions}>
         {record.status === "ready" && onShare ? (
-          <Button icon={Share2} variant="secondary" onPress={() => onShare(record)} style={styles.actionButton}>
-            Share clip
+          // Shares whichever lens is active: skeleton (watermarked) or clean clip.
+          <Button
+            icon={Share2}
+            variant="secondary"
+            onPress={() => onShare(record, mode === "skeleton" && Boolean(record.skeletonClipUri))}
+            style={styles.actionButton}
+          >
+            {mode === "skeleton" && record.skeletonClipUri ? "Share skeleton" : "Share clip"}
           </Button>
         ) : null}
         {(record.status === "pending" || record.status === "failed") && onRetry ? (
@@ -257,17 +606,43 @@ const styles = StyleSheet.create({
   headerText: {
     flex: 1
   },
-  player: {
+  viewer: {
+    gap: spacing.sm
+  },
+  segmented: {
+    flexDirection: "row",
+    backgroundColor: tokens.surfaceMuted,
+    borderRadius: radius.pill,
+    padding: 3,
+    gap: 2
+  },
+  segment: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    borderRadius: radius.pill,
+    paddingHorizontal: 12,
+    paddingVertical: 6
+  },
+  segmentActive: {
+    backgroundColor: tokens.graphite
+  },
+  viewport: {
     width: "100%",
-    height: 210,
+    aspectRatio: 16 / 9,
     borderRadius: 10,
     overflow: "hidden",
     backgroundColor: tokens.graphite
   },
-  sequenceFrame: {
+  viewportImage: {
+    width: "100%",
+    height: "100%"
+  },
+  fallbackPlayer: {
     width: "100%",
     aspectRatio: 16 / 9,
     borderRadius: 10,
+    overflow: "hidden",
     backgroundColor: tokens.graphite
   },
   eventTagLarge: {
@@ -282,32 +657,53 @@ const styles = StyleSheet.create({
   playerControls: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.sm,
-    marginTop: spacing.sm
+    gap: 6
   },
-  playButton: {
-    minHeight: 40,
-    minWidth: 96,
-    paddingHorizontal: spacing.md
+  iconButton: {
+    width: 38,
+    height: 38,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: tokens.border,
+    backgroundColor: tokens.surface
+  },
+  iconButtonEmphasis: {
+    backgroundColor: tokens.electric,
+    borderColor: tokens.electric
+  },
+  iconButtonPressed: {
+    transform: [{ scale: 0.96 }]
+  },
+  speedButton: {
+    minWidth: 40,
+    height: 38,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: tokens.border,
+    backgroundColor: tokens.surface,
+    paddingHorizontal: 6
   },
   slider: {
     flex: 1,
     height: 36
   },
   playerTime: {
-    minWidth: 48,
+    minWidth: 42,
     textAlign: "right"
   },
   filmstrip: {
     gap: spacing.sm
   },
   filmstripCell: {
-    alignItems: "center",
-    gap: 2
+    alignItems: "center"
   },
   filmstripImage: {
-    width: 132,
-    height: 74,
+    width: 114,
+    height: 64,
     borderRadius: 6,
     backgroundColor: tokens.graphite,
     borderWidth: 2,
@@ -324,6 +720,76 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     paddingHorizontal: 8,
     paddingVertical: 2
+  },
+  flightStrip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.lg,
+    borderWidth: 1,
+    borderColor: tokens.border,
+    borderRadius: radius.sm,
+    backgroundColor: tokens.surface,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm
+  },
+  flightStat: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    gap: 6
+  },
+  flightLabel: {
+    textTransform: "uppercase"
+  },
+  flightChip: {
+    marginLeft: "auto"
+  },
+  tagSection: {
+    gap: spacing.sm
+  },
+  tagRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "center",
+    gap: spacing.sm
+  },
+  userTag: {
+    minHeight: 28,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: tokens.border,
+    backgroundColor: tokens.surfaceMuted,
+    paddingHorizontal: 10
+  },
+  addTag: {
+    backgroundColor: tokens.electricSoft,
+    borderColor: tokens.electricSoft
+  },
+  tagEditor: {
+    gap: spacing.sm
+  },
+  tagInputRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm
+  },
+  tagInput: {
+    flex: 1,
+    minHeight: 40,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: tokens.border,
+    backgroundColor: tokens.surface,
+    paddingHorizontal: spacing.md,
+    fontFamily: tokens.fontUi,
+    fontSize: 14,
+    color: tokens.text
+  },
+  tagAddButton: {
+    minHeight: 40,
+    paddingHorizontal: spacing.md
   },
   pendingRow: {
     flexDirection: "row",

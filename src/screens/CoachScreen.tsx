@@ -11,9 +11,11 @@ import { spacing, tokens } from "../theme/tokens";
 
 type CoachScreenProps = {
   store: RiderLensStore;
+  /** Incremented by the tab bar's (+) button: open the camera immediately. */
+  captureSignal?: number;
 };
 
-export function CoachScreen({ store }: CoachScreenProps) {
+export function CoachScreen({ store, captureSignal }: CoachScreenProps) {
   const [cameraOpen, setCameraOpen] = useState(false);
   const [recording, setRecording] = useState(false);
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
@@ -29,6 +31,13 @@ export function CoachScreen({ store }: CoachScreenProps) {
     }
     setCameraOpen(true);
   }
+
+  useEffect(() => {
+    if (!captureSignal) return;
+    void openCamera();
+    // Quick capture reacts to the (+) tap, not to permission/state changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [captureSignal]);
 
   async function recordClip() {
     if (!cameraRef.current || recording) return;
@@ -55,7 +64,7 @@ export function CoachScreen({ store }: CoachScreenProps) {
         <SectionHeader
           eyebrow="Capture"
           title="Record the moment"
-          body="Film or pick a clip. RiderLens finds your jump, cuts it out, and draws your body position on every frame."
+          body="Film or pick a clip. RiderLens finds the moment, cuts it out, and draws your body position on every frame."
         />
 
         <View style={styles.actionGrid}>
@@ -101,6 +110,9 @@ export function CoachScreen({ store }: CoachScreenProps) {
             onShare={store.shareRecordClip}
             onRetry={(record) => store.retryRecord(record.id)}
             onDelete={(record) => store.deleteRecord(record.id)}
+            onAddTag={store.addRecordTag}
+            onRemoveTag={store.removeRecordTag}
+            tagSuggestions={store.knownTags}
           />
         ) : null}
 
@@ -154,10 +166,10 @@ function WindowStep({ store, capture }: { store: RiderLensStore; capture: Pendin
 
   const statusLine =
     capture.windowStatus === "checking"
-      ? "Looking for your jump…"
+      ? "Looking for the moment…"
       : capture.windowStatus === "ai"
-        ? "AI found your jump — adjust if needed."
-        : "Set the window around your jump.";
+        ? "AI found the moment — adjust if needed."
+        : "Set the window around the moment.";
 
   return (
     <Card style={styles.windowCard}>
