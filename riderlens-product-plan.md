@@ -1,7 +1,15 @@
-# RiderLens Product & Technical Plan v3 — Capture First
+# RiderLens Product & Technical Plan v4 — Capture First, MTB-First
 
-Status date: July 4, 2026.
-Supersedes plan v2 (coaching-first). The coaching ambitions are parked, not deleted — see the appendix. `bike-technique-app-prerequisites.md` remains the original scope/design reference; its visual system, safety rules, and filming guidance still apply.
+Status date: July 5, 2026.
+Supersedes plan v3 (July 4, capture-first). The coaching ambitions remain parked — see the appendix. `bike-technique-app-prerequisites.md` remains the original scope/design reference; its visual system, safety rules, and filming guidance still apply.
+
+## 0. Positioning (decided July 5, 2026)
+
+- **A dedicated MTB app built on a sport-agnostic engine.** Nothing in the core loop (capture → pose skeleton → trim → record → tag → share) knows what a jump is. Sport-specific value lives in thin optional layers (the AI window prompt, flight metrics, the future coaching layer). This keeps both future paths open: act-two MTB depth, and someday per-sport clones (same engine, new knowledge base + brand) if MTB works.
+- **v1 ships the video loop only.** Navigation is **Capture · (+) · Library**. Garage and Tools are hidden (screens kept in `src/screens/`, unrouted) — they are act two's opening move, not MVP scope. Do not re-route them for v1.
+- **No skill taxonomy in the product.** Records are titled by time ("Today · 14:07"); the what-layer is tags (auto `# crash` from the AI review + user tags). Skill pickers and per-skill event grammars are explicitly rejected for MVP — do not reintroduce them.
+- **Share is the growth loop.** The skeleton-burned, watermarked mp4 (`riderlens.app` — placeholder until the domain is real) is the ad; the share button sends whichever lens (Skeleton/Video) is active. A QR end-card gets appended once a real download URL exists.
+- **Act two (after retention proves out):** coaching intelligence (knowledge base already distilled in `worker/app/knowledge/`), Garage + Tools return, affiliate/partnerships on gear and service. MTB is a high-spend niche; depth is the moat — generic video+skeleton alone is clonable.
 
 ## 1. The product in one sentence
 
@@ -21,7 +29,7 @@ photo library       manual slider         worker)              timeline curves) 
                     always available)
 ```
 
-External video links are out (removed). Garage and Tools stay in the app as secondary tabs — useful without filming, near-zero maintenance.
+External video links are out (removed). Garage and Tools are hidden in v1 (unrouted, kept in the codebase) — see §0.
 
 ## 3. Connectivity ladder (offline is the normal case)
 
@@ -49,10 +57,10 @@ A rider's 45s clip contains ~3s of jump. The record (trimmed 720p window clip + 
 
 ## 5. Library, tags, retention
 
-- **Skill** — structured field (existing `SkillType`), set at capture.
-- **Spot** — GPS captured at record time; rider names a location once ("Monsanto"), every future session there auto-tags. Zero-friction organization is the only kind that happens.
-- **Free tags** — optional ("360 attempt", "new bike"), suggested from recent tags.
-- Library filters: skill × spot × date; session grouping from timestamps.
+- **No skill field in the UI** (see §0). Records are titled by time ("Today · 14:07"); `SkillType` stays dormant in the data model.
+- **Tags** *(built)* — auto `# crash` from the AI review + free tags with one-tap suggestions from previously used tags.
+- **Spot** *(later)* — GPS captured at record time; rider names a location once ("Monsanto"), every future session there auto-tags. Zero-friction organization is the only kind that happens.
+- Library filters: tag chips *(built)*; spot × date later; session grouping from timestamps.
 
 The archive is the retention engine (data gravity): a rider's history of moments is a progression highlight reel that hurts to abandon. Export exists anyway — see §4.
 
@@ -60,8 +68,9 @@ The archive is the retention engine (data gravity): a rider's history of moments
 
 The point of capture is human analysis, so the shareable artifact is a first-class output:
 
-1. **v1: composite export** — a strip image of 6–10 pose-overlaid frames (and/or a slow-mo overlay clip) that drops into WhatsApp looking great.
-2. **v2 (with cloud sync): share links** — a viewable record page (trimmed clip + frames + curves) behind a tokenized URL. Every share markets the app.
+1. **v1 (built): share the active lens** — the record card's Skeleton/Video toggle decides what Share sends: the skeleton-burned, watermarked mp4 (the growth artifact, rendered by the worker at record time) or the clean trimmed clip.
+2. **QR end-card** appended to shared clips once a real domain/App Store URL exists (FFmpeg-trivial; blocked only on the URL).
+3. **v2 (with cloud sync): share links** — a viewable record page (trimmed clip + frames + curves) behind a tokenized URL. Every share markets the app.
 
 ## 7. Analysis pipeline (built and proven in the Lab)
 
@@ -83,11 +92,13 @@ End-state on the roadmap: **on-device pose + window detection** (MediaPipe iOS/A
 3. Connectivity ladder v1: timeout → manual trim; pending-record queue with retry on reconnect.
 4. Lab (supporting): crop endpoint verification; cheaper-model test for window-finding; fix normalized-coordinate angle distortion (compute angles in pixel/world space).
 - **Done when:** a rider can film a jump at a trail with no signal, trim it in seconds, and have a finished pose-overlaid record on the phone by the time they're home.
+- *Status July 5:* built — capture flow (camera + library), AI window with manual fallback, single-viewport record card (Skeleton/Video toggle in the header), transport controls (frame stepping, 1×/½×/¼× speed), phase-banner event labels, flight metrics (airtime + estimated height, crash-aware, series-snapped, unit-tested), pending/retry. Background WiFi queue still pending.
 
 ### Phase 2 — Library, tags, spots
 5. Record library screen: filter by skill × spot × date; tag editing; GPS spot capture + naming; free tags with suggestions.
 6. Composite share export (strip image / overlay clip) via the share sheet.
 - **Done when:** "find that Monsanto jump from last month and send it to a friend" is under 30 seconds.
+- *Status July 5:* library poster grid (poster.jpg written at record time) + tag filter chips + full-screen detail sheet + tag editing built; watermarked skeleton/clean share built. Spot/GPS pending.
 
 ### Phase 3 — Accounts, sync, share links
 7. Supabase auth + storage; records sync local↔cloud; device-loss recovery.
@@ -99,10 +110,10 @@ End-state on the roadmap: **on-device pose + window detection** (MediaPipe iOS/A
 10. Local window detection from the pose sweep, validated against accumulated ground truth (AI + manual windows); AI demoted to fallback.
 11. On-device pose (Expo dev build) for airplane-mode records — evaluate effort vs. value when reached.
 
-### Phase 5 — More skills
-12. Wheelie, manual, bunnyhop, drop, tailwhip as capture presets (window margins and event vocabulary per skill; no coaching models needed).
+### Phase 5 — parked (superseded by §0)
+Per-skill capture presets are rejected: capture already works for any move (AI window when it recognizes the action, manual window always). The only sport-specific string left is the worker's AI prompt ("jump attempt"); loosen it to "the action moment" opportunistically.
 
-Garage/Tools: maintained as-is; small improvements opportunistically. Not on the critical path.
+Garage/Tools: hidden in v1 (unrouted). They are act two — see §0.
 
 ## 9. Success criteria
 
