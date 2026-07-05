@@ -1,5 +1,28 @@
+import Constants from "expo-constants";
+
 import { createId } from "./analysis";
 import type { CoachingReport, GeometrySource, MetricPhase, PoseMetric, RideSession } from "../types/domain";
+
+// The worker listens on this port on the dev machine.
+const WORKER_PORT = 8000;
+
+/**
+ * Host that served the JS bundle: `localhost` on the iOS Simulator (which shares
+ * the Mac's network), the Mac's LAN IP on a physical phone loaded over Wi-Fi.
+ * Reaching the worker on that same host avoids depending on mDNS `.local`
+ * resolution, which the iOS Simulator blocks via iOS Local Network privacy.
+ *
+ * Only trusted for `localhost` or a bare IPv4 literal — a tunnel host
+ * (`*.exp.direct`) proxies Metro only, not the worker port, so we fall back to
+ * the explicit env URL in that case.
+ */
+function getDevBundlerHost(): string | undefined {
+  const hostUri = Constants.expoConfig?.hostUri ?? Constants.expoGoConfig?.debuggerHost ?? undefined;
+  const host = hostUri?.split(":")[0]?.trim();
+  if (!host) return undefined;
+  const isIpLiteral = /^\d{1,3}(\.\d{1,3}){3}$/.test(host);
+  return host === "localhost" || isIpLiteral ? host : undefined;
+}
 
 type WorkerMetric = {
   phase: MetricPhase;
@@ -36,6 +59,13 @@ export type WorkerAnalysisResult = {
 };
 
 export function getAnalysisWorkerUrl(): string | undefined {
+  // In dev, prefer the bundler host so the same build reaches the worker from
+  // both the iOS Simulator (localhost) and a physical phone (LAN IP), with no
+  // per-device .env edits. Falls back to the explicit env URL for standalone
+  // builds or when running through a tunnel.
+  const host = getDevBundlerHost();
+  if (host) return `http://${host}:${WORKER_PORT}`;
+
   const rawUrl = process.env.EXPO_PUBLIC_ANALYSIS_WORKER_URL?.trim();
   if (!rawUrl) return undefined;
   return rawUrl.replace(/\/+$/, "");
