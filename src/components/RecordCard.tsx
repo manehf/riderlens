@@ -489,7 +489,7 @@ function JumpViewer({
             onPress={cycleSpeed}
             style={styles.speedButton}
           >
-            <AppText size={8} weight="bold" color={tokens.textMuted} style={styles.speedCaption}>
+            <AppText size={10} weight="bold" color={tokens.textMuted} style={styles.speedCaption}>
               SPEED
             </AppText>
             <NumberText size={12} weight="bold">
@@ -1046,20 +1046,19 @@ const styles = StyleSheet.create({
     transform: [{ scale: 0.96 }]
   },
   speedButton: {
-    minWidth: 48,
     height: 38,
+    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 1,
+    gap: 5,
     borderRadius: radius.sm,
     borderWidth: 1,
     borderColor: tokens.border,
     backgroundColor: tokens.surface,
-    paddingHorizontal: 8
+    paddingHorizontal: 10
   },
   speedCaption: {
-    letterSpacing: 0.4,
-    lineHeight: 9
+    letterSpacing: 0.4
   },
   playerTime: {
     minWidth: 42,
