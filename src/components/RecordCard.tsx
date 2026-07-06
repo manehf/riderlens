@@ -1,5 +1,6 @@
 import Slider from "@react-native-community/slider";
 import { useEventListener } from "expo";
+import * as ScreenOrientation from "expo-screen-orientation";
 import { useVideoPlayer, VideoView } from "expo-video";
 import {
   AlertTriangle,
@@ -18,7 +19,7 @@ import {
   X
 } from "lucide-react-native";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Image, Modal, Pressable, ScrollView, StyleSheet, TextInput, View } from "react-native";
+import { Image, Modal, Pressable, ScrollView, StyleSheet, TextInput, View, useWindowDimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { getRecordTitle, getSystemTags } from "../services/analysis";
@@ -166,6 +167,9 @@ function JumpViewer({
   const [frameIndex, setFrameIndex] = useState(() => Math.min(initialFrameIndex, Math.max(0, frames.length - 1)));
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState(DEFAULT_SPEED);
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+  // In landscape fullscreen every vertical point goes to the footage.
+  const compactControls = variant === "fullscreen" && windowWidth > windowHeight;
 
   const player = useVideoPlayer(clipUri ?? null, (instance) => {
     instance.loop = true;
@@ -367,6 +371,7 @@ function JumpViewer({
         </View>
       </View>
 
+      {compactControls ? null : (
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filmstrip}>
         {frames.map((frame, index) => (
           <Pressable key={frame.t} onPress={() => seekToFrame(index)} style={styles.filmstripCell}>
@@ -384,6 +389,7 @@ function JumpViewer({
           </Pressable>
         ))}
       </ScrollView>
+      )}
     </View>
   );
 }
@@ -550,12 +556,15 @@ export function RecordCard({ record, onShare, onRetry, onDelete, onAddTag, onRem
     setFullscreen(true);
     // Remount the inline viewer paused at the shared frame while hidden.
     setViewerEpoch((epoch) => epoch + 1);
+    // Fullscreen may rotate; the rest of the app stays portrait.
+    void ScreenOrientation.unlockAsync();
   }, []);
 
   const closeFullscreen = useCallback(() => {
     setFullscreen(false);
     // Remount inline at wherever the fullscreen session ended.
     setViewerEpoch((epoch) => epoch + 1);
+    void ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
   }, []);
 
   useEffect(() => {
@@ -705,11 +714,21 @@ export function RecordCard({ record, onShare, onRetry, onDelete, onAddTag, onRem
         ) : null}
       </View>
 
-      <Modal visible={fullscreen} animationType="fade" onRequestClose={closeFullscreen}>
+      <Modal
+        visible={fullscreen}
+        animationType="fade"
+        supportedOrientations={["portrait", "landscape-left", "landscape-right"]}
+        onRequestClose={closeFullscreen}
+      >
         <View
           style={[
             styles.fullscreenRoot,
-            { paddingTop: Math.max(insets.top, spacing.md), paddingBottom: Math.max(insets.bottom, spacing.md) }
+            {
+              paddingTop: Math.max(insets.top, spacing.md),
+              paddingBottom: Math.max(insets.bottom, spacing.md),
+              paddingLeft: insets.left,
+              paddingRight: insets.right
+            }
           ]}
         >
           <View style={styles.fullscreenHeader}>

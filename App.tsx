@@ -11,6 +11,7 @@ import {
   useFonts as useSansFonts
 } from "@expo-google-fonts/ibm-plex-sans";
 import { Plus } from "lucide-react-native";
+import * as ScreenOrientation from "expo-screen-orientation";
 import { useEffect, useState } from "react";
 import { ActionSheetIOS, Alert, Platform, Pressable, StyleSheet, View } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
@@ -26,6 +27,11 @@ import { radius, shadows, spacing, tokens } from "./src/theme/tokens";
 // still exist in src/screens but are unrouted until the video loop is done.
 export default function App() {
   const [captureOpen, setCaptureOpen] = useState(false);
+
+  // The app lives in portrait; fullscreen video unlocks rotation temporarily.
+  useEffect(() => {
+    void ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+  }, []);
   // "camera" = jump straight into recording when the sheet opens.
   const [captureIntent, setCaptureIntent] = useState<"camera" | undefined>();
   const store = useRiderLensMvp();
