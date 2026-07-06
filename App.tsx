@@ -12,7 +12,7 @@ import {
 } from "@expo-google-fonts/ibm-plex-sans";
 import { Plus } from "lucide-react-native";
 import { useEffect, useState } from "react";
-import { ActionSheetIOS, Platform, Pressable, StyleSheet, View } from "react-native";
+import { ActionSheetIOS, Alert, Platform, Pressable, StyleSheet, View } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 
@@ -46,7 +46,18 @@ export default function App() {
         }
       );
     } else {
-      setCaptureOpen(true);
+      // Android: native dialog with the same three choices.
+      Alert.alert("Capture a moment", undefined, [
+        {
+          text: "Record video",
+          onPress: () => {
+            setCaptureIntent("camera");
+            setCaptureOpen(true);
+          }
+        },
+        { text: "Pick from library", onPress: () => void store.uploadVideoFromLibrary() },
+        { text: "Cancel", style: "cancel" }
+      ]);
     }
   }
 
