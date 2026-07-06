@@ -164,10 +164,14 @@ function JumpViewer({
   onFrameChange,
   onExpand
 }: JumpViewerProps) {
-  const [frameIndex, setFrameIndex] = useState(() => Math.min(initialFrameIndex, Math.max(0, frames.length - 1)));
+  const maxFrameIndex = Math.max(0, frames.length - 1);
+  const initialIndex = Math.max(0, Math.min(initialFrameIndex, maxFrameIndex));
+  const [frameIndex, setFrameIndex] = useState(initialIndex);
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState(DEFAULT_SPEED);
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+  const frameIndexRef = useRef(initialIndex);
+  const suppressVideoSyncUntilRef = useRef(0);
   // In landscape fullscreen every vertical point goes to the footage.
   const compactControls = variant === "fullscreen" && windowWidth > windowHeight;
 
@@ -201,14 +205,24 @@ function JumpViewer({
     [clipStartSeconds]
   );
 
+  const commitFrameIndex = useCallback(
+    (index: number) => {
+      const nextIndex = Math.max(0, Math.min(index, Math.max(0, frames.length - 1)));
+      frameIndexRef.current = nextIndex;
+      setFrameIndex(nextIndex);
+      return nextIndex;
+    },
+    [frames.length]
+  );
+
   // Skeleton playback: step through frames on a timer.
   useEffect(() => {
     if (mode !== "skeleton" || !playing || frames.length < 2) return;
     const timer = setInterval(() => {
-      setFrameIndex((index) => (index + 1) % frames.length);
+      commitFrameIndex((frameIndexRef.current + 1) % frames.length);
     }, frameIntervalMs);
     return () => clearInterval(timer);
-  }, [mode, playing, frames.length, frameIntervalMs]);
+  }, [commitFrameIndex, mode, playing, frames.length, frameIntervalMs]);
 
   // Video playback follows the shared `playing` flag.
   useEffect(() => {
@@ -221,8 +235,12 @@ function JumpViewer({
   }, [clipUri, mode, playing, player]);
 
   // While the video plays, keep frameIndex (slider + strip highlight) in sync.
+  // Manual frame steps are authoritative while paused; native video can emit a
+  // nearby decoded timestamp immediately after seeking.
   useEventListener(player, "timeUpdate", ({ currentTime }) => {
-    if (mode !== "video" || frames.length === 0) return;
+    if (mode !== "video" || !playing || frames.length === 0 || Date.now() < suppressVideoSyncUntilRef.current) {
+      return;
+    }
     const sourceTime = currentTime + clipStartSeconds;
     let best = 0;
     let bestDistance = Number.POSITIVE_INFINITY;
@@ -233,24 +251,37 @@ function JumpViewer({
         best = index;
       }
     });
-    setFrameIndex(best);
+    commitFrameIndex(best);
   });
 
   const seekToFrame = useCallback(
     (index: number) => {
+      suppressVideoSyncUntilRef.current = Date.now() + 350;
       setPlaying(false);
-      setFrameIndex(index);
-      const frame = frames[index];
+      const nextIndex = commitFrameIndex(index);
+      const frame = frames[nextIndex];
       if (frame && clipUri) {
         player.currentTime = clipTimeOf(frame);
       }
     },
-    [clipTimeOf, clipUri, frames, player]
+    [clipTimeOf, clipUri, commitFrameIndex, frames, player]
   );
 
+  const stepFrame = useCallback(
+    (delta: number) => {
+      seekToFrame(frameIndexRef.current + delta);
+    },
+    [seekToFrame]
+  );
+
+  const togglePlayback = useCallback(() => {
+    if (!playing) {
+      suppressVideoSyncUntilRef.current = 0;
+    }
+    setPlaying((value) => !value);
+  }, [playing]);
+
   // Carry the current moment across mode switches so the toggle never jumps in time.
-  const frameIndexRef = useRef(frameIndex);
-  frameIndexRef.current = frameIndex;
   const previousModeRef = useRef(mode);
   useEffect(() => {
     if (previousModeRef.current === mode) return;
@@ -340,18 +371,18 @@ function JumpViewer({
           <IconButton
             icon={ChevronLeft}
             label="Previous frame"
-            onPress={() => seekToFrame(Math.max(0, frameIndex - 1))}
+            onPress={() => stepFrame(-1)}
           />
           <IconButton
             icon={playing ? Pause : Play}
             label={playing ? "Pause" : "Play"}
             emphasis
-            onPress={() => setPlaying((value) => !value)}
+            onPress={togglePlayback}
           />
           <IconButton
             icon={ChevronRight}
             label="Next frame"
-            onPress={() => seekToFrame(Math.min(frames.length - 1, frameIndex + 1))}
+            onPress={() => stepFrame(1)}
           />
         </View>
         <View style={styles.transportGroup}>
