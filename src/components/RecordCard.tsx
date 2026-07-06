@@ -388,7 +388,13 @@ function JumpViewer({
     <View style={variant === "fullscreen" ? styles.viewerFullscreen : styles.viewer}>
       <View style={variant === "fullscreen" ? styles.viewportFullscreen : styles.viewport}>
         {mode === "video" && clipUri ? (
-          <VideoView player={player} style={StyleSheet.absoluteFill} contentFit="contain" nativeControls={false} />
+          <VideoView
+            player={player}
+            style={StyleSheet.absoluteFill}
+            contentFit="contain"
+            nativeControls={false}
+            surfaceType="textureView"
+          />
         ) : (
           <Pressable style={StyleSheet.absoluteFill} onPress={() => onZoom(currentFrame)}>
             <FrameWindow frames={frames} index={boundedFrameIndex} />
@@ -447,6 +453,7 @@ function JumpViewer({
               <Pressable key={frame.t} onPress={() => seekToFrame(index)} style={styles.filmstripCell}>
                 <Image
                   source={{ uri: frame.image }}
+                  resizeMethod="resize"
                   style={[styles.filmstripImage, index === frameIndex && styles.filmstripImageActive]}
                 />
                 {labels.has(index) ? (
@@ -739,10 +746,10 @@ export function RecordCard({ record, onShare, onRetry, onDelete, onAddTag, onRem
         <TagSection record={record} suggestions={tagSuggestions ?? []} onAdd={onAddTag} onRemove={onRemoveTag} />
       ) : null}
 
-      {record.status === "ready" && detail && frames.length > 0 ? (
-        // The series (detail.series) is still measured and stored; the timeline
-        // chart is hidden until the coaching layer can interpret it. MVP shows
-        // the self-explanatory lens: skeleton on every frame.
+      {record.status === "ready" && detail && frames.length > 0 && !fullscreen ? (
+        // Unmounted while fullscreen is open: two mounted viewers double the
+        // decoded-image memory and Android's Fresco starts returning black
+        // bitmaps. The viewer remounts at the shared frame on close.
         <JumpViewer
           key={`${record.id}-${viewerEpoch}`}
           mode={mode}
