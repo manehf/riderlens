@@ -11,8 +11,8 @@ import {
   useFonts as useSansFonts
 } from "@expo-google-fonts/ibm-plex-sans";
 import { Plus } from "lucide-react-native";
-import { useState } from "react";
-import { Pressable, StyleSheet, View } from "react-native";
+import { useEffect, useState } from "react";
+import { ActionSheetIOS, Platform, Pressable, StyleSheet, View } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 
@@ -26,7 +26,37 @@ import { radius, shadows, spacing, tokens } from "./src/theme/tokens";
 // still exist in src/screens but are unrouted until the video loop is done.
 export default function App() {
   const [captureOpen, setCaptureOpen] = useState(false);
+  // "camera" = jump straight into recording when the sheet opens.
+  const [captureIntent, setCaptureIntent] = useState<"camera" | undefined>();
   const store = useRiderLensMvp();
+
+  // (+) shows the native action sheet; the capture sheet only appears when
+  // there is real content to show (the camera, or the trim step after picking).
+  function onCapturePress() {
+    if (Platform.OS === "ios") {
+      ActionSheetIOS.showActionSheetWithOptions(
+        { options: ["Record video", "Pick from library", "Cancel"], cancelButtonIndex: 2 },
+        (index) => {
+          if (index === 0) {
+            setCaptureIntent("camera");
+            setCaptureOpen(true);
+          } else if (index === 1) {
+            void store.uploadVideoFromLibrary();
+          }
+        }
+      );
+    } else {
+      setCaptureOpen(true);
+    }
+  }
+
+  // Picking from the library happens over the home screen; once a clip is
+  // chosen the pending capture appears and the sheet opens on the trim step.
+  useEffect(() => {
+    if (store.pendingCapture && !captureOpen) {
+      setCaptureOpen(true);
+    }
+  }, [store.pendingCapture, captureOpen]);
   const [sansLoaded] = useSansFonts({
     IBMPlexSans: IBMPlexSans_400Regular,
     "IBMPlexSans-SemiBold": IBMPlexSans_600SemiBold,
@@ -64,13 +94,21 @@ export default function App() {
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Capture a moment"
-              onPress={() => setCaptureOpen(true)}
+              onPress={onCapturePress}
               style={({ pressed }) => [styles.fab, pressed && styles.fabPressed]}
             >
               <Plus color={tokens.graphite} size={28} strokeWidth={2.6} />
             </Pressable>
           </View>
-          <CaptureSheet store={store} visible={captureOpen} onClose={() => setCaptureOpen(false)} />
+          <CaptureSheet
+            store={store}
+            visible={captureOpen}
+            intent={captureIntent}
+            onClose={() => {
+              setCaptureOpen(false);
+              setCaptureIntent(undefined);
+            }}
+          />
         </Screen>
       </SafeAreaView>
     </SafeAreaProvider>

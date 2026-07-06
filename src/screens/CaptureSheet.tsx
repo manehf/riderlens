@@ -11,12 +11,14 @@ import { radius, spacing, tokens } from "../theme/tokens";
 type CaptureSheetProps = {
   store: RiderLensStore;
   visible: boolean;
+  /** "camera" jumps straight into recording when the sheet opens. */
+  intent?: "camera";
   onClose: () => void;
 };
 
 /** The capture flow as a modal over the library: film or pick a clip, confirm
  * the window, create the record. The new record lands in the library grid. */
-export function CaptureSheet({ store, visible, onClose }: CaptureSheetProps) {
+export function CaptureSheet({ store, visible, intent, onClose }: CaptureSheetProps) {
   const [cameraOpen, setCameraOpen] = useState(false);
   const [recording, setRecording] = useState(false);
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
@@ -66,6 +68,13 @@ export function CaptureSheet({ store, visible, onClose }: CaptureSheetProps) {
   function stopRecording() {
     cameraRef.current?.stopRecording?.();
   }
+
+  // "Record video" from the action sheet: open the viewfinder immediately.
+  useEffect(() => {
+    if (visible && intent === "camera") void openCamera();
+    // Reacts to the sheet opening with intent, not to permission/state changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, intent]);
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={close}>
