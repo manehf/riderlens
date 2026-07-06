@@ -453,6 +453,7 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     flexDirection: "row",
+    alignItems: "center",
     justifyContent: "space-around",
     borderTopWidth: 1,
     borderTopColor: tokens.border,
@@ -466,13 +467,17 @@ const styles = StyleSheet.create({
     gap: 4
   },
   tabAction: {
-    width: 54,
-    height: 54,
-    marginTop: -18,
+    // Fully inside the bar: RN drops touches on children outside the parent's
+    // frame, so a button floated above the bar has dead zones. Contained and
+    // centered is both tappable everywhere and visually aligned.
+    width: 56,
+    height: 56,
     alignItems: "center",
     justifyContent: "center",
     borderRadius: radius.pill,
     backgroundColor: tokens.electric,
+    borderWidth: 1,
+    borderColor: tokens.electric,
     ...shadows.card
   },
   tabIcon: {
