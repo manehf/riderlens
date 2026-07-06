@@ -55,3 +55,14 @@ export async function persistClipReviewVideo(clip: ClipReview): Promise<ClipRevi
     uri: storedUri
   };
 }
+
+/** Remove a source video copy from the app library. Only touches files inside
+ * the library directory — never the rider's Photos or arbitrary URIs. */
+export async function deleteLibraryVideo(uri: string): Promise<void> {
+  if (!isStoredVideoUri(uri)) return;
+  try {
+    await FileSystem.deleteAsync(uri, { idempotent: true });
+  } catch {
+    // Best effort: a missing file is already the desired state.
+  }
+}

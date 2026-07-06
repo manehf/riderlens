@@ -15,7 +15,7 @@ import {
   saveRecords
 } from "../services/recordStore";
 import { createSetupShareText } from "../services/setupShare";
-import { persistVideoToLibrary } from "../services/videoLibrary";
+import { deleteLibraryVideo, persistVideoToLibrary } from "../services/videoLibrary";
 import type { GarageState, JumpRecord, PermissionLevel, SkillType, ToolMeasurement } from "../types/domain";
 
 const STORAGE_KEY = "riderlens:mvp-state:v2";
@@ -253,7 +253,13 @@ export function useRiderLensMvp(): RiderLensStore {
   );
 
   const deleteRecord = useCallback((recordId: string) => {
-    setRecords((current) => current.filter((record) => record.id !== recordId));
+    setRecords((current) => {
+      const record = current.find((item) => item.id === recordId);
+      // Each confirm copies the source fresh (1:1 mapping), so deleting the
+      // record can safely take its original with it — no orphaned videos.
+      if (record) void deleteLibraryVideo(record.sourceVideoUri);
+      return current.filter((item) => item.id !== recordId);
+    });
     void deleteRecordFiles(recordId);
   }, []);
 
