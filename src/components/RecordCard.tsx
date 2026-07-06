@@ -810,7 +810,7 @@ export function RecordCard({ record, onShare, onRetry, onDelete, onAddTag, onRem
             onPress={() => onShare(record, mode === "skeleton" && Boolean(record.skeletonClipUri))}
             style={styles.actionButton}
           >
-            {mode === "skeleton" && record.skeletonClipUri ? "Share skeleton" : "Share clip"}
+            Share
           </Button>
         ) : null}
         {(record.status === "pending" || record.status === "failed") && onRetry ? (
