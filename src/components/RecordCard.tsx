@@ -6,6 +6,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Film,
+  Maximize2,
   Pause,
   PersonStanding,
   Play,
@@ -18,6 +19,7 @@ import {
 } from "lucide-react-native";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Image, Modal, Pressable, ScrollView, StyleSheet, TextInput, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { getRecordTitle, getSystemTags } from "../services/analysis";
 import { loadRecordDetail } from "../services/recordStore";
@@ -77,6 +79,27 @@ function speedLabel(speed: number): string {
 
 type ViewerMode = "skeleton" | "video";
 
+/** Frame display without the black flash: the previous frame stays mounted
+ * underneath until the incoming one has decoded, so stepping or playback never
+ * shows the background between frames. */
+function FrameImage({ frame }: { frame: FilmstripFrame }) {
+  const [settled, setSettled] = useState(frame);
+  return (
+    <View style={styles.frameStack}>
+      {settled.image !== frame.image ? (
+        <Image source={{ uri: settled.image }} style={StyleSheet.absoluteFill} resizeMode="contain" fadeDuration={0} />
+      ) : null}
+      <Image
+        source={{ uri: frame.image }}
+        style={StyleSheet.absoluteFill}
+        resizeMode="contain"
+        fadeDuration={0}
+        onLoadEnd={() => setSettled(frame)}
+      />
+    </View>
+  );
+}
+
 type JumpViewerProps = {
   /** Owned by RecordCard: the toggle lives in the card header. */
   mode: ViewerMode;
@@ -87,13 +110,30 @@ type JumpViewerProps = {
   frames: FilmstripFrame[];
   labels: Map<number, string>;
   onZoom: (frame: FilmstripFrame) => void;
+  /** Fullscreen variant fills its container instead of a 16:9 card viewport. */
+  variant?: "card" | "fullscreen";
+  initialFrameIndex?: number;
+  onFrameChange?: (index: number) => void;
+  /** Renders the expand control on the viewport when provided. */
+  onExpand?: () => void;
 };
 
 /** One viewport, two lenses on the same moment. `frameIndex` is the single source
  * of truth for position: the skeleton mode steps it on a timer, the video mode
  * syncs it from playback time, and the slider + filmstrip scrub it in both. */
-function JumpViewer({ mode, clipUri, clipStartSeconds, frames, labels, onZoom }: JumpViewerProps) {
-  const [frameIndex, setFrameIndex] = useState(0);
+function JumpViewer({
+  mode,
+  clipUri,
+  clipStartSeconds,
+  frames,
+  labels,
+  onZoom,
+  variant = "card",
+  initialFrameIndex = 0,
+  onFrameChange,
+  onExpand
+}: JumpViewerProps) {
+  const [frameIndex, setFrameIndex] = useState(() => Math.min(initialFrameIndex, Math.max(0, frames.length - 1)));
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState(DEFAULT_SPEED);
 
@@ -187,7 +227,21 @@ function JumpViewer({ mode, clipUri, clipStartSeconds, frames, labels, onZoom }:
     }
   }, [clipTimeOf, clipUri, frames, mode, player]);
 
+  // Start the video at the initial frame (matters when opening fullscreen mid-scrub).
+  useEffect(() => {
+    const frame = frames[frameIndexRef.current];
+    if (clipUri && frame) player.currentTime = clipTimeOf(frame);
+    // Mount only.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    onFrameChange?.(frameIndex);
+  }, [frameIndex, onFrameChange]);
+
   const currentFrame = frames[Math.min(frameIndex, frames.length - 1)];
+  // Pre-decode the next frame so playback never waits on the JPEG decoder.
+  const nextFrame = frames[(Math.min(frameIndex, frames.length - 1) + 1) % frames.length];
 
   // Phase banner, not a blip: the latest event at or before the current frame
   // stays visible until the next event replaces it, so it's readable mid-playback.
@@ -201,13 +255,13 @@ function JumpViewer({ mode, clipUri, clipStartSeconds, frames, labels, onZoom }:
   }, [frameIndex, labels]);
 
   return (
-    <View style={styles.viewer}>
-      <View style={styles.viewport}>
+    <View style={variant === "fullscreen" ? styles.viewerFullscreen : styles.viewer}>
+      <View style={variant === "fullscreen" ? styles.viewportFullscreen : styles.viewport}>
         {mode === "video" && clipUri ? (
           <VideoView player={player} style={StyleSheet.absoluteFill} contentFit="contain" nativeControls={false} />
         ) : (
           <Pressable style={StyleSheet.absoluteFill} onPress={() => onZoom(currentFrame)}>
-            <Image source={{ uri: currentFrame.image }} style={styles.viewportImage} resizeMode="contain" />
+            <FrameImage frame={currentFrame} />
           </Pressable>
         )}
         {label ? (
@@ -217,49 +271,70 @@ function JumpViewer({ mode, clipUri, clipStartSeconds, frames, labels, onZoom }:
             </AppText>
           </View>
         ) : null}
+        {onExpand ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Fullscreen"
+            onPress={onExpand}
+            style={styles.expandButton}
+          >
+            <Maximize2 color={tokens.surface} size={16} strokeWidth={2.4} />
+          </Pressable>
+        ) : null}
       </View>
 
+      {nextFrame && mode === "skeleton" ? (
+        // Invisible 1px image: keeps the decoder one frame ahead of playback.
+        <Image source={{ uri: nextFrame.image }} style={styles.framePrefetch} />
+      ) : null}
+
+      {/* The scrubber gets its own full-width row: easy to grab and slide. */}
+      <Slider
+        style={styles.scrubber}
+        minimumValue={0}
+        maximumValue={Math.max(0, frames.length - 1)}
+        step={1}
+        value={frameIndex}
+        minimumTrackTintColor={tokens.electric}
+        maximumTrackTintColor={tokens.border}
+        thumbTintColor={tokens.electric}
+        onValueChange={(value) => seekToFrame(Math.round(value))}
+      />
+
       <View style={styles.playerControls}>
-        <IconButton
-          icon={ChevronLeft}
-          label="Previous frame"
-          onPress={() => seekToFrame(Math.max(0, frameIndex - 1))}
-        />
-        <IconButton
-          icon={playing ? Pause : Play}
-          label={playing ? "Pause" : "Play"}
-          emphasis
-          onPress={() => setPlaying((value) => !value)}
-        />
-        <IconButton
-          icon={ChevronRight}
-          label="Next frame"
-          onPress={() => seekToFrame(Math.min(frames.length - 1, frameIndex + 1))}
-        />
-        <Slider
-          style={styles.slider}
-          minimumValue={0}
-          maximumValue={Math.max(0, frames.length - 1)}
-          step={1}
-          value={frameIndex}
-          minimumTrackTintColor={tokens.electric}
-          maximumTrackTintColor={tokens.border}
-          thumbTintColor={tokens.electric}
-          onValueChange={(value) => seekToFrame(Math.round(value))}
-        />
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={`Playback speed ${speedLabel(speed)}`}
-          onPress={cycleSpeed}
-          style={styles.speedButton}
-        >
-          <NumberText size={12} weight="bold">
-            {speedLabel(speed)}
+        <View style={styles.transportGroup}>
+          <IconButton
+            icon={ChevronLeft}
+            label="Previous frame"
+            onPress={() => seekToFrame(Math.max(0, frameIndex - 1))}
+          />
+          <IconButton
+            icon={playing ? Pause : Play}
+            label={playing ? "Pause" : "Play"}
+            emphasis
+            onPress={() => setPlaying((value) => !value)}
+          />
+          <IconButton
+            icon={ChevronRight}
+            label="Next frame"
+            onPress={() => seekToFrame(Math.min(frames.length - 1, frameIndex + 1))}
+          />
+        </View>
+        <View style={styles.transportGroup}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`Playback speed ${speedLabel(speed)}`}
+            onPress={cycleSpeed}
+            style={styles.speedButton}
+          >
+            <NumberText size={12} weight="bold">
+              {speedLabel(speed)}
+            </NumberText>
+          </Pressable>
+          <NumberText size={11} color={tokens.textMuted} style={styles.playerTime}>
+            {currentFrame.t.toFixed(2)}s
           </NumberText>
-        </Pressable>
-        <NumberText size={11} color={tokens.textMuted} style={styles.playerTime}>
-          {currentFrame.t.toFixed(2)}s
-        </NumberText>
+        </View>
       </View>
 
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filmstrip}>
@@ -434,6 +509,24 @@ export function RecordCard({ record, onShare, onRetry, onDelete, onAddTag, onRem
   const [detail, setDetail] = useState<JumpRecordDetail | undefined>();
   const [zoomed, setZoomed] = useState<FilmstripFrame | undefined>();
   const [mode, setMode] = useState<ViewerMode>("skeleton");
+  const [fullscreen, setFullscreen] = useState(false);
+  // Keeps the inline and fullscreen viewers on the same moment: whichever is
+  // active reports its frame here; the other picks it up on (re)mount.
+  const sharedFrameIndexRef = useRef(0);
+  const [viewerEpoch, setViewerEpoch] = useState(0);
+  const insets = useSafeAreaInsets();
+
+  const openFullscreen = useCallback(() => {
+    setFullscreen(true);
+    // Remount the inline viewer paused at the shared frame while hidden.
+    setViewerEpoch((epoch) => epoch + 1);
+  }, []);
+
+  const closeFullscreen = useCallback(() => {
+    setFullscreen(false);
+    // Remount inline at wherever the fullscreen session ended.
+    setViewerEpoch((epoch) => epoch + 1);
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -501,13 +594,18 @@ export function RecordCard({ record, onShare, onRetry, onDelete, onAddTag, onRem
         // chart is hidden until the coaching layer can interpret it. MVP shows
         // the self-explanatory lens: skeleton on every frame.
         <JumpViewer
-          key={record.id}
+          key={`${record.id}-${viewerEpoch}`}
           mode={mode}
           clipUri={record.clipUri}
           clipStartSeconds={record.windowStart}
           frames={frames}
           labels={labels}
           onZoom={setZoomed}
+          initialFrameIndex={sharedFrameIndexRef.current}
+          onFrameChange={(index) => {
+            if (!fullscreen) sharedFrameIndexRef.current = index;
+          }}
+          onExpand={openFullscreen}
         />
       ) : null}
 
@@ -577,6 +675,55 @@ export function RecordCard({ record, onShare, onRetry, onDelete, onAddTag, onRem
         ) : null}
       </View>
 
+      <Modal visible={fullscreen} animationType="fade" onRequestClose={closeFullscreen}>
+        <View
+          style={[
+            styles.fullscreenRoot,
+            { paddingTop: Math.max(insets.top, spacing.md), paddingBottom: Math.max(insets.bottom, spacing.md) }
+          ]}
+        >
+          <View style={styles.fullscreenHeader}>
+            {showModeToggle ? (
+              <View style={styles.segmented}>
+                <SegmentButton
+                  icon={PersonStanding}
+                  label="Skeleton"
+                  active={mode === "skeleton"}
+                  onPress={() => setMode("skeleton")}
+                />
+                <SegmentButton icon={Film} label="Video" active={mode === "video"} onPress={() => setMode("video")} />
+              </View>
+            ) : (
+              <View />
+            )}
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Close fullscreen"
+              onPress={closeFullscreen}
+              style={styles.fullscreenClose}
+            >
+              <X color={tokens.surface} size={20} strokeWidth={2.4} />
+            </Pressable>
+          </View>
+          {fullscreen && detail && frames.length > 0 ? (
+            <JumpViewer
+              key={`${record.id}-fullscreen`}
+              variant="fullscreen"
+              mode={mode}
+              clipUri={record.clipUri}
+              clipStartSeconds={record.windowStart}
+              frames={frames}
+              labels={labels}
+              onZoom={() => undefined}
+              initialFrameIndex={sharedFrameIndexRef.current}
+              onFrameChange={(index) => {
+                if (fullscreen) sharedFrameIndexRef.current = index;
+              }}
+            />
+          ) : null}
+        </View>
+      </Modal>
+
       <Modal visible={Boolean(zoomed)} transparent animationType="fade" onRequestClose={() => setZoomed(undefined)}>
         <Pressable style={styles.zoomOverlay} onPress={() => setZoomed(undefined)}>
           {zoomed ? (
@@ -641,6 +788,58 @@ const styles = StyleSheet.create({
     width: "100%",
     height: "100%"
   },
+  viewerFullscreen: {
+    flex: 1,
+    gap: spacing.sm,
+    paddingHorizontal: spacing.lg
+  },
+  viewportFullscreen: {
+    flex: 1,
+    width: "100%",
+    borderRadius: 10,
+    overflow: "hidden",
+    backgroundColor: "#000000"
+  },
+  frameStack: {
+    flex: 1
+  },
+  framePrefetch: {
+    position: "absolute",
+    width: 1,
+    height: 1,
+    opacity: 0
+  },
+  expandButton: {
+    position: "absolute",
+    right: 8,
+    bottom: 8,
+    width: 32,
+    height: 32,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: radius.sm,
+    backgroundColor: "rgba(16, 20, 17, 0.55)"
+  },
+  fullscreenRoot: {
+    flex: 1,
+    backgroundColor: "#0b0e0c"
+  },
+  fullscreenHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: spacing.md,
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.sm
+  },
+  fullscreenClose: {
+    width: 38,
+    height: 38,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: radius.pill,
+    backgroundColor: "rgba(255, 255, 255, 0.12)"
+  },
   fallbackPlayer: {
     width: "100%",
     aspectRatio: 16 / 9,
@@ -657,7 +856,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 3
   },
+  scrubber: {
+    width: "100%",
+    height: 40
+  },
   playerControls: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: spacing.md
+  },
+  transportGroup: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6
@@ -689,10 +898,6 @@ const styles = StyleSheet.create({
     borderColor: tokens.border,
     backgroundColor: tokens.surface,
     paddingHorizontal: 6
-  },
-  slider: {
-    flex: 1,
-    height: 36
   },
   playerTime: {
     minWidth: 42,
