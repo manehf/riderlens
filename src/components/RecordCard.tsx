@@ -79,22 +79,52 @@ function speedLabel(speed: number): string {
 
 type ViewerMode = "skeleton" | "video";
 
-/** Frame display without the black flash: the previous frame stays mounted
- * underneath until the incoming one has decoded, so stepping or playback never
- * shows the background between frames. */
+/** True double-buffered frame display. Two image views stay permanently
+ * mounted: the incoming frame decodes in the hidden one, and only an opacity
+ * flip (instant, no decode) reveals it. Nothing ever unmounts, so there is
+ * never an empty native view — no black between frames. Under fast playback
+ * a slow decode skips a frame instead of flashing. */
 function FrameImage({ frame }: { frame: FilmstripFrame }) {
-  const [settled, setSettled] = useState(frame);
+  const [slotA, setSlotA] = useState(frame);
+  const [slotB, setSlotB] = useState(frame);
+  const [showA, setShowA] = useState(true);
+  const pendingImageRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const shown = showA ? slotA : slotB;
+    if (frame.image === shown.image) return;
+    // Load the incoming frame into whichever slot is hidden right now.
+    pendingImageRef.current = frame.image;
+    if (showA) {
+      setSlotB(frame);
+    } else {
+      setSlotA(frame);
+    }
+    // Reacts to the target frame only; slots/showA are read, not triggers.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [frame]);
+
+  function handleLoaded(slot: "A" | "B", image: string) {
+    if (pendingImageRef.current !== image) return;
+    pendingImageRef.current = null;
+    setShowA(slot === "A");
+  }
+
   return (
     <View style={styles.frameStack}>
-      {settled.image !== frame.image ? (
-        <Image source={{ uri: settled.image }} style={StyleSheet.absoluteFill} resizeMode="contain" fadeDuration={0} />
-      ) : null}
       <Image
-        source={{ uri: frame.image }}
-        style={StyleSheet.absoluteFill}
+        source={{ uri: slotA.image }}
+        style={[StyleSheet.absoluteFill, !showA && styles.frameHidden]}
         resizeMode="contain"
         fadeDuration={0}
-        onLoadEnd={() => setSettled(frame)}
+        onLoadEnd={() => handleLoaded("A", slotA.image)}
+      />
+      <Image
+        source={{ uri: slotB.image }}
+        style={[StyleSheet.absoluteFill, showA && styles.frameHidden]}
+        resizeMode="contain"
+        fadeDuration={0}
+        onLoadEnd={() => handleLoaded("B", slotB.image)}
       />
     </View>
   );
@@ -802,6 +832,9 @@ const styles = StyleSheet.create({
   },
   frameStack: {
     flex: 1
+  },
+  frameHidden: {
+    opacity: 0
   },
   framePrefetch: {
     position: "absolute",
