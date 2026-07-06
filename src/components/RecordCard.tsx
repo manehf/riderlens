@@ -80,53 +80,36 @@ function speedLabel(speed: number): string {
 
 type ViewerMode = "skeleton" | "video";
 
-/** True double-buffered frame display. Two image views stay permanently
- * mounted: the incoming frame decodes in the hidden one, and only an opacity
- * flip (instant, no decode) reveals it. Nothing ever unmounts, so there is
- * never an empty native view — no black between frames. Under fast playback
- * a slow decode skips a frame instead of flashing. */
-function FrameImage({ frame }: { frame: FilmstripFrame }) {
-  const [slotA, setSlotA] = useState(frame);
-  const [slotB, setSlotB] = useState(frame);
-  const [showA, setShowA] = useState(true);
-  const pendingImageRef = useRef<string | null>(null);
+// Frames kept decoded on each side of the current one. Stepping inside the
+// window is a pure opacity flip — instant, and every frame is guaranteed to
+// display. Edge frames decode 4 steps before they're needed, which also keeps
+// playback ahead of the JPEG decoder. Memory: ~2*WINDOW+1 decoded frames.
+const FRAME_WINDOW = 4;
 
-  useEffect(() => {
-    const shown = showA ? slotA : slotB;
-    if (frame.image === shown.image) return;
-    // Load the incoming frame into whichever slot is hidden right now.
-    pendingImageRef.current = frame.image;
-    if (showA) {
-      setSlotB(frame);
-    } else {
-      setSlotA(frame);
+/** Sliding-window frame display: all frames within FRAME_WINDOW of the current
+ * index stay mounted (decoded, hidden); only the current one is visible.
+ * Keys are stable per frame, so sliding the window never remounts frames that
+ * remain inside it. Wraps around the clip end so looped playback stays smooth. */
+function FrameWindow({ frames, index }: { frames: FilmstripFrame[]; index: number }) {
+  const mounted = useMemo(() => {
+    const indices = new Set<number>();
+    for (let delta = -FRAME_WINDOW; delta <= FRAME_WINDOW; delta++) {
+      indices.add((index + delta + frames.length) % frames.length);
     }
-    // Reacts to the target frame only; slots/showA are read, not triggers.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [frame]);
-
-  function handleLoaded(slot: "A" | "B", image: string) {
-    if (pendingImageRef.current !== image) return;
-    pendingImageRef.current = null;
-    setShowA(slot === "A");
-  }
+    return [...indices].sort((a, b) => a - b);
+  }, [frames.length, index]);
 
   return (
     <View style={styles.frameStack}>
-      <Image
-        source={{ uri: slotA.image }}
-        style={[StyleSheet.absoluteFill, !showA && styles.frameHidden]}
-        resizeMode="contain"
-        fadeDuration={0}
-        onLoadEnd={() => handleLoaded("A", slotA.image)}
-      />
-      <Image
-        source={{ uri: slotB.image }}
-        style={[StyleSheet.absoluteFill, showA && styles.frameHidden]}
-        resizeMode="contain"
-        fadeDuration={0}
-        onLoadEnd={() => handleLoaded("B", slotB.image)}
-      />
+      {mounted.map((frameIndex) => (
+        <Image
+          key={frames[frameIndex].t}
+          source={{ uri: frames[frameIndex].image }}
+          style={[StyleSheet.absoluteFill, frameIndex !== index && styles.frameHidden]}
+          resizeMode="contain"
+          fadeDuration={0}
+        />
+      ))}
     </View>
   );
 }
@@ -304,9 +287,8 @@ function JumpViewer({
     onFrameChange?.(frameIndex);
   }, [frameIndex, onFrameChange]);
 
-  const currentFrame = frames[Math.min(frameIndex, frames.length - 1)];
-  // Pre-decode the next frame so playback never waits on the JPEG decoder.
-  const nextFrame = frames[(Math.min(frameIndex, frames.length - 1) + 1) % frames.length];
+  const boundedFrameIndex = Math.min(frameIndex, frames.length - 1);
+  const currentFrame = frames[boundedFrameIndex];
 
   // Phase banner, not a blip: the latest event at or before the current frame
   // stays visible until the next event replaces it, so it's readable mid-playback.
@@ -326,7 +308,7 @@ function JumpViewer({
           <VideoView player={player} style={StyleSheet.absoluteFill} contentFit="contain" nativeControls={false} />
         ) : (
           <Pressable style={StyleSheet.absoluteFill} onPress={() => onZoom(currentFrame)}>
-            <FrameImage frame={currentFrame} />
+            <FrameWindow frames={frames} index={boundedFrameIndex} />
           </Pressable>
         )}
         {label ? (
@@ -347,11 +329,6 @@ function JumpViewer({
           </Pressable>
         ) : null}
       </View>
-
-      {nextFrame && mode === "skeleton" ? (
-        // Invisible 1px image: keeps the decoder one frame ahead of playback.
-        <Image source={{ uri: nextFrame.image }} style={styles.framePrefetch} />
-      ) : null}
 
       {/* The scrubber gets its own full-width row: easy to grab and slide. */}
       <Slider
@@ -884,12 +861,6 @@ const styles = StyleSheet.create({
     flex: 1
   },
   frameHidden: {
-    opacity: 0
-  },
-  framePrefetch: {
-    position: "absolute",
-    width: 1,
-    height: 1,
     opacity: 0
   },
   expandButton: {
