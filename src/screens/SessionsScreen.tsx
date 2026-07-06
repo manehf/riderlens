@@ -1,8 +1,9 @@
-import { FileVideo, X } from "lucide-react-native";
+import { FileVideo, Settings, X } from "lucide-react-native";
 import { useMemo, useState } from "react";
 import { Image, Modal, Pressable, ScrollView, StyleSheet, View } from "react-native";
 
 import { RecordCard } from "../components/RecordCard";
+import { SettingsSheet } from "./SettingsSheet";
 import { AppText, BrandHeader, Card, Chip, DisplayText, NumberText } from "../components/ui";
 import type { RiderLensStore } from "../hooks/useRiderLensMvp";
 import { getRecordTitle, getSystemTags } from "../services/analysis";
@@ -28,6 +29,7 @@ export function SessionsScreen({ store }: SessionsScreenProps) {
   const [filter, setFilter] = useState<string | undefined>();
   // The library is just the grid; a tapped record opens in a full-screen sheet.
   const [openRecordId, setOpenRecordId] = useState<string | undefined>();
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const tags = useMemo(() => {
     const seen = new Map<string, string>();
@@ -50,7 +52,18 @@ export function SessionsScreen({ store }: SessionsScreenProps) {
 
   return (
     <View style={styles.root}>
-      <BrandHeader />
+      <BrandHeader
+        action={
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Settings"
+            onPress={() => setSettingsOpen(true)}
+            style={styles.settingsButton}
+          >
+            <Settings color={tokens.text} size={20} strokeWidth={2.2} />
+          </Pressable>
+        }
+      />
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.intro}>
           <DisplayText size={34} style={styles.introTitle}>
@@ -139,6 +152,8 @@ export function SessionsScreen({ store }: SessionsScreenProps) {
           </View>
         ) : null}
       </Modal>
+
+      <SettingsSheet store={store} visible={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </View>
   );
 }
@@ -205,6 +220,14 @@ function PosterCell({ record, onPress }: { record: JumpRecord; onPress: () => vo
 const styles = StyleSheet.create({
   root: {
     flex: 1
+  },
+  settingsButton: {
+    width: 40,
+    height: 40,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: radius.pill,
+    backgroundColor: tokens.surfaceMuted
   },
   content: {
     gap: spacing.lg,

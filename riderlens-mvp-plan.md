@@ -86,10 +86,14 @@ v1 is **one home screen, one action, two sheets**. No tab bar: earlier iteration
 ### 4.6 Tools screen — **HIDDEN in v1** (decision)
 - `ToolsScreen.tsx` stays in the codebase, **unrouted**. Same reasoning and same return path as Garage (sag/angle measuring tools belong with the Garage layer).
 
-### 4.7 Intentionally absent from v1
+### 4.7 Settings sheet (`SettingsSheet.tsx`) — gear button in the header
+- **Rider profile**: units (metric/imperial) + height, weight, inseam, arm length. Values stored canonically in metric (`heightCm`, `weightKg`, …); the units preference is a display lens only — switching never mutates stored values.
+- Purpose: collect rider dimensions early so act-two fit/analysis features (RAD fit, body-calibrated jump metrics) have data on day one. All optional, local-only.
+- About: app version. Nothing else — settings is not a junk drawer.
+
+### 4.8 Intentionally absent from v1
 - No onboarding flow (the library + one (+) button is self-explanatory; revisit only if field tests say otherwise).
 - No accounts, login, or cloud sync (local-first; Supabase stays wired but dormant — "Demo mode" chip should be removed from the UI before beta).
-- No settings screen.
 - No coaching output of any kind.
 
 ## 5. Phases

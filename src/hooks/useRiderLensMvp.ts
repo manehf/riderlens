@@ -16,14 +16,17 @@ import {
 } from "../services/recordStore";
 import { createSetupShareText } from "../services/setupShare";
 import { deleteLibraryVideo, persistVideoToLibrary } from "../services/videoLibrary";
-import type { GarageState, JumpRecord, PermissionLevel, SkillType, ToolMeasurement } from "../types/domain";
+import type { GarageState, JumpRecord, PermissionLevel, RiderProfile, SkillType, ToolMeasurement } from "../types/domain";
 
 const STORAGE_KEY = "riderlens:mvp-state:v2";
 const AUTO_RETRY_INTERVAL_MS = 30_000;
 
 type PersistedState = {
   garage: GarageState;
+  profile?: RiderProfile;
 };
+
+const DEFAULT_PROFILE: RiderProfile = { units: "metric" };
 
 export type WindowStatus = "checking" | "ai" | "manual";
 
@@ -51,6 +54,8 @@ export type RiderLensStore = {
   removeRecordTag: (recordId: string, tag: string) => void;
   /** Distinct rider-added tags across all records, for one-tap suggestions. */
   knownTags: string[];
+  profile: RiderProfile;
+  saveProfile: (updates: Partial<RiderProfile>) => void;
   shareRecordClip: (record: JumpRecord, preferSkeleton?: boolean) => Promise<void>;
   uploadVideoFromLibrary: () => Promise<void>;
   garage: GarageState;
@@ -65,6 +70,7 @@ const MIN_WINDOW_SECONDS = 0.5;
 export function useRiderLensMvp(): RiderLensStore {
   const [records, setRecords] = useState<JumpRecord[]>([]);
   const [garage, setGarage] = useState<GarageState>(demoGarage);
+  const [profile, setProfile] = useState<RiderProfile>(DEFAULT_PROFILE);
   const [selectedSkill, setSelectedSkill] = useState<SkillType>("regular_jump");
   const [pendingCapture, setPendingCapture] = useState<PendingCapture | undefined>();
   const [hydrated, setHydrated] = useState(false);
@@ -85,6 +91,7 @@ export function useRiderLensMvp(): RiderLensStore {
         if (raw) {
           const parsed = JSON.parse(raw) as PersistedState;
           if (parsed.garage) setGarage(parsed.garage);
+          if (parsed.profile) setProfile({ ...DEFAULT_PROFILE, ...parsed.profile });
         } else if (legacyRaw) {
           const legacy = JSON.parse(legacyRaw) as { garage?: GarageState };
           if (legacy.garage) setGarage(legacy.garage);
@@ -97,8 +104,8 @@ export function useRiderLensMvp(): RiderLensStore {
 
   useEffect(() => {
     if (!hydrated) return;
-    AsyncStorage.setItem(STORAGE_KEY, JSON.stringify({ garage } satisfies PersistedState)).catch(() => undefined);
-  }, [garage, hydrated]);
+    AsyncStorage.setItem(STORAGE_KEY, JSON.stringify({ garage, profile } satisfies PersistedState)).catch(() => undefined);
+  }, [garage, hydrated, profile]);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -376,6 +383,10 @@ export function useRiderLensMvp(): RiderLensStore {
     startCaptureFromUri(asset.uri, durationSeconds);
   }, [startCaptureFromUri]);
 
+  const saveProfile = useCallback((updates: Partial<RiderProfile>) => {
+    setProfile((current) => ({ ...current, ...updates }));
+  }, []);
+
   const shareSetupSheet = useCallback(
     async (permission: PermissionLevel = "view") => {
       await Share.share({
@@ -447,6 +458,8 @@ export function useRiderLensMvp(): RiderLensStore {
     addRecordTag,
     removeRecordTag,
     knownTags,
+    profile,
+    saveProfile,
     shareRecordClip,
     uploadVideoFromLibrary,
     garage,

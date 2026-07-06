@@ -33,6 +33,21 @@ export type FrameGeometry = {
 
 export type PermissionLevel = "view" | "comment" | "edit";
 
+// --- Rider profile (settings) --------------------------------------------------
+
+export type UnitSystem = "metric" | "imperial";
+
+/** Body dimensions stored canonically in metric; the units preference only
+ * changes display. Collected now to power future fit/analysis features
+ * (RAD fit, body-calibrated jump metrics). */
+export type RiderProfile = {
+  units: UnitSystem;
+  heightCm?: number;
+  weightKg?: number;
+  inseamCm?: number;
+  armLengthCm?: number;
+};
+
 export type VideoCropPreset =
   | "full_side_view"
   | "rider_centered"
