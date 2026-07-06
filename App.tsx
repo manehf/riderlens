@@ -15,11 +15,10 @@ import { StyleSheet, View } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 
-import { AppText, BottomTabs, Chip, Screen, type TabItem } from "./src/components/ui";
+import { AppText, BottomTabs, Screen, type TabItem } from "./src/components/ui";
 import { useRiderLensMvp } from "./src/hooks/useRiderLensMvp";
 import { CoachScreen } from "./src/screens/CoachScreen";
 import { SessionsScreen } from "./src/screens/SessionsScreen";
-import { getSupabaseMode } from "./src/services/supabase";
 import { spacing, tokens } from "./src/theme/tokens";
 
 // MVP focus: capture and the library. The Garage and Tools screens still exist
@@ -77,11 +76,6 @@ export default function App() {
       <SafeAreaView style={styles.safeArea}>
         <StatusBar style="dark" />
         <Screen>
-          <View style={styles.modeBar}>
-            <Chip tone={getSupabaseMode() === "configured" ? "green" : "amber"}>
-              {getSupabaseMode() === "configured" ? "Supabase connected" : "Demo mode"}
-            </Chip>
-          </View>
           {currentScreen}
           <BottomTabs
             items={tabs}
@@ -121,10 +115,5 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     borderRadius: 14,
     backgroundColor: tokens.graphite
-  },
-  modeBar: {
-    alignItems: "flex-end",
-    paddingHorizontal: spacing.xl,
-    paddingTop: spacing.sm
   }
 });

@@ -240,7 +240,7 @@ def review_key_frames(metrics: list, series: list[dict] | None = None, air_frame
     return _call_structured(_with_knowledge(SYSTEM_PROMPT), content, REVIEW_SCHEMA)
 
 
-KEYFRAME_SYSTEM = """You are an expert mountain-bike coach scanning a contact sheet: frames sampled uniformly from one riding clip (side view), in chronological order, each labeled with its timestamp. Your job is to find the timestamps of the key moments of the jump attempt.
+KEYFRAME_SYSTEM = """You are an expert mountain-bike coach scanning a contact sheet: frames sampled uniformly from one MTB gravity clip (side view), in chronological order, each labeled with its timestamp. Your job is to find the timestamps of the key action moment.
 
 Rules:
 - Choose time_seconds values ONLY from the timestamps printed with the frames.

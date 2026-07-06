@@ -1,21 +1,21 @@
-# RiderLens Product & Technical Plan v4 — Capture First, MTB-First
+# RiderLens Product & Technical Plan v4 — Capture First, MTB Gravity First
 
 Status date: July 5, 2026.
 Supersedes plan v3 (July 4, capture-first). The coaching ambitions remain parked — see the appendix. `bike-technique-app-prerequisites.md` remains the original scope/design reference; its visual system, safety rules, and filming guidance still apply.
 
 ## 0. Positioning (decided July 5, 2026)
 
-- **A dedicated MTB app built on a sport-agnostic engine.** Nothing in the core loop (capture → pose skeleton → trim → record → tag → share) knows what a jump is. Sport-specific value lives in thin optional layers (the AI window prompt, flight metrics, the future coaching layer). This keeps both future paths open: act-two MTB depth, and someday per-sport clones (same engine, new knowledge base + brand) if MTB works.
+- **A dedicated MTB gravity app built on a reusable media/pose engine.** The product, language, examples, tags, and beta users are MTB-first: enduro, downhill, bike park, trail jumps, drops, corners, and dirt jump. Under the hood, the capture loop stays generic enough for future products, but v1 is not marketed as moto, skate, gymnastics, athletics, or general sports analysis.
 - **v1 ships the video loop only.** Navigation is **Capture · (+) · Library**. Garage and Tools are hidden (screens kept in `src/screens/`, unrouted) — they are act two's opening move, not MVP scope. Do not re-route them for v1.
 - **No skill taxonomy in the product.** Records are titled by time ("Today · 14:07"); the what-layer is tags (auto `# crash` from the AI review + user tags). Skill pickers and per-skill event grammars are explicitly rejected for MVP — do not reintroduce them.
 - **Share is the growth loop.** The skeleton-burned, watermarked mp4 (`riderlens.app` — placeholder until the domain is real) is the ad; the share button sends whichever lens (Skeleton/Video) is active. A QR end-card gets appended once a real download URL exists.
-- **Act two (after retention proves out):** coaching intelligence (knowledge base already distilled in `worker/app/knowledge/`), Garage + Tools return, affiliate/partnerships on gear and service. MTB is a high-spend niche; depth is the moat — generic video+skeleton alone is clonable.
+- **Act two (after retention proves out):** RiderLens expands into the full MTB rider app: rider fit/profile, bike setup, Garage, Tools, private/public setup sharing, cautious setup suggestions, coaching intelligence, and affiliate/partnerships on gear and service. MTB is a high-spend niche; depth is the moat — generic video+skeleton alone is clonable.
 
 ## 1. The product in one sentence
 
 **RiderLens captures your trick — it finds the moment in your video, cuts it out, draws your body position on every frame, and saves it to your riding history so you can study it or share it with someone who can help.**
 
-The app does not coach. Judgment belongs to humans — the rider, a friend, a real coach. RiderLens is the medium: it makes the moment easy to see, keep, find, and share. This removes the hardest and riskiest part of the old plan (automated coaching correctness, per-skill knowledge bases, mistake diagnosis) and keeps the part that is reliably deliverable and visibly right or wrong: frames with skeleton overlays.
+For v1, the app does not coach. Judgment belongs to humans — the rider, a friend, a real coach. RiderLens is the medium: it makes the moment easy to see, keep, find, and share. This removes the hardest and riskiest part of the old plan (automated coaching correctness, per-skill knowledge bases, mistake diagnosis) and keeps the part that is reliably deliverable and visibly right or wrong: frames with skeleton overlays.
 
 Capture generalizes across skills for free. Finding "the moment something happens" works the same for a jump, wheelie, manual, bunnyhop, or tailwhip — no per-skill coaching model required.
 
@@ -92,7 +92,7 @@ End-state on the roadmap: **on-device pose + window detection** (MediaPipe iOS/A
 3. Connectivity ladder v1: timeout → manual trim; pending-record queue with retry on reconnect.
 4. Lab (supporting): crop endpoint verification; cheaper-model test for window-finding; fix normalized-coordinate angle distortion (compute angles in pixel/world space).
 - **Done when:** a rider can film a jump at a trail with no signal, trim it in seconds, and have a finished pose-overlaid record on the phone by the time they're home.
-- *Status July 5:* built — capture flow (camera + library), AI window with manual fallback, single-viewport record card (Skeleton/Video toggle in the header), transport controls (frame stepping, 1×/½×/¼× speed), phase-banner event labels, flight metrics (airtime + estimated height, crash-aware, series-snapped, unit-tested), pending/retry. Background WiFi queue still pending.
+- *Status July 6:* built — capture flow (camera + video picker), AI window with manual fallback, single-viewport record card (Skeleton/Video toggle in the header), transport controls (frame stepping, 1×/½×/¼× speed), phase-banner event labels, flight metrics (airtime + estimated height, crash-aware, series-snapped, unit-tested), pending/retry, foreground/active auto-retry when the worker becomes reachable. True OS-level background WiFi processing is still pending.
 
 ### Phase 2 — Library, tags, spots
 5. Record library screen: filter by skill × spot × date; tag editing; GPS spot capture + naming; free tags with suggestions.
@@ -113,16 +113,65 @@ End-state on the roadmap: **on-device pose + window detection** (MediaPipe iOS/A
 ### Phase 5 — parked (superseded by §0)
 Per-skill capture presets are rejected: capture already works for any move (AI window when it recognizes the action, manual window always). The only sport-specific string left is the worker's AI prompt ("jump attempt"); loosen it to "the action moment" opportunistically.
 
-Garage/Tools: hidden in v1 (unrouted). They are act two — see §0.
+Garage/Tools: hidden in v1 (unrouted). They are act two — see §9.
 
-## 9. Success criteria
+## 9. Act two — full MTB rider app
+
+After capture retention proves out, RiderLens should deepen around the same MTB gravity user instead of broadening into unrelated sports.
+
+### 9.1 Rider profile
+
+- Height, weight, inseam, RAD inputs, arm span, shoulder width.
+- Riding style and discipline: enduro, downhill, bike park, trail, dirt jump.
+- Preferences: stability vs. agility, park vs. natural terrain, comfort vs. race setup.
+
+### 9.2 Bike setup and Garage
+
+- Bike model, frame size, wheel size, travel, geometry notes.
+- Fork and shock: model, travel, pressure or spring rate, rebound, compression, volume spacers/tokens.
+- Cockpit: handlebar width, rise, stem length, stack/spacers, brake lever angle.
+- Tires: model, casing, compound, pressure, inserts.
+- Service log and setup change log: "changed rebound +2 clicks", "bar cut from 780mm to 770mm", "felt better on rough trail".
+
+### 9.3 Setup sharing
+
+- Private by default.
+- Shareable public setup pages only when the rider opts in.
+- Shop/mechanic share links for bike setup and service history.
+- Public pages must hide personal/location data unless explicitly shared.
+
+### 9.4 MTB tools
+
+- Sag photo helper for fork/shock setup.
+- Tire pressure calculator.
+- Suspension baseline setup assistant.
+- Cockpit fit helper.
+- Service interval tracker.
+
+### 9.5 Smart suggestions
+
+Recommendations should be pattern-based and cautious:
+
+- Good: "Riders with similar height and arm span often run 760-780mm bars."
+- Bad: "You should use 760mm bars."
+
+The app should explain inputs and uncertainty. It must not present setup suggestions as medical, safety, or professional bike-fit advice.
+
+### 9.6 Deal monitor and affiliate layer
+
+- User adds product links they already care about.
+- RiderLens tracks prices and alerts on real drops.
+- Affiliate links are clearly labeled.
+- Recommendations must be tied to the rider's actual bike/profile and should not make the app feel like a shopping feed.
+
+## 10. Success criteria
 
 - **P1:** capture loop works offline end-to-end; AI window accepted without adjustment on >70% of connected captures.
 - **P2:** median time from opening the library to sharing a specific old record < 30s.
 - **P3:** restore-on-new-phone works; deletion verified empty; ≥1 share link opened per active sharer per month.
 - **P4:** local detector matches accepted windows within ±0.5s on ≥85% of the ground-truth set; AI call rate drops accordingly.
 
-## 10. Risks
+## 11. Risks
 
 | Risk | Mitigation |
 |---|---|
@@ -130,7 +179,7 @@ Garage/Tools: hidden in v1 (unrouted). They are act two — see §0.
 | AI window cost at scale | Cheaper-model test early; ground-truth collection from day one; local detector in Phase 4 |
 | Pose quality on blurred/small riders | Overlay is presentation, not judgment — imperfect skeletons are visibly imperfect; manual editor exists in the Lab for dataset labeling |
 | Cloud video privacy | Records only (not full clips) by default; real deletion; export; consent copy at first sync |
-| Scope creep back into coaching | This document; coaching lives in the appendix until capture retention proves itself |
+| Scope creep into setup/tools/deals/coaching before retention | This document; depth lives in §9 and the appendix until capture retention proves itself |
 | Worker deployment (phone needs a reachable endpoint beyond LAN) | Deploy in Phase 1 (Fly/Railway); queue tolerates downtime by design |
 
 ## Appendix — parked: the coaching layer

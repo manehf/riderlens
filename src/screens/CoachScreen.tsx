@@ -2,7 +2,7 @@ import { CameraView, useCameraPermissions } from "expo-camera";
 import * as VideoThumbnails from "expo-video-thumbnails";
 import { AlertTriangle, Camera, CheckCircle2, Clock3, FileVideo, Scissors, Sparkles, Upload } from "lucide-react-native";
 import { useEffect, useRef, useState } from "react";
-import { Image, ScrollView, StyleSheet, View } from "react-native";
+import { Alert, Image, ScrollView, StyleSheet, View } from "react-native";
 
 import { RecordCard } from "../components/RecordCard";
 import { AppText, BrandHeader, Button, Card, Chip, NumberText, SectionHeader } from "../components/ui";
@@ -26,6 +26,11 @@ export function CoachScreen({ store, captureSignal }: CoachScreenProps) {
     if (!cameraPermission?.granted) {
       const permission = await requestCameraPermission();
       if (!permission.granted) {
+        // Never fail silently — the rider tapped a button and deserves an answer.
+        Alert.alert(
+          "Camera access needed",
+          "Enable camera access in Settings to record clips, or pick a video from your library instead."
+        );
         return;
       }
     }
@@ -72,7 +77,7 @@ export function CoachScreen({ store, captureSignal }: CoachScreenProps) {
             Record
           </Button>
           <Button icon={Upload} variant="secondary" onPress={() => store.uploadVideoFromLibrary()} style={styles.actionButton}>
-            Library
+            Pick video
           </Button>
         </View>
 

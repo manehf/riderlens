@@ -2,11 +2,11 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as ImagePicker from "expo-image-picker";
 import * as Sharing from "expo-sharing";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Share } from "react-native";
+import { Alert, AppState, Share } from "react-native";
 
 import { demoGarage } from "../data/demoData";
 import { createId } from "../services/analysis";
-import { processRecord, proposeWindow, type WindowProposal } from "../services/capture";
+import { isAnalysisWorkerReachable, processRecord, proposeWindow, type WindowProposal } from "../services/capture";
 import {
   backfillPoster,
   deleteRecordFiles,
@@ -19,6 +19,7 @@ import { deleteLibraryVideo, persistVideoToLibrary } from "../services/videoLibr
 import type { GarageState, JumpRecord, PermissionLevel, SkillType, ToolMeasurement } from "../types/domain";
 
 const STORAGE_KEY = "riderlens:mvp-state:v2";
+const AUTO_RETRY_INTERVAL_MS = 30_000;
 
 type PersistedState = {
   garage: GarageState;
@@ -69,6 +70,9 @@ export function useRiderLensMvp(): RiderLensStore {
   const [hydrated, setHydrated] = useState(false);
   // Guards the async window proposal against a changed/cancelled pending clip.
   const pendingUriRef = useRef<string | undefined>(undefined);
+  const recordsRef = useRef<JumpRecord[]>([]);
+  const processingIdsRef = useRef<Set<string>>(new Set());
+  const retryProbeActiveRef = useRef(false);
 
   useEffect(() => {
     Promise.all([
@@ -100,6 +104,10 @@ export function useRiderLensMvp(): RiderLensStore {
     if (!hydrated) return;
     saveRecords(records).catch(() => undefined);
   }, [hydrated, records]);
+
+  useEffect(() => {
+    recordsRef.current = records;
+  }, [records]);
 
   const updateRecord = useCallback((recordId: string, updater: (record: JumpRecord) => JumpRecord) => {
     setRecords((current) => current.map((record) => (record.id === recordId ? updater(record) : record)));
@@ -172,6 +180,8 @@ export function useRiderLensMvp(): RiderLensStore {
 
   const runRecordProcessing = useCallback(
     (record: JumpRecord, uploadId?: string) => {
+      if (processingIdsRef.current.has(record.id)) return;
+      processingIdsRef.current.add(record.id);
       updateRecord(record.id, (current) => ({ ...current, status: "processing", error: undefined }));
 
       void processRecord({
@@ -202,6 +212,9 @@ export function useRiderLensMvp(): RiderLensStore {
             status: "pending",
             error: error.message || "Processing failed. Retry when connected."
           }));
+        })
+        .finally(() => {
+          processingIdsRef.current.delete(record.id);
         });
     },
     [updateRecord]
@@ -251,6 +264,39 @@ export function useRiderLensMvp(): RiderLensStore {
     },
     [records, runRecordProcessing]
   );
+
+  const retryPendingRecords = useCallback(async () => {
+    if (retryProbeActiveRef.current) return;
+    const retryable = recordsRef.current.filter((record) => record.status === "pending" || record.status === "failed");
+    if (retryable.length === 0) return;
+
+    retryProbeActiveRef.current = true;
+    try {
+      if (!(await isAnalysisWorkerReachable())) return;
+      for (const record of retryable) {
+        runRecordProcessing(record);
+      }
+    } finally {
+      retryProbeActiveRef.current = false;
+    }
+  }, [runRecordProcessing]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    void retryPendingRecords();
+
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") void retryPendingRecords();
+    });
+    const interval = setInterval(() => {
+      if (AppState.currentState === "active") void retryPendingRecords();
+    }, AUTO_RETRY_INTERVAL_MS);
+
+    return () => {
+      subscription.remove();
+      clearInterval(interval);
+    };
+  }, [hydrated, retryPendingRecords]);
 
   const deleteRecord = useCallback((recordId: string) => {
     setRecords((current) => {

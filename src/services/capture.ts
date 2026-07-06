@@ -64,6 +64,11 @@ async function workerReachable(workerUrl: string): Promise<boolean> {
   }
 }
 
+export async function isAnalysisWorkerReachable(): Promise<boolean> {
+  const workerUrl = getAnalysisWorkerUrl();
+  return workerUrl ? workerReachable(workerUrl) : false;
+}
+
 /** Upload the clip and get an AI-proposed window. Returns undefined when the worker
  * is unreachable, slow, or has no AI credentials — the caller falls back to manual trim. */
 export async function proposeWindow(videoUri: string): Promise<WindowProposal | undefined> {

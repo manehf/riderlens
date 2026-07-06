@@ -460,7 +460,7 @@ export function RecordCard({ record, onShare, onRetry, onDelete, onAddTag, onRem
         ? "Processing"
         : record.status === "failed"
           ? "Failed"
-          : "Waiting for connection";
+          : "Queued";
   // Once the record is ready the status chip says nothing new — its header slot
   // becomes the lens toggle instead.
   const showModeToggle = record.status === "ready" && Boolean(record.clipUri) && frames.length > 0;
@@ -519,7 +519,10 @@ export function RecordCard({ record, onShare, onRetry, onDelete, onAddTag, onRem
         <View style={styles.pendingRow}>
           <AlertTriangle color={tokens.amber} size={16} />
           <AppText size={13} color={tokens.textMuted} style={styles.pendingText}>
-            {record.error ?? "This record has not been processed yet."}
+            {record.error ??
+              (record.status === "failed"
+                ? "Processing failed. Retry when the worker is reachable."
+                : "Saved locally. RiderLens will process it when the worker is reachable.")}
           </AppText>
         </View>
       ) : null}

@@ -1,4 +1,4 @@
-# RiderLens MVP Plan — v1 Ship Plan
+# RiderLens MVP Plan — MTB Gravity v1 Ship Plan
 
 Status date: July 6, 2026.
 This is the operative plan for shipping v1. Background documents: `riderlens-product-plan.md` (v4 — architecture, storage tiers, connectivity ladder) and `bike-technique-app-prerequisites.md` (visual system, design tokens, safety rules, filming guidance). Where they conflict, this document wins.
@@ -7,7 +7,7 @@ This is the operative plan for shipping v1. Background documents: `riderlens-pro
 
 ## 1. Goal
 
-**Put a tool in MTB riders' hands that turns any filmed moment into a shareable, studyable record: the clip trimmed to the action, with their body position drawn on every frame.**
+**Put a tool in MTB gravity riders' hands that turns any filmed moment into a shareable, studyable record: the clip trimmed to the action, with their body position drawn on every frame.**
 
 v1 is done when a rider who is not the founder:
 1. films or picks a clip,
@@ -15,15 +15,17 @@ v1 is done when a rider who is not the founder:
 3. finds it again later in their library, and
 4. shares it — and the shared video carries the RiderLens watermark to whoever watches it.
 
-The app does not coach. Judgment belongs to humans — the rider, a friend, a real coach. RiderLens makes the moment easy to see, keep, find, and share.
+For v1, the app does not coach. Judgment belongs to humans — the rider, a friend, a real coach. RiderLens makes the moment easy to see, keep, find, and share.
+
+Long-term product direction: RiderLens becomes a full MTB gravity app, not a generic sports-analysis app. The capture loop is the wedge. Later layers add rider fit, bike setup, setup sharing, garage tools, and useful gear/service commerce for MTB riders.
 
 ## 2. Strategy
 
-- **A dedicated MTB app built on a sport-agnostic engine.** Nothing in the core loop (capture → pose skeleton → trim → tag → library → share) knows what a jump is. Sport-specific value lives in thin optional layers (AI window finding, flight metrics). This keeps two future paths open without committing to either now: act-two MTB depth, or per-sport clones (same engine, new brand) if MTB works.
-- **"MTB" means all gravity disciplines.** Trail, enduro, DH, park, dirt jump — one scene, one media culture. No per-discipline features or marketing splits. Any bike (or any rider) can use the app; only the marketing targets MTB.
+- **A dedicated MTB gravity app built on a reusable media/pose engine.** The product, language, examples, tags, and beta users are MTB-first. Under the hood, the core loop (capture → pose skeleton → trim → tag → library → share) stays generic enough to support future products, but v1 is not marketed as a general sports, moto, skate, or gymnastics app.
+- **"MTB" means gravity disciplines first.** Enduro, downhill, bike park, trail jumps, drops, corners, and dirt jump — one scene, one media culture. No per-discipline features or marketing splits in v1.
 - **Share is the growth engine.** The skeleton-burned, watermarked clip is the ad. Every clip posted in a group chat or Instagram story markets the app to exactly the right audience. QR end-card + real domain complete the loop once the domain exists.
 - **No skill taxonomy.** Records are titled by time ("Today · 14:07"). The what-layer is tags: an automatic `# crash` tag from the AI review plus one-tap user tags. Skill pickers and per-skill event grammars are rejected for v1 — do not reintroduce them.
-- **Depth is act two, not v1.** Garage, Tools, coaching intelligence, and affiliate monetization wait until the video loop proves retention. They are the moat later precisely because they are not the MVP now.
+- **Depth is act two, not v1.** Rider profile, bike setup, Garage, Tools, coaching intelligence, public setup sharing, and affiliate monetization wait until the video loop proves retention. They are the moat later precisely because they are not the MVP now.
 
 ## 3. The core loop
 
@@ -35,6 +37,21 @@ photo library      manual always      FFmpeg +        skeleton          grid +  
                    available)         MediaPipe)      filmstrip +       tag         or clean clip)
                                                       airtime est.)     filters)
 ```
+
+### 3.1 Minimum MVP
+
+The minimum shippable product is the smallest version that proves riders care enough to repeat the loop:
+
+1. **Capture or pick a local video** — no YouTube/external links, no cloud import, no setup flow.
+2. **Choose the action window** — AI can propose it when reachable, but manual trim must always work.
+3. **Generate a finished record** — trimmed clip, skeleton overlay on every frame, poster, filmstrip, basic metadata.
+4. **Save records locally** — a rider can leave the app and come back to a list of sessions.
+5. **Review one record well** — Skeleton/Video toggle, play/pause, scrub, frame step, slow speed.
+6. **Tag and find records** — simple tags plus a Library grid/filter.
+7. **Share a watermarked clip** — the shared skeleton/video is the acquisition artifact.
+8. **Handle offline honestly** — queued/pending/failed/ready states, with retry when connection returns.
+
+Everything else is deliberately outside the MVP: rider measurements, bike setup, public profiles, shop sharing, sag tools, pressure calculators, setup recommendations, deal monitoring, accounts, cloud sync, and coaching reports.
 
 ## 4. Screens
 
@@ -81,9 +98,9 @@ v1 has **two routed screens plus one sheet**, held together by a three-slot tab 
 
 ### Phase 1 — Harden (this week)
 1. ~~Source-video cleanup on delete~~ ✅ (committed)
-2. **Auto-retry pending records** on reconnect / app foreground — no manual Retry needed after a no-signal session.
-3. **Loosen the AI prompt**: "jump attempt" → "the action moment" (last sport-specific string in the engine).
-4. **Remove the "Demo mode" chip** from the app header (internal state, not rider-facing).
+2. ~~Auto-retry pending records on app foreground / active worker reachability checks~~ ✅ — no manual Retry needed when the worker becomes reachable while the app is active.
+3. ~~Loosen the AI prompt: "jump attempt" → "the action moment"~~ ✅.
+4. ~~Remove the "Demo mode" chip from the app header~~ ✅.
 5. **Screens final state**: Capture · (+) · Library only; Garage/Tools confirmed unrouted (done — this phase just locks it).
 6. **Field test at a trail** (founder, real phone, bad signal, gloves). Findings feed back into this phase.
 - **Done when:** a full trail session — film, trim, pocket the phone, records finished by home WiFi — works without touching Retry.
@@ -106,10 +123,15 @@ v1 has **two routed screens plus one sheet**, held together by a three-slot tab 
 - **Done when:** a second-week beta rider captures and shares without founder involvement.
 
 ### Act two — after retention proves out (explicitly not scheduled)
-- Coaching intelligence (knowledge base already distilled in `worker/app/knowledge/`).
-- Garage + Tools return as the depth/retention layer; affiliate on gear and service.
-- Accounts + cloud sync (product-plan Phase 3) when device-loss becomes a real user problem.
-- On-device pose (Expo dev build + MediaPipe/TFLite) only if airplane-mode records prove worth it.
+- **Rider profile:** height, weight, inseam, RAD inputs, arm span, shoulder width, stance/preferences, riding style, discipline.
+- **Bike setup profile:** frame size, wheel size, fork/shock model, travel, pressure or spring rate, rebound/compression clicks, volume spacers, cockpit width/rise/stem/spacers, tires, pressures, inserts.
+- **Garage and setup sharing:** private by default; shareable public setup pages and shop/mechanic links only when the rider opts in.
+- **MTB tools:** sag photo helper, pressure calculators, cockpit fit helper, baseline suspension setup, setup change log, service intervals.
+- **Smart suggestions:** pattern-based, cautious language such as "riders with similar height and arm span often run 760-780mm bars"; never fake certainty.
+- **Deal monitor and affiliate layer:** user-tracked products, price alerts, clearly labeled affiliate links, recommendations tied to the rider's actual bike/profile.
+- **Coaching intelligence:** knowledge base already distilled in `worker/app/knowledge/`, added only after the capture archive proves retention and provides enough examples.
+- **Accounts + cloud sync:** product-plan Phase 3 when device-loss becomes a real user problem.
+- **On-device pose:** Expo dev build + MediaPipe/TFLite only if airplane-mode records prove worth it.
 
 ## 6. Success metrics (beta)
 
@@ -127,12 +149,12 @@ These three decide act two: depth (Garage/coaching) if riders retain and ask "wh
 |---|---|
 | Worker cost/latency at beta scale | Cheaper-model test; local window detector on accumulated ground truth (product-plan §7) |
 | Pose quality on blurred/small/geared-up riders | Overlay is presentation, not judgment — imperfect skeletons are visibly imperfect |
-| Scope creep back into Garage/coaching/skills | This document, §2 and §4.5–4.7 |
+| Scope creep into Garage/setup/tools/deals/coaching before retention | This document, §2, §3.1, and §4.5–4.7 |
 | Dead watermark link before domain exists | Watermark ships as name-only risk accepted short-term; Phase 3 fixes |
 | Offline queue complexity | Append-only pending records; auto-retry is re-running the same idempotent request |
 
 ## 8. Current state (July 6, 2026)
 
-Built, tested, committed: capture flow (camera + library picker), AI window finding with manual fallback, worker pipeline (trim, pose on every frame, skeleton filmstrip, poster, watermarked skeleton share clip), flight metrics (airtime + estimated height, crash-aware, unit-tested), record card (single viewport, lens toggle, transport with speed/frame-step, phase-banner events), tags (auto crash + user, suggestions), library (poster grid, tag filters, detail sheet), share-by-lens, two-tab navigation with (+) quick capture, storage cleanup on delete. Worker test suite: 46 passing.
+Built, tested, committed: capture flow (camera + video picker), AI window finding with manual fallback, worker pipeline (trim, pose on every frame, skeleton filmstrip, poster, watermarked skeleton share clip), flight metrics (airtime + estimated height, crash-aware, unit-tested), record card (single viewport, lens toggle, transport with speed/frame-step, phase-banner events), tags (auto crash + user, suggestions), library (poster grid, tag filters, detail sheet), share-by-lens, two-tab navigation with (+) quick capture, storage cleanup on delete, foreground/active auto-retry for pending records, beta-facing debug chip removed, action-moment worker prompt. Worker test suite: 46 passing.
 
 Open items are exactly Phases 1–4 above.

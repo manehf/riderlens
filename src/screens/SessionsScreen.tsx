@@ -177,7 +177,7 @@ function PosterCell({ record, onPress }: { record: JumpRecord; onPress: () => vo
         {record.status !== "ready" ? (
           <View style={styles.posterStatus}>
             <Chip tone={record.status === "failed" ? "red" : "amber"}>
-              {record.status === "processing" ? "processing" : record.status === "failed" ? "failed" : "waiting"}
+              {record.status === "processing" ? "Processing" : record.status === "failed" ? "Failed" : "Queued"}
             </Chip>
           </View>
         ) : null}
