@@ -67,10 +67,10 @@ export function SessionsScreen({ store }: SessionsScreenProps) {
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.intro}>
           <DisplayText size={34} style={styles.introTitle}>
-            YOUR MOMENTS
+            YOUR PROGRESSION
           </DisplayText>
           <AppText color={tokens.textMuted} size={13} style={styles.introBody}>
-            Trimmed to the action, your body position on every frame — tap one to study or share it.
+            Every send, trimmed to the action with your body position on every frame. Study it, dial it in.
           </AppText>
         </View>
 
