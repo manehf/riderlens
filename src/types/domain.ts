@@ -39,13 +39,22 @@ export type UnitSystem = "metric" | "imperial";
 
 /** Body dimensions stored canonically in metric; the units preference only
  * changes display. Collected now to power future fit/analysis features
- * (RAD fit, body-calibrated jump metrics). */
+ * (RAD fit, body-calibrated jump metrics, lead-foot-aware coaching). */
 export type RiderProfile = {
   units: UnitSystem;
+  name?: string;
+  /** Local file URI; the image is copied into the app's storage. */
+  avatarUri?: string;
   heightCm?: number;
   weightKg?: number;
   inseamCm?: number;
   armLengthCm?: number;
+  /** Fingertip-to-fingertip; ideal RAD derives from height + arm span. */
+  armSpanCm?: number;
+  /** Rider Area Distance measured on the bike: bottom bracket → grip center. */
+  radCm?: number;
+  /** Which foot rides forward — needed to interpret pose data correctly. */
+  leadFoot?: "left" | "right";
 };
 
 export type VideoCropPreset =

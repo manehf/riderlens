@@ -1,7 +1,9 @@
 import Constants from "expo-constants";
-import { Ruler, X } from "lucide-react-native";
+import * as FileSystem from "expo-file-system/legacy";
+import * as ImagePicker from "expo-image-picker";
+import { Bike, Ruler, User, X } from "lucide-react-native";
 import { useEffect, useState } from "react";
-import { Modal, Pressable, ScrollView, StyleSheet, TextInput, View } from "react-native";
+import { Alert, Image, Modal, Pressable, ScrollView, StyleSheet, TextInput, View } from "react-native";
 
 import { AppText, Card, DisplayText, NumberText } from "../components/ui";
 import type { RiderLensStore } from "../hooks/useRiderLensMvp";
@@ -36,9 +38,46 @@ function unitLabel(kind: MeasureKind, units: UnitSystem): string {
   return units === "metric" ? "kg" : "lbs";
 }
 
+/** Copy the picked image into app storage (picker cache gets purged). A fresh
+ * filename busts the Image cache; the previous avatar file is removed. */
+async function pickAvatar(previousUri?: string): Promise<string | undefined> {
+  const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+  if (!permission.granted) {
+    Alert.alert("Photo access needed", "Allow photo access to choose a profile image.");
+    return undefined;
+  }
+  const result = await ImagePicker.launchImageLibraryAsync({
+    mediaTypes: ["images"],
+    allowsEditing: true,
+    aspect: [1, 1],
+    quality: 0.8
+  });
+  if (result.canceled) return undefined;
+  const asset = result.assets[0];
+
+  const directory = `${FileSystem.documentDirectory}riderlens/profile/`;
+  await FileSystem.makeDirectoryAsync(directory, { intermediates: true });
+  const target = `${directory}avatar-${Date.now().toString(36)}.jpg`;
+  await FileSystem.copyAsync({ from: asset.uri, to: target });
+  if (previousUri) {
+    FileSystem.deleteAsync(previousUri, { idempotent: true }).catch(() => undefined);
+  }
+  return target;
+}
+
 export function SettingsSheet({ store, visible, onClose }: SettingsSheetProps) {
   const { profile } = store;
   const version = Constants.expoConfig?.version ?? "dev";
+  const [nameDraft, setNameDraft] = useState(profile.name ?? "");
+
+  useEffect(() => {
+    setNameDraft(profile.name ?? "");
+  }, [profile.name]);
+
+  async function changeAvatar() {
+    const avatarUri = await pickAvatar(profile.avatarUri);
+    if (avatarUri) store.saveProfile({ avatarUri });
+  }
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
@@ -53,21 +92,76 @@ export function SettingsSheet({ store, visible, onClose }: SettingsSheetProps) {
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
           <Card style={styles.section}>
             <View style={styles.sectionHeader}>
+              <User color={tokens.green} size={16} strokeWidth={2.4} />
+              <AppText weight="bold">Rider</AppText>
+            </View>
+
+            <View style={styles.riderRow}>
+              <Pressable accessibilityRole="button" accessibilityLabel="Change profile image" onPress={changeAvatar}>
+                {profile.avatarUri ? (
+                  <Image source={{ uri: profile.avatarUri }} style={styles.avatar} />
+                ) : (
+                  <View style={[styles.avatar, styles.avatarPlaceholder]}>
+                    <User color={tokens.textMuted} size={26} strokeWidth={2} />
+                  </View>
+                )}
+              </Pressable>
+              <View style={styles.riderFields}>
+                <TextInput
+                  value={nameDraft}
+                  onChangeText={setNameDraft}
+                  onEndEditing={() => store.saveProfile({ name: nameDraft.trim() || undefined })}
+                  placeholder="Your name"
+                  placeholderTextColor={tokens.textMuted}
+                  autoCapitalize="words"
+                  style={styles.nameInput}
+                />
+                <AppText color={tokens.textMuted} size={11}>
+                  Tap the photo to change it.
+                </AppText>
+              </View>
+            </View>
+
+            <View style={styles.fieldRow}>
+              <AppText weight="semi" size={13} style={styles.fieldLabel}>
+                Lead foot
+              </AppText>
+              <View style={styles.segmented}>
+                <SegmentButton
+                  label="Left"
+                  active={profile.leadFoot === "left"}
+                  onPress={() => store.saveProfile({ leadFoot: "left" })}
+                />
+                <SegmentButton
+                  label="Right"
+                  active={profile.leadFoot === "right"}
+                  onPress={() => store.saveProfile({ leadFoot: "right" })}
+                />
+              </View>
+            </View>
+          </Card>
+
+          <Card style={styles.section}>
+            <View style={styles.sectionHeader}>
               <Ruler color={tokens.green} size={16} strokeWidth={2.4} />
-              <AppText weight="bold">Rider profile</AppText>
+              <AppText weight="bold">Body</AppText>
             </View>
             <AppText color={tokens.textMuted} size={12} style={styles.sectionNote}>
               Your dimensions power upcoming features — bike fit and jump metrics calibrated to your body. Optional, stored
               only on this phone.
             </AppText>
 
-            <View style={styles.unitsRow}>
+            <View style={styles.fieldRow}>
               <AppText weight="semi" size={13} style={styles.fieldLabel}>
                 Units
               </AppText>
               <View style={styles.segmented}>
-                <UnitButton label="Metric" active={profile.units === "metric"} onPress={() => store.saveProfile({ units: "metric" })} />
-                <UnitButton
+                <SegmentButton
+                  label="Metric"
+                  active={profile.units === "metric"}
+                  onPress={() => store.saveProfile({ units: "metric" })}
+                />
+                <SegmentButton
                   label="Imperial"
                   active={profile.units === "imperial"}
                   onPress={() => store.saveProfile({ units: "imperial" })}
@@ -103,6 +197,31 @@ export function SettingsSheet({ store, visible, onClose }: SettingsSheetProps) {
               canonical={profile.armLengthCm}
               onCommit={(armLengthCm) => store.saveProfile({ armLengthCm })}
             />
+            <MeasurementField
+              label="Arm span"
+              kind="length"
+              units={profile.units}
+              canonical={profile.armSpanCm}
+              onCommit={(armSpanCm) => store.saveProfile({ armSpanCm })}
+            />
+          </Card>
+
+          <Card style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Bike color={tokens.green} size={16} strokeWidth={2.4} />
+              <AppText weight="bold">Bike fit</AppText>
+            </View>
+            <AppText color={tokens.textMuted} size={12} style={styles.sectionNote}>
+              RAD (Rider Area Distance): from the center of the bottom bracket to the middle of your grips, measured on your
+              bike.
+            </AppText>
+            <MeasurementField
+              label="RAD"
+              kind="length"
+              units={profile.units}
+              canonical={profile.radCm}
+              onCommit={(radCm) => store.saveProfile({ radCm })}
+            />
           </Card>
 
           <Card style={styles.section}>
@@ -121,7 +240,7 @@ export function SettingsSheet({ store, visible, onClose }: SettingsSheetProps) {
   );
 }
 
-function UnitButton({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
+function SegmentButton({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
   return (
     <Pressable
       accessibilityRole="button"
@@ -183,7 +302,7 @@ function MeasurementField({ label, kind, units, canonical, onCommit }: Measureme
           placeholderTextColor={tokens.textMuted}
           style={styles.fieldInput}
         />
-        <AppText size={12} weight="bold" color={tokens.textMuted}>
+        <AppText size={12} weight="bold" color={tokens.textMuted} style={styles.unitLabel}>
           {unitLabel(kind, units)}
         </AppText>
       </View>
@@ -233,11 +352,37 @@ const styles = StyleSheet.create({
   sectionNote: {
     lineHeight: 17
   },
-  unitsRow: {
+  riderRow: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
     gap: spacing.md
+  },
+  avatar: {
+    width: 64,
+    height: 64,
+    borderRadius: radius.pill,
+    backgroundColor: tokens.surfaceMuted
+  },
+  avatarPlaceholder: {
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: tokens.border
+  },
+  riderFields: {
+    flex: 1,
+    gap: spacing.xs
+  },
+  nameInput: {
+    minHeight: 40,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: tokens.border,
+    backgroundColor: tokens.surface,
+    paddingHorizontal: spacing.md,
+    fontFamily: tokens.fontUi,
+    fontSize: 15,
+    color: tokens.text
   },
   segmented: {
     flexDirection: "row",
@@ -269,7 +414,8 @@ const styles = StyleSheet.create({
     gap: spacing.sm
   },
   fieldInput: {
-    minWidth: 88,
+    // Fixed width so every measurement box lines up across rows.
+    width: 96,
     minHeight: 40,
     textAlign: "right",
     borderRadius: radius.sm,
@@ -280,6 +426,10 @@ const styles = StyleSheet.create({
     fontFamily: tokens.fontMono,
     fontSize: 15,
     color: tokens.text
+  },
+  unitLabel: {
+    // Fixed unit column ("cm"/"kg"/"in"/"lbs") keeps the boxes' right edges aligned.
+    width: 28
   },
   aboutRow: {
     flexDirection: "row",
