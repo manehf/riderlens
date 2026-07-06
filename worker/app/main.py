@@ -531,7 +531,10 @@ def measure_window(
     series: list[dict] = []
     air_candidates: list[tuple[float, object]] = []
     filmstrip: list[dict] = []
-    thumb_step = max(1, count // 36)
+    # Frame-by-frame inspection needs every sampled frame in the strip. Short
+    # windows (the normal case: a trimmed moment) keep all samples; only long
+    # windows fall back to ~36 evenly spaced thumbnails to bound the payload.
+    thumb_step = 1 if count <= 96 else max(1, count // 36)
     overlay = OverlayClipWriter(fps=1.0 / step) if render_overlay else None
     capture = cv2.VideoCapture(video_path)
     try:
@@ -598,9 +601,10 @@ def measure_window(
             if air_span[0] <= time_seconds <= air_span[1]:
                 air_candidates.append((time_seconds, frame))
             if index % thumb_step == 0:
-                # Source resolution capped at 1280px: sharp in the big player without
-                # 4K-sized payloads. Higher JPEG quality — these frames ARE the record.
-                target_width = filmstrip_width if filmstrip_width is not None else min(width, 1280)
+                # 960px: sharp in the card and fullscreen viewers while keeping the
+                # now-denser strip payload bounded. Higher JPEG quality — these
+                # frames ARE the record.
+                target_width = filmstrip_width if filmstrip_width is not None else min(width, 960)
                 small = cv2.resize(frame, (target_width, max(1, int(height * target_width / width)))) if target_width < width else frame.copy()
                 if result.pose_landmarks:
                     draw_skeleton(small, result.pose_landmarks.landmark)
