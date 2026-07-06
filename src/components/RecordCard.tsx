@@ -80,10 +80,10 @@ function eventLabels(record: JumpRecord, filmstrip: FilmstripFrame[]): Map<numbe
   return labels;
 }
 
-// Default playback is half speed: slow enough to read body position, fast enough
-// to feel motion. The speed button cycles through these for both lenses.
+// Real speed by default — least surprise; analysis speeds are one tap away.
+// The speed button cycles through these for both lenses.
 const PLAYBACK_SPEEDS = [1, 0.5, 0.25];
-const DEFAULT_SPEED = 0.5;
+const DEFAULT_SPEED = 1;
 
 // Filmstrip-as-scrubber geometry: must match the filmstrip styles below.
 const FILMSTRIP_CELL_WIDTH = 114;
