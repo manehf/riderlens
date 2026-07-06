@@ -1,4 +1,5 @@
 import { CameraView, useCameraPermissions } from "expo-camera";
+import * as Device from "expo-device";
 import * as VideoThumbnails from "expo-video-thumbnails";
 import { AlertTriangle, Camera, CheckCircle2, Clock3, FileVideo, Scissors, Sparkles, Upload, X } from "lucide-react-native";
 import { useEffect, useRef, useState } from "react";
@@ -37,6 +38,14 @@ export function CaptureSheet({ store, visible, intent, onClose }: CaptureSheetPr
   }
 
   async function openCamera() {
+    if (!Device.isDevice) {
+      // Simulators have no camera; recording would silently do nothing.
+      Alert.alert(
+        "No camera on the simulator",
+        "Recording needs a real phone. Use Pick from library to test the flow here."
+      );
+      return;
+    }
     if (!cameraPermission?.granted) {
       const permission = await requestCameraPermission();
       if (!permission.granted) {
@@ -60,6 +69,9 @@ export function CaptureSheet({ store, visible, intent, onClose }: CaptureSheetPr
         store.startCaptureFromUri(video.uri, 30);
       }
       setCameraOpen(false);
+    } catch {
+      // Never fail silently — recording can fail on unsupported hardware.
+      Alert.alert("Recording failed", "Could not record video on this device. Try Pick from library instead.");
     } finally {
       setRecording(false);
     }
