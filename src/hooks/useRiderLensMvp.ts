@@ -26,7 +26,8 @@ type PersistedState = {
   profile?: RiderProfile;
 };
 
-const DEFAULT_PROFILE: RiderProfile = { units: "metric" };
+// Metric and right-foot-forward are the common cases; both stay one tap to change.
+const DEFAULT_PROFILE: RiderProfile = { units: "metric", leadFoot: "right" };
 
 export type WindowStatus = "checking" | "ai" | "manual";
 
