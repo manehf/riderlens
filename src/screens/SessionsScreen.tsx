@@ -3,7 +3,7 @@ import { useMemo, useState } from "react";
 import { Image, Modal, Pressable, ScrollView, StyleSheet, View } from "react-native";
 
 import { RecordCard } from "../components/RecordCard";
-import { AppText, BrandHeader, Card, Chip, NumberText, SectionHeader } from "../components/ui";
+import { AppText, BrandHeader, Card, Chip, NumberText } from "../components/ui";
 import type { RiderLensStore } from "../hooks/useRiderLensMvp";
 import { getRecordTitle, getSystemTags } from "../services/analysis";
 import { radius, spacing, tokens } from "../theme/tokens";
@@ -50,13 +50,16 @@ export function SessionsScreen({ store }: SessionsScreenProps) {
 
   return (
     <View style={styles.root}>
-      <BrandHeader subtitle="Library" />
+      <BrandHeader />
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <SectionHeader
-          eyebrow="Library"
-          title="Your captured moments"
-          body="Tap a moment to review it: the clip, your body position on every frame, and the timeline."
-        />
+        <View style={styles.intro}>
+          <AppText weight="bold" size={26} style={styles.introTitle}>
+            Your moments
+          </AppText>
+          <AppText color={tokens.textMuted} size={13} style={styles.introBody}>
+            Trimmed to the action, your body position on every frame — tap one to study or share it.
+          </AppText>
+        </View>
 
         {showFilters ? (
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
@@ -207,6 +210,15 @@ const styles = StyleSheet.create({
     gap: spacing.lg,
     paddingHorizontal: spacing.xl,
     paddingBottom: 120
+  },
+  intro: {
+    gap: spacing.xs
+  },
+  introTitle: {
+    lineHeight: 30
+  },
+  introBody: {
+    lineHeight: 18
   },
   filterRow: {
     gap: spacing.sm

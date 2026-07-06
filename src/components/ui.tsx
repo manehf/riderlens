@@ -231,7 +231,7 @@ export function MetricTile({ label, value, unit, tone = "light" }: MetricTilePro
 }
 
 type BrandHeaderProps = {
-  subtitle: string;
+  subtitle?: string;
   action?: ReactNode;
 };
 
@@ -248,9 +248,11 @@ export function BrandHeader({ subtitle, action }: BrandHeaderProps) {
           <AppText weight="bold" size={21}>
             RiderLens
           </AppText>
-          <AppText weight="semi" size={12} color={tokens.textMuted}>
-            {subtitle}
-          </AppText>
+          {subtitle ? (
+            <AppText weight="semi" size={12} color={tokens.textMuted}>
+              {subtitle}
+            </AppText>
+          ) : null}
         </View>
       </View>
       {action}
