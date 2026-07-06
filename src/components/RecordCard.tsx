@@ -19,7 +19,18 @@ import {
   X
 } from "lucide-react-native";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Image, Modal, Pressable, ScrollView, StyleSheet, TextInput, View, useWindowDimensions } from "react-native";
+import {
+  Image,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  TextInput,
+  View,
+  useWindowDimensions,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { getRecordTitle, getSystemTags } from "../services/analysis";
@@ -73,6 +84,11 @@ function eventLabels(record: JumpRecord, filmstrip: FilmstripFrame[]): Map<numbe
 // to feel motion. The speed button cycles through these for both lenses.
 const PLAYBACK_SPEEDS = [1, 0.5, 0.25];
 const DEFAULT_SPEED = 0.5;
+
+// Filmstrip-as-scrubber geometry: must match the filmstrip styles below.
+const FILMSTRIP_CELL_WIDTH = 114;
+const FILMSTRIP_GAP = 8;
+const FILMSTRIP_STEP = FILMSTRIP_CELL_WIDTH + FILMSTRIP_GAP;
 
 function speedLabel(speed: number): string {
   return speed === 1 ? "1×" : speed === 0.5 ? "½×" : "¼×";
@@ -264,6 +280,73 @@ function JumpViewer({
     setPlaying((value) => !value);
   }, [playing]);
 
+  // --- Filmstrip as scrubber: drag the strip under the fixed playhead. ------
+  const stripRef = useRef<ScrollView>(null);
+  const [stripWidth, setStripWidth] = useState(0);
+  const stripInteractingRef = useRef(false);
+  const stripSettleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Edge padding lets the first and last frames reach the center playhead.
+  const stripEdgePadding = Math.max(0, (stripWidth - FILMSTRIP_CELL_WIDTH) / 2);
+
+  const scrubToOffset = useCallback(
+    (offsetX: number) => {
+      const index = Math.max(0, Math.min(Math.round(offsetX / FILMSTRIP_STEP), frames.length - 1));
+      if (index === frameIndexRef.current) return;
+      suppressVideoSyncUntilRef.current = Date.now() + 350;
+      commitFrameIndex(index);
+      const frame = frames[index];
+      if (frame && clipUri) {
+        player.currentTime = clipTimeOf(frame);
+      }
+    },
+    [clipTimeOf, clipUri, commitFrameIndex, frames, player]
+  );
+
+  const handleStripDragStart = useCallback(() => {
+    if (stripSettleTimerRef.current) {
+      clearTimeout(stripSettleTimerRef.current);
+      stripSettleTimerRef.current = null;
+    }
+    stripInteractingRef.current = true;
+    setPlaying(false);
+  }, []);
+
+  const handleStripScroll = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      if (!stripInteractingRef.current) return;
+      scrubToOffset(event.nativeEvent.contentOffset.x);
+    },
+    [scrubToOffset]
+  );
+
+  const handleStripDragEnd = useCallback(() => {
+    // Momentum may follow the drag; only release the strip if it doesn't.
+    stripSettleTimerRef.current = setTimeout(() => {
+      stripInteractingRef.current = false;
+    }, 140);
+  }, []);
+
+  const handleStripMomentumStart = useCallback(() => {
+    if (stripSettleTimerRef.current) {
+      clearTimeout(stripSettleTimerRef.current);
+      stripSettleTimerRef.current = null;
+    }
+  }, []);
+
+  const handleStripMomentumEnd = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      scrubToOffset(event.nativeEvent.contentOffset.x);
+      stripInteractingRef.current = false;
+    },
+    [scrubToOffset]
+  );
+
+  // Playback/stepping moves the strip; user drags move the frame (guarded above).
+  useEffect(() => {
+    if (stripInteractingRef.current) return;
+    stripRef.current?.scrollTo({ x: frameIndex * FILMSTRIP_STEP, animated: false });
+  }, [frameIndex, stripWidth]);
+
   // Carry the current moment across mode switches so the toggle never jumps in time.
   const previousModeRef = useRef(mode);
   useEffect(() => {
@@ -330,18 +413,55 @@ function JumpViewer({
         ) : null}
       </View>
 
-      {/* The scrubber gets its own full-width row: easy to grab and slide. */}
-      <Slider
-        style={styles.scrubber}
-        minimumValue={0}
-        maximumValue={Math.max(0, frames.length - 1)}
-        step={1}
-        value={frameIndex}
-        minimumTrackTintColor={tokens.electric}
-        maximumTrackTintColor={tokens.border}
-        thumbTintColor={tokens.electric}
-        onValueChange={(value) => seekToFrame(Math.round(value))}
-      />
+      {compactControls ? (
+        // Landscape fullscreen: no room for the strip — a slim slider scrubs instead.
+        <Slider
+          style={styles.scrubber}
+          minimumValue={0}
+          maximumValue={Math.max(0, frames.length - 1)}
+          step={1}
+          value={frameIndex}
+          minimumTrackTintColor={tokens.electric}
+          maximumTrackTintColor={tokens.border}
+          thumbTintColor={tokens.electric}
+          onValueChange={(value) => seekToFrame(Math.round(value))}
+        />
+      ) : (
+        /* The filmstrip IS the scrubber: drag it under the fixed playhead. */
+        <View style={styles.filmstripWrap} onLayout={(event) => setStripWidth(event.nativeEvent.layout.width)}>
+          <ScrollView
+            ref={stripRef}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            snapToInterval={FILMSTRIP_STEP}
+            decelerationRate="fast"
+            scrollEventThrottle={16}
+            onScrollBeginDrag={handleStripDragStart}
+            onScroll={handleStripScroll}
+            onScrollEndDrag={handleStripDragEnd}
+            onMomentumScrollBegin={handleStripMomentumStart}
+            onMomentumScrollEnd={handleStripMomentumEnd}
+            contentContainerStyle={[styles.filmstrip, { paddingHorizontal: stripEdgePadding }]}
+          >
+            {frames.map((frame, index) => (
+              <Pressable key={frame.t} onPress={() => seekToFrame(index)} style={styles.filmstripCell}>
+                <Image
+                  source={{ uri: frame.image }}
+                  style={[styles.filmstripImage, index === frameIndex && styles.filmstripImageActive]}
+                />
+                {labels.has(index) ? (
+                  <View style={styles.eventTag}>
+                    <AppText size={10} weight="bold" color={tokens.graphite}>
+                      {labels.get(index)}
+                    </AppText>
+                  </View>
+                ) : null}
+              </Pressable>
+            ))}
+          </ScrollView>
+          <View pointerEvents="none" style={styles.playhead} />
+        </View>
+      )}
 
       <View style={styles.playerControls}>
         <View style={styles.transportGroup}>
@@ -378,26 +498,6 @@ function JumpViewer({
           </NumberText>
         </View>
       </View>
-
-      {compactControls ? null : (
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filmstrip}>
-        {frames.map((frame, index) => (
-          <Pressable key={frame.t} onPress={() => seekToFrame(index)} style={styles.filmstripCell}>
-            <Image
-              source={{ uri: frame.image }}
-              style={[styles.filmstripImage, index === frameIndex && styles.filmstripImageActive]}
-            />
-            {labels.has(index) ? (
-              <View style={styles.eventTag}>
-                <AppText size={10} weight="bold" color={tokens.graphite}>
-                  {labels.get(index)}
-                </AppText>
-              </View>
-            ) : null}
-          </Pressable>
-        ))}
-      </ScrollView>
-      )}
     </View>
   );
 }
@@ -957,8 +1057,21 @@ const styles = StyleSheet.create({
     minWidth: 42,
     textAlign: "right"
   },
+  filmstripWrap: {
+    width: "100%"
+  },
   filmstrip: {
-    gap: spacing.sm
+    gap: FILMSTRIP_GAP
+  },
+  playhead: {
+    position: "absolute",
+    top: -3,
+    bottom: -3,
+    left: "50%",
+    width: 2,
+    marginLeft: -1,
+    borderRadius: 1,
+    backgroundColor: tokens.electric
   },
   filmstripCell: {
     alignItems: "center"
