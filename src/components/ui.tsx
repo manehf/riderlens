@@ -52,6 +52,19 @@ export function NumberText(props: TextProps) {
   return <MonoText {...props} />;
 }
 
+/** Display face for the loud moments: wordmark and screen titles only.
+ * Body text stays on Plex — this is the poster voice, not the reading voice. */
+export function DisplayText({ children, color = tokens.text, size = 26, style, numberOfLines }: TextProps) {
+  return (
+    <Text
+      numberOfLines={numberOfLines}
+      style={[{ fontFamily: tokens.fontDisplay, fontSize: size, color, letterSpacing: 0.5 }, style]}
+    >
+      {children}
+    </Text>
+  );
+}
+
 type HeadingProps = PropsWithChildren<{
   level?: 1 | 2 | 3;
   style?: StyleProp<TextStyle>;
@@ -245,9 +258,7 @@ export function BrandHeader({ subtitle, action }: BrandHeaderProps) {
           </AppText>
         </View>
         <View>
-          <AppText weight="bold" size={21}>
-            RiderLens
-          </AppText>
+          <DisplayText size={26}>RIDERLENS</DisplayText>
           {subtitle ? (
             <AppText weight="semi" size={12} color={tokens.textMuted}>
               {subtitle}

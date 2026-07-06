@@ -3,6 +3,7 @@ import {
   IBMPlexMono_700Bold,
   useFonts as useMonoFonts
 } from "@expo-google-fonts/ibm-plex-mono";
+import { BebasNeue_400Regular } from "@expo-google-fonts/bebas-neue";
 import {
   IBMPlexSans_400Regular,
   IBMPlexSans_600SemiBold,
@@ -29,7 +30,8 @@ export default function App() {
   const [sansLoaded] = useSansFonts({
     IBMPlexSans: IBMPlexSans_400Regular,
     "IBMPlexSans-SemiBold": IBMPlexSans_600SemiBold,
-    "IBMPlexSans-Bold": IBMPlexSans_700Bold
+    "IBMPlexSans-Bold": IBMPlexSans_700Bold,
+    BebasNeue: BebasNeue_400Regular
   });
   const [monoLoaded] = useMonoFonts({
     "IBMPlexMono-Medium": IBMPlexMono_500Medium,

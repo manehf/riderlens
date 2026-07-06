@@ -4,7 +4,7 @@ import { AlertTriangle, Camera, CheckCircle2, Clock3, FileVideo, Scissors, Spark
 import { useEffect, useRef, useState } from "react";
 import { Alert, Image, Modal, Pressable, ScrollView, StyleSheet, View } from "react-native";
 
-import { AppText, Button, Card, Chip, NumberText } from "../components/ui";
+import { AppText, Button, Card, Chip, DisplayText, NumberText } from "../components/ui";
 import type { PendingCapture, RiderLensStore } from "../hooks/useRiderLensMvp";
 import { radius, spacing, tokens } from "../theme/tokens";
 
@@ -72,9 +72,7 @@ export function CaptureSheet({ store, visible, onClose }: CaptureSheetProps) {
       <View style={styles.sheetRoot}>
         <View style={styles.sheetHeader}>
           <View style={styles.sheetHeaderText}>
-            <AppText weight="bold" size={17}>
-              Capture
-            </AppText>
+            <DisplayText size={24}>CAPTURE</DisplayText>
             <AppText color={tokens.textMuted} size={12}>
               Film or pick a clip — RiderLens finds the moment and draws your body position.
             </AppText>

@@ -3,7 +3,7 @@ import { useMemo, useState } from "react";
 import { Image, Modal, Pressable, ScrollView, StyleSheet, View } from "react-native";
 
 import { RecordCard } from "../components/RecordCard";
-import { AppText, BrandHeader, Card, Chip, NumberText } from "../components/ui";
+import { AppText, BrandHeader, Card, Chip, DisplayText, NumberText } from "../components/ui";
 import type { RiderLensStore } from "../hooks/useRiderLensMvp";
 import { getRecordTitle, getSystemTags } from "../services/analysis";
 import { radius, spacing, tokens } from "../theme/tokens";
@@ -53,9 +53,9 @@ export function SessionsScreen({ store }: SessionsScreenProps) {
       <BrandHeader />
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.intro}>
-          <AppText weight="bold" size={26} style={styles.introTitle}>
-            Your moments
-          </AppText>
+          <DisplayText size={34} style={styles.introTitle}>
+            YOUR MOMENTS
+          </DisplayText>
           <AppText color={tokens.textMuted} size={13} style={styles.introBody}>
             Trimmed to the action, your body position on every frame — tap one to study or share it.
           </AppText>
@@ -215,7 +215,7 @@ const styles = StyleSheet.create({
     gap: spacing.xs
   },
   introTitle: {
-    lineHeight: 30
+    lineHeight: 36
   },
   introBody: {
     lineHeight: 18

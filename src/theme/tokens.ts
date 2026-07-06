@@ -51,7 +51,10 @@ export const tokens = {
   fontUiSemiBold: "IBMPlexSans-SemiBold",
   fontUiBold: "IBMPlexSans-Bold",
   fontMono: "IBMPlexMono-Medium",
-  fontMonoBold: "IBMPlexMono-Bold"
+  fontMonoBold: "IBMPlexMono-Bold",
+  // Display face for the loud moments only: wordmark + screen titles.
+  // Condensed action caps; body text stays on Plex for readability.
+  fontDisplay: "BebasNeue"
 } as const;
 
 export const radius = {
