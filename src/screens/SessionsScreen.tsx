@@ -80,7 +80,7 @@ export function SessionsScreen({ store }: SessionsScreenProps) {
             <View style={styles.emptyText}>
               <AppText weight="bold">No records yet</AppText>
               <AppText color={tokens.textMuted} size={13}>
-                Capture a moment from the Capture tab to start your library.
+                Tap the + button to capture your first moment.
               </AppText>
             </View>
           </Card>

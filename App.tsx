@@ -9,31 +9,22 @@ import {
   IBMPlexSans_700Bold,
   useFonts as useSansFonts
 } from "@expo-google-fonts/ibm-plex-sans";
-import { ListVideo, Plus, Video } from "lucide-react-native";
-import { useMemo, useState } from "react";
-import { StyleSheet, View } from "react-native";
+import { Plus } from "lucide-react-native";
+import { useState } from "react";
+import { Pressable, StyleSheet, View } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 
-import { AppText, BottomTabs, Screen, type TabItem } from "./src/components/ui";
+import { AppText, Screen } from "./src/components/ui";
 import { useRiderLensMvp } from "./src/hooks/useRiderLensMvp";
-import { CoachScreen } from "./src/screens/CoachScreen";
+import { CaptureSheet } from "./src/screens/CaptureSheet";
 import { SessionsScreen } from "./src/screens/SessionsScreen";
-import { spacing, tokens } from "./src/theme/tokens";
+import { radius, shadows, spacing, tokens } from "./src/theme/tokens";
 
-// MVP focus: capture and the library. The Garage and Tools screens still exist
-// in src/screens but are unrouted until the video loop is done.
-type TabKey = "coach" | "sessions";
-
-const tabs: TabItem[] = [
-  { key: "coach", label: "Capture", icon: Video },
-  { key: "sessions", label: "Library", icon: ListVideo }
-];
-
+// One home (the library), one action (capture). The Garage and Tools screens
+// still exist in src/screens but are unrouted until the video loop is done.
 export default function App() {
-  const [activeTab, setActiveTab] = useState<TabKey>("coach");
-  // Bumped by the center (+) button: jump to Capture with the camera open.
-  const [captureSignal, setCaptureSignal] = useState(0);
+  const [captureOpen, setCaptureOpen] = useState(false);
   const store = useRiderLensMvp();
   const [sansLoaded] = useSansFonts({
     IBMPlexSans: IBMPlexSans_400Regular,
@@ -44,16 +35,6 @@ export default function App() {
     "IBMPlexMono-Medium": IBMPlexMono_500Medium,
     "IBMPlexMono-Bold": IBMPlexMono_700Bold
   });
-
-  const currentScreen = useMemo(() => {
-    switch (activeTab) {
-      case "sessions":
-        return <SessionsScreen store={store} />;
-      case "coach":
-      default:
-        return <CoachScreen store={store} captureSignal={captureSignal} />;
-    }
-  }, [activeTab, captureSignal, store]);
 
   if (!sansLoaded || !monoLoaded) {
     return (
@@ -75,21 +56,19 @@ export default function App() {
     <SafeAreaProvider>
       <SafeAreaView style={styles.safeArea}>
         <StatusBar style="dark" />
-        <Screen>
-          {currentScreen}
-          <BottomTabs
-            items={tabs}
-            activeKey={activeTab}
-            onChange={(key) => setActiveTab(key as TabKey)}
-            centerAction={{
-              icon: Plus,
-              label: "Quick capture",
-              onPress: () => {
-                setActiveTab("coach");
-                setCaptureSignal((value) => value + 1);
-              }
-            }}
-          />
+        <Screen insetBottom={0}>
+          <SessionsScreen store={store} />
+          <View style={styles.fabWrap} pointerEvents="box-none">
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Capture a moment"
+              onPress={() => setCaptureOpen(true)}
+              style={({ pressed }) => [styles.fab, pressed && styles.fabPressed]}
+            >
+              <Plus color={tokens.graphite} size={28} strokeWidth={2.6} />
+            </Pressable>
+          </View>
+          <CaptureSheet store={store} visible={captureOpen} onClose={() => setCaptureOpen(false)} />
         </Screen>
       </SafeAreaView>
     </SafeAreaProvider>
@@ -115,5 +94,24 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     borderRadius: 14,
     backgroundColor: tokens.graphite
+  },
+  fabWrap: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: spacing.xl,
+    alignItems: "center"
+  },
+  fab: {
+    width: 62,
+    height: 62,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: radius.pill,
+    backgroundColor: tokens.electric,
+    ...shadows.card
+  },
+  fabPressed: {
+    transform: [{ scale: 0.95 }]
   }
 });

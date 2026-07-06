@@ -55,23 +55,21 @@ Everything else is deliberately outside the MVP: rider measurements, bike setup,
 
 ## 4. Screens
 
-v1 has **two routed screens plus one sheet**, held together by a three-slot tab bar.
+v1 is **one home screen, one action, two sheets**. No tab bar: earlier iterations (tabs + a center (+)) gave a two-screen app three capture entry points; the redundancy was removed on July 6.
 
-### 4.1 Tab bar — `Capture · (+) · Library`
-- Two tabs only. The center **(+)** is a prominent electric button: from anywhere, jump to Capture with the camera opening — one-tap quick record.
-
-### 4.2 Capture screen (`CoachScreen.tsx`) — *the default tab*
-- **Record** (in-app camera, 30s max, side-view hint) and **Library** (photo-library picker) actions.
-- **Window step** after either: AI-proposed trim window when the worker is reachable ("AI found the moment"), manual start/end steppers always available. Thumbnail strip shows what's in/out of the window.
-- **Latest record card** (shared `RecordCard` component, below) so the just-captured moment is immediately reviewable.
-- Safety note card ("Ride within your limits") stays.
-
-### 4.3 Library screen (`SessionsScreen.tsx`)
+### 4.1 Home — the Library (`SessionsScreen.tsx`)
 - **Poster grid** (2-column): every record shows its poster (middle filmstrip frame, skeleton burned in), time-based title, duration, tags.
 - **Tag filter chips**: All + every known tag (auto + user). One active filter at a time.
 - Tap a poster → **record detail sheet** (full-screen pageSheet): the complete `RecordCard` + close.
+- **Floating (+)** (bottom center, electric): the app's single capture entry point → opens the capture sheet.
 
-### 4.4 Record card (shared component, used in both places)
+### 4.2 Capture sheet (`CaptureSheet.tsx`) — modal over the library
+- **Record** (in-app camera, 30s max, side-view hint) and **Pick video** (photo-library picker) — the rider decides behind the single (+).
+- **Window step** after either: AI-proposed trim window when the worker is reachable ("AI found the moment"), manual start/end steppers always available. Thumbnail strip shows what's in/out of the window.
+- **Create record** closes the sheet; the new record lands at the top of the library grid, visibly `queued → processing → ready`.
+- Safety note card ("Ride within your limits") lives here.
+
+### 4.4 Record card (shared component, shown in the record detail sheet)
 - Header: time title ("Today · 14:07"), window + AI/manual note; the status chip slot becomes the **Skeleton | Video** lens toggle once ready.
 - Tag row: auto `# crash` (red) + user tags + one-tap add with suggestions.
 - **Single viewport**: skeleton frame sequence or clean video, one shared playback position across both lenses.
@@ -89,7 +87,7 @@ v1 has **two routed screens plus one sheet**, held together by a three-slot tab 
 - `ToolsScreen.tsx` stays in the codebase, **unrouted**. Same reasoning and same return path as Garage (sag/angle measuring tools belong with the Garage layer).
 
 ### 4.7 Intentionally absent from v1
-- No onboarding flow (the Capture screen is self-explanatory; revisit only if field tests say otherwise).
+- No onboarding flow (the library + one (+) button is self-explanatory; revisit only if field tests say otherwise).
 - No accounts, login, or cloud sync (local-first; Supabase stays wired but dormant — "Demo mode" chip should be removed from the UI before beta).
 - No settings screen.
 - No coaching output of any kind.

@@ -1,26 +1,38 @@
 import { CameraView, useCameraPermissions } from "expo-camera";
 import * as VideoThumbnails from "expo-video-thumbnails";
-import { AlertTriangle, Camera, CheckCircle2, Clock3, FileVideo, Scissors, Sparkles, Upload } from "lucide-react-native";
+import { AlertTriangle, Camera, CheckCircle2, Clock3, FileVideo, Scissors, Sparkles, Upload, X } from "lucide-react-native";
 import { useEffect, useRef, useState } from "react";
-import { Alert, Image, ScrollView, StyleSheet, View } from "react-native";
+import { Alert, Image, Modal, Pressable, ScrollView, StyleSheet, View } from "react-native";
 
-import { RecordCard } from "../components/RecordCard";
-import { AppText, BrandHeader, Button, Card, Chip, NumberText, SectionHeader } from "../components/ui";
+import { AppText, Button, Card, Chip, NumberText } from "../components/ui";
 import type { PendingCapture, RiderLensStore } from "../hooks/useRiderLensMvp";
-import { spacing, tokens } from "../theme/tokens";
+import { radius, spacing, tokens } from "../theme/tokens";
 
-type CoachScreenProps = {
+type CaptureSheetProps = {
   store: RiderLensStore;
-  /** Incremented by the tab bar's (+) button: open the camera immediately. */
-  captureSignal?: number;
+  visible: boolean;
+  onClose: () => void;
 };
 
-export function CoachScreen({ store, captureSignal }: CoachScreenProps) {
+/** The capture flow as a modal over the library: film or pick a clip, confirm
+ * the window, create the record. The new record lands in the library grid. */
+export function CaptureSheet({ store, visible, onClose }: CaptureSheetProps) {
   const [cameraOpen, setCameraOpen] = useState(false);
   const [recording, setRecording] = useState(false);
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const cameraRef = useRef<any>(null);
-  const latestRecord = store.records[0];
+
+  function close() {
+    setCameraOpen(false);
+    store.cancelPendingCapture();
+    onClose();
+  }
+
+  async function confirmCapture() {
+    await store.confirmPendingCapture();
+    setCameraOpen(false);
+    onClose();
+  }
 
   async function openCamera() {
     if (!cameraPermission?.granted) {
@@ -36,13 +48,6 @@ export function CoachScreen({ store, captureSignal }: CoachScreenProps) {
     }
     setCameraOpen(true);
   }
-
-  useEffect(() => {
-    if (!captureSignal) return;
-    void openCamera();
-    // Quick capture reacts to the (+) tap, not to permission/state changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [captureSignal]);
 
   async function recordClip() {
     if (!cameraRef.current || recording) return;
@@ -63,78 +68,77 @@ export function CoachScreen({ store, captureSignal }: CoachScreenProps) {
   }
 
   return (
-    <View style={styles.root}>
-      <BrandHeader subtitle="Capture" />
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <SectionHeader
-          eyebrow="Capture"
-          title="Record the moment"
-          body="Film or pick a clip. RiderLens finds the moment, cuts it out, and draws your body position on every frame."
-        />
-
-        <View style={styles.actionGrid}>
-          <Button icon={Camera} onPress={openCamera} style={styles.actionButton}>
-            Record
-          </Button>
-          <Button icon={Upload} variant="secondary" onPress={() => store.uploadVideoFromLibrary()} style={styles.actionButton}>
-            Pick video
-          </Button>
-        </View>
-
-        {cameraOpen ? (
-          <Card style={styles.cameraCard}>
-            <View style={styles.cameraFrame}>
-              <CameraView ref={cameraRef} mode="video" style={StyleSheet.absoluteFill} />
-              <View style={styles.cameraHud}>
-                <Chip tone="dark" icon={FileVideo}>
-                  Side view
-                </Chip>
-                <Chip tone="dark" icon={Clock3}>
-                  <NumberText color={tokens.electric} size={12} weight="bold">
-                    30s
-                  </NumberText>
-                </Chip>
-              </View>
-            </View>
-            <View style={styles.actionGrid}>
-              <Button icon={recording ? CheckCircle2 : Camera} onPress={recording ? stopRecording : recordClip}>
-                {recording ? "Stop" : "Start"}
-              </Button>
-              <Button variant="secondary" onPress={() => setCameraOpen(false)}>
-                Cancel
-              </Button>
-            </View>
-          </Card>
-        ) : null}
-
-        {store.pendingCapture ? <WindowStep store={store} capture={store.pendingCapture} /> : null}
-
-        {!store.pendingCapture && latestRecord ? (
-          <RecordCard
-            record={latestRecord}
-            onShare={store.shareRecordClip}
-            onRetry={(record) => store.retryRecord(record.id)}
-            onDelete={(record) => store.deleteRecord(record.id)}
-            onAddTag={store.addRecordTag}
-            onRemoveTag={store.removeRecordTag}
-            tagSuggestions={store.knownTags}
-          />
-        ) : null}
-
-        <Card style={styles.warningCard}>
-          <View style={styles.warningHeader}>
-            <AlertTriangle color="#7a4b00" size={18} />
-            <AppText weight="bold" color="#704400">
-              Ride within your limits
+    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={close}>
+      <View style={styles.sheetRoot}>
+        <View style={styles.sheetHeader}>
+          <View style={styles.sheetHeaderText}>
+            <AppText weight="bold" size={17}>
+              Capture
+            </AppText>
+            <AppText color={tokens.textMuted} size={12}>
+              Film or pick a clip — RiderLens finds the moment and draws your body position.
             </AppText>
           </View>
-          <AppText size={13} color="#704400">
-            RiderLens captures what happened — it does not make a jump safe. Practice within your ability and wear protective
-            gear.
-          </AppText>
-        </Card>
-      </ScrollView>
-    </View>
+          <Pressable accessibilityRole="button" accessibilityLabel="Close capture" onPress={close} style={styles.sheetClose}>
+            <X color={tokens.text} size={20} strokeWidth={2.4} />
+          </Pressable>
+        </View>
+
+        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+          <View style={styles.actionGrid}>
+            <Button icon={Camera} onPress={openCamera} style={styles.actionButton}>
+              Record
+            </Button>
+            <Button icon={Upload} variant="secondary" onPress={() => store.uploadVideoFromLibrary()} style={styles.actionButton}>
+              Pick video
+            </Button>
+          </View>
+
+          {cameraOpen ? (
+            <Card style={styles.cameraCard}>
+              <View style={styles.cameraFrame}>
+                <CameraView ref={cameraRef} mode="video" style={StyleSheet.absoluteFill} />
+                <View style={styles.cameraHud}>
+                  <Chip tone="dark" icon={FileVideo}>
+                    Side view
+                  </Chip>
+                  <Chip tone="dark" icon={Clock3}>
+                    <NumberText color={tokens.electric} size={12} weight="bold">
+                      30s
+                    </NumberText>
+                  </Chip>
+                </View>
+              </View>
+              <View style={styles.actionGrid}>
+                <Button icon={recording ? CheckCircle2 : Camera} onPress={recording ? stopRecording : recordClip}>
+                  {recording ? "Stop" : "Start"}
+                </Button>
+                <Button variant="secondary" onPress={() => setCameraOpen(false)}>
+                  Cancel
+                </Button>
+              </View>
+            </Card>
+          ) : null}
+
+          {store.pendingCapture ? (
+            <WindowStep store={store} capture={store.pendingCapture} onConfirm={confirmCapture} />
+          ) : null}
+
+          <Card style={styles.warningCard}>
+            <View style={styles.warningHeader}>
+              <AlertTriangle color="#7a4b00" size={18} />
+              <AppText weight="bold" color="#704400">
+                Ride within your limits
+              </AppText>
+            </View>
+            <AppText size={13} color="#704400">
+              RiderLens captures what happened — it does not make a jump safe. Practice within your ability and wear
+              protective gear.
+            </AppText>
+          </Card>
+        </ScrollView>
+      </View>
+    </Modal>
   );
 }
 
@@ -142,7 +146,15 @@ export function CoachScreen({ store, captureSignal }: CoachScreenProps) {
 
 const THUMBNAIL_COUNT = 8;
 
-function WindowStep({ store, capture }: { store: RiderLensStore; capture: PendingCapture }) {
+function WindowStep({
+  store,
+  capture,
+  onConfirm
+}: {
+  store: RiderLensStore;
+  capture: PendingCapture;
+  onConfirm: () => void;
+}) {
   const [thumbnails, setThumbnails] = useState<Array<{ t: number; uri: string }>>([]);
   const windowSeconds = Math.max(0, capture.trimEndSeconds - capture.trimStartSeconds);
 
@@ -221,7 +233,7 @@ function WindowStep({ store, capture }: { store: RiderLensStore; capture: Pendin
       />
 
       <View style={styles.actionGrid}>
-        <Button onPress={() => store.confirmPendingCapture()} style={styles.actionButton}>
+        <Button onPress={onConfirm} style={styles.actionButton}>
           Create record
         </Button>
         <Button variant="secondary" onPress={store.cancelPendingCapture} style={styles.actionButton}>
@@ -254,13 +266,35 @@ function WindowControl({ label, value, onChange }: { label: string; value: numbe
 }
 
 const styles = StyleSheet.create({
-  root: {
-    flex: 1
+  sheetRoot: {
+    flex: 1,
+    backgroundColor: tokens.background
+  },
+  sheetHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: spacing.md,
+    paddingHorizontal: spacing.xl,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.md
+  },
+  sheetHeaderText: {
+    flex: 1,
+    gap: 2
+  },
+  sheetClose: {
+    width: 38,
+    height: 38,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: radius.pill,
+    backgroundColor: tokens.surfaceMuted
   },
   content: {
     gap: spacing.lg,
     paddingHorizontal: spacing.xl,
-    paddingBottom: 120
+    paddingBottom: spacing.xl
   },
   actionGrid: {
     flexDirection: "row",
