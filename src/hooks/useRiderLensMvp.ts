@@ -3,7 +3,7 @@ import * as Device from "expo-device";
 import * as ImagePicker from "expo-image-picker";
 import * as Sharing from "expo-sharing";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, AppState, Share } from "react-native";
+import { Alert, AppState, Platform, Share } from "react-native";
 
 import { demoGarage } from "../data/demoData";
 import { createId } from "../services/analysis";
@@ -356,16 +356,25 @@ export function useRiderLensMvp(): RiderLensStore {
   }, [records]);
 
   // Share whichever lens is active: the skeleton version carries the watermark
-  // (the growth loop), the clean clip is just the footage.
+  // and QR end-card (the growth loop), the clean clip is just the footage.
   const shareRecordClip = useCallback(async (record: JumpRecord, preferSkeleton = false) => {
     const uri = preferSkeleton && record.skeletonClipUri ? record.skeletonClipUri : record.clipUri;
-    if (uri && (await Sharing.isAvailableAsync())) {
-      await Sharing.shareAsync(uri, { mimeType: "video/mp4", dialogTitle: "Share the moment" });
-      return;
+    if (uri) {
+      if (Platform.OS === "ios") {
+        // File + message together: targets that accept text (Messages, Mail,
+        // Telegram) include the link; media-only targets (WhatsApp, IG) keep
+        // just the video — which is why the link is also burned into it.
+        await Share.share({ url: uri, message: "Filmed with RiderLens — https://riderlens.app" });
+        return;
+      }
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(uri, { mimeType: "video/mp4", dialogTitle: "Share the moment" });
+        return;
+      }
     }
     await Share.share({
       title: "RiderLens record",
-      message: "Captured with RiderLens — riderlens.app"
+      message: "Captured with RiderLens — https://riderlens.app"
     });
   }, []);
 
