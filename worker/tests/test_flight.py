@@ -99,3 +99,14 @@ def test_sparse_series_falls_back_to_event_times():
     assert flight is not None
     assert flight["airtimeSeconds"] == pytest.approx(0.8, abs=0.01)
     assert flight["method"] == "symmetric"
+
+
+def test_endcard_builds_scannable_frame():
+    from app.main import build_endcard
+
+    frame = build_endcard(960, 540)
+    assert frame.shape == (540, 960, 3)
+    # The QR tile must contain both true white and dark modules.
+    assert frame.max() >= 250
+    center = frame[200:420, 300:660]
+    assert (center < 40).any() and (center > 220).any()

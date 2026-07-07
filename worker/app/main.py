@@ -406,6 +406,10 @@ def draw_skeleton(frame, landmarks, visibility_threshold: float = 0.5) -> None:
             cv2.circle(frame, joint, thickness, SKELETON_COLOR, -1, cv2.LINE_AA)
 
 
+# The share destination burned into every skeleton clip: watermark + end-card QR.
+SHARE_URL = os.getenv("RIDERLENS_SHARE_URL", "https://riderlens.app")
+ENDCARD_SECONDS = 1.4
+
 WATERMARK_TEXT = "riderlens.app"
 # Electric green + graphite outline, BGR (matches the skeleton palette).
 WATERMARK_COLOR = (46, 255, 182)
@@ -423,6 +427,37 @@ def draw_watermark(frame) -> None:
     y = height - max(12, int(0.03 * height))
     cv2.putText(frame, WATERMARK_TEXT, (x, y), cv2.FONT_HERSHEY_SIMPLEX, scale, WATERMARK_OUTLINE, thickness + 2, cv2.LINE_AA)
     cv2.putText(frame, WATERMARK_TEXT, (x, y), cv2.FONT_HERSHEY_SIMPLEX, scale, WATERMARK_COLOR, thickness, cv2.LINE_AA)
+
+
+def build_endcard(width: int, height: int):
+    """Closing frame for shared clips: graphite card, wordmark, QR to the
+    share page. Whoever receives the clip can scan straight to the app."""
+    import io
+
+    import segno
+
+    canvas = np.zeros((height, width, 3), dtype=np.uint8)
+    canvas[:] = (17, 20, 16)  # graphite, BGR
+
+    # QR: dark modules on a white tile so any scanner reads it.
+    qr_size = int(min(width, height) * 0.44)
+    buffer = io.BytesIO()
+    segno.make(SHARE_URL, error="m").save(buffer, kind="png", scale=12, border=2)
+    qr_image = cv2.imdecode(np.frombuffer(buffer.getvalue(), np.uint8), cv2.IMREAD_COLOR)
+    qr_image = cv2.resize(qr_image, (qr_size, qr_size), interpolation=cv2.INTER_NEAREST)
+    qr_x = (width - qr_size) // 2
+    qr_y = int(height * 0.28)
+    canvas[qr_y : qr_y + qr_size, qr_x : qr_x + qr_size] = qr_image
+
+    def centered_text(text: str, y: int, scale: float, color, thickness: int) -> None:
+        (text_width, _), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, scale, thickness)
+        cv2.putText(canvas, text, ((width - text_width) // 2, y), cv2.FONT_HERSHEY_SIMPLEX, scale, color, thickness, cv2.LINE_AA)
+
+    title_scale = max(0.9, width / 1280 * 1.6)
+    centered_text("RIDERLENS", int(height * 0.18), title_scale, (46, 255, 182), max(2, int(title_scale * 2)))
+    url_scale = max(0.6, width / 1280 * 0.9)
+    centered_text(SHARE_URL.replace("https://", ""), int(height * 0.28) + qr_size + int(height * 0.09), url_scale, (240, 244, 236), max(1, int(url_scale * 2)))
+    return canvas
 
 
 class OverlayClipWriter:
@@ -636,7 +671,15 @@ def measure_window(
             image = encode_frame_jpeg(small)
             if image:
                 air_frames.append({"t": round(time_seconds, 2), "image": image})
-    overlay_clip = overlay.finalize() if overlay is not None else None
+    overlay_clip = None
+    if overlay is not None:
+        # Close the share clip with the QR end-card before encoding finishes.
+        if overlay.size is not None and not overlay.failed:
+            endcard = build_endcard(*overlay.size)
+            endcard_frames = max(1, int(ENDCARD_SECONDS / step))
+            for _ in range(endcard_frames):
+                overlay.add(endcard)
+        overlay_clip = overlay.finalize()
     return series, air_frames, filmstrip, overlay_clip
 
 
