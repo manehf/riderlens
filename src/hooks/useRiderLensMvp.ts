@@ -1,4 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as Device from "expo-device";
 import * as ImagePicker from "expo-image-picker";
 import * as Sharing from "expo-sharing";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -59,6 +60,7 @@ export type RiderLensStore = {
   saveProfile: (updates: Partial<RiderProfile>) => void;
   shareRecordClip: (record: JumpRecord, preferSkeleton?: boolean) => Promise<void>;
   uploadVideoFromLibrary: () => Promise<void>;
+  recordVideoWithCamera: () => Promise<void>;
   garage: GarageState;
   shareSetupSheet: (permission?: PermissionLevel) => Promise<void>;
   saveSetupNote: (notes: string) => void;
@@ -365,6 +367,38 @@ export function useRiderLensMvp(): RiderLensStore {
     });
   }, []);
 
+  // The native system camera (via the image picker) beats any embedded
+  // viewfinder: full-screen preview, zoom, exposure, flash — and it hands back
+  // a file exactly like the library path.
+  const recordVideoWithCamera = useCallback(async () => {
+    if (!Device.isDevice) {
+      Alert.alert(
+        "No camera on the simulator",
+        "Recording needs a real phone. Use Pick from library to test the flow here."
+      );
+      return;
+    }
+    const permission = await ImagePicker.requestCameraPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert(
+        "Camera access needed",
+        "Enable camera access in Settings to record clips, or pick a video from your library instead."
+      );
+      return;
+    }
+
+    const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: ["videos"],
+      videoMaxDuration: 30
+    });
+
+    if (result.canceled) return;
+    const asset = result.assets[0];
+    const rawDuration = asset.duration ?? 6000;
+    const durationSeconds = rawDuration > 1000 ? rawDuration / 1000 : rawDuration;
+    startCaptureFromUri(asset.uri, durationSeconds);
+  }, [startCaptureFromUri]);
+
   const uploadVideoFromLibrary = useCallback(async () => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
@@ -463,6 +497,7 @@ export function useRiderLensMvp(): RiderLensStore {
     saveProfile,
     shareRecordClip,
     uploadVideoFromLibrary,
+    recordVideoWithCamera,
     garage,
     shareSetupSheet,
     saveSetupNote,

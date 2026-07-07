@@ -1,9 +1,7 @@
-import { CameraView, useCameraPermissions } from "expo-camera";
-import * as Device from "expo-device";
 import * as VideoThumbnails from "expo-video-thumbnails";
-import { AlertTriangle, Camera, CheckCircle2, Clock3, FileVideo, Scissors, Sparkles, Upload, X } from "lucide-react-native";
-import { useEffect, useRef, useState } from "react";
-import { Alert, Image, Modal, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { AlertTriangle, Scissors, Sparkles, X } from "lucide-react-native";
+import { useEffect, useState } from "react";
+import { Image, Modal, Pressable, ScrollView, StyleSheet, View } from "react-native";
 
 import { AppText, Button, Card, Chip, DisplayText, NumberText } from "../components/ui";
 import type { PendingCapture, RiderLensStore } from "../hooks/useRiderLensMvp";
@@ -12,90 +10,31 @@ import { radius, spacing, tokens } from "../theme/tokens";
 type CaptureSheetProps = {
   store: RiderLensStore;
   visible: boolean;
-  /** "camera" jumps straight into recording when the sheet opens. */
-  intent?: "camera";
   onClose: () => void;
 };
 
-/** The capture flow as a modal over the library: film or pick a clip, confirm
- * the window, create the record. The new record lands in the library grid. */
-export function CaptureSheet({ store, visible, intent, onClose }: CaptureSheetProps) {
-  const [cameraOpen, setCameraOpen] = useState(false);
-  const [recording, setRecording] = useState(false);
-  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
-  const cameraRef = useRef<any>(null);
-
+/** The trim step as a modal over the library. Filming and picking happen in
+ * native UIs (system camera / photo picker); this sheet opens once a clip
+ * exists, to confirm the window and create the record. */
+export function CaptureSheet({ store, visible, onClose }: CaptureSheetProps) {
   function close() {
-    setCameraOpen(false);
     store.cancelPendingCapture();
     onClose();
   }
 
   async function confirmCapture() {
     await store.confirmPendingCapture();
-    setCameraOpen(false);
     onClose();
   }
-
-  async function openCamera() {
-    if (!Device.isDevice) {
-      // Simulators have no camera; recording would silently do nothing.
-      Alert.alert(
-        "No camera on the simulator",
-        "Recording needs a real phone. Use Pick from library to test the flow here."
-      );
-      return;
-    }
-    if (!cameraPermission?.granted) {
-      const permission = await requestCameraPermission();
-      if (!permission.granted) {
-        // Never fail silently — the rider tapped a button and deserves an answer.
-        Alert.alert(
-          "Camera access needed",
-          "Enable camera access in Settings to record clips, or pick a video from your library instead."
-        );
-        return;
-      }
-    }
-    setCameraOpen(true);
-  }
-
-  async function recordClip() {
-    if (!cameraRef.current || recording) return;
-    setRecording(true);
-    try {
-      const video = await cameraRef.current.recordAsync({ maxDuration: 30 });
-      if (video?.uri) {
-        store.startCaptureFromUri(video.uri, 30);
-      }
-      setCameraOpen(false);
-    } catch {
-      // Never fail silently — recording can fail on unsupported hardware.
-      Alert.alert("Recording failed", "Could not record video on this device. Try Pick from library instead.");
-    } finally {
-      setRecording(false);
-    }
-  }
-
-  function stopRecording() {
-    cameraRef.current?.stopRecording?.();
-  }
-
-  // "Record video" from the action sheet: open the viewfinder immediately.
-  useEffect(() => {
-    if (visible && intent === "camera") void openCamera();
-    // Reacts to the sheet opening with intent, not to permission/state changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible, intent]);
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={close}>
       <View style={styles.sheetRoot}>
         <View style={styles.sheetHeader}>
           <View style={styles.sheetHeaderText}>
-            <DisplayText size={24}>CAPTURE</DisplayText>
+            <DisplayText size={24}>TRIM THE MOMENT</DisplayText>
             <AppText color={tokens.textMuted} size={12}>
-              Film or pick a clip — RiderLens finds the moment and draws your body position.
+              Set the window around the action — RiderLens does the rest.
             </AppText>
           </View>
           <Pressable accessibilityRole="button" accessibilityLabel="Close capture" onPress={close} style={styles.sheetClose}>
@@ -104,41 +43,6 @@ export function CaptureSheet({ store, visible, intent, onClose }: CaptureSheetPr
         </View>
 
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-          <View style={styles.actionGrid}>
-            <Button icon={Camera} onPress={openCamera} style={styles.actionButton}>
-              Record
-            </Button>
-            <Button icon={Upload} variant="secondary" onPress={() => store.uploadVideoFromLibrary()} style={styles.actionButton}>
-              Pick video
-            </Button>
-          </View>
-
-          {cameraOpen ? (
-            <Card style={styles.cameraCard}>
-              <View style={styles.cameraFrame}>
-                <CameraView ref={cameraRef} mode="video" style={StyleSheet.absoluteFill} />
-                <View style={styles.cameraHud}>
-                  <Chip tone="dark" icon={FileVideo}>
-                    Side view
-                  </Chip>
-                  <Chip tone="dark" icon={Clock3}>
-                    <NumberText color={tokens.electric} size={12} weight="bold">
-                      30s
-                    </NumberText>
-                  </Chip>
-                </View>
-              </View>
-              <View style={styles.actionGrid}>
-                <Button icon={recording ? CheckCircle2 : Camera} onPress={recording ? stopRecording : recordClip}>
-                  {recording ? "Stop" : "Start"}
-                </Button>
-                <Button variant="secondary" onPress={() => setCameraOpen(false)}>
-                  Cancel
-                </Button>
-              </View>
-            </Card>
-          ) : null}
-
           {store.pendingCapture ? (
             <WindowStep store={store} capture={store.pendingCapture} onConfirm={confirmCapture} />
           ) : null}
@@ -321,23 +225,6 @@ const styles = StyleSheet.create({
   },
   actionButton: {
     flex: 1
-  },
-  cameraCard: {
-    gap: spacing.md
-  },
-  cameraFrame: {
-    height: 260,
-    borderRadius: 12,
-    overflow: "hidden",
-    backgroundColor: tokens.graphite
-  },
-  cameraHud: {
-    position: "absolute",
-    top: spacing.md,
-    left: spacing.md,
-    right: spacing.md,
-    flexDirection: "row",
-    justifyContent: "space-between"
   },
   windowCard: {
     gap: spacing.md

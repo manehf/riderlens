@@ -43,28 +43,27 @@ export default function App() {
     // Prewarm: a scale-to-zero worker takes ~14s to cold start — pinging now
     // means it's awake by the time the rider has picked or filmed a clip.
     void isAnalysisWorkerReachable();
+    // Both choices open native UIs (system camera / photo picker); the capture
+    // sheet appears afterwards, directly on the trim step.
     if (Platform.OS === "ios") {
       ActionSheetIOS.showActionSheetWithOptions(
-        { options: ["Record video", "Pick from library", "Cancel"], cancelButtonIndex: 2 },
+        {
+          message: "Tip: film from the side with the whole rider in frame.",
+          options: ["Record video", "Pick from library", "Cancel"],
+          cancelButtonIndex: 2
+        },
         (index) => {
           if (index === 0) {
-            setCaptureIntent("camera");
-            setCaptureOpen(true);
+            void store.recordVideoWithCamera();
           } else if (index === 1) {
             void store.uploadVideoFromLibrary();
           }
         }
       );
     } else {
-      // Android: native dialog with the same three choices.
-      Alert.alert("Capture a moment", undefined, [
-        {
-          text: "Record video",
-          onPress: () => {
-            setCaptureIntent("camera");
-            setCaptureOpen(true);
-          }
-        },
+      // Android: native dialog with the same choices.
+      Alert.alert("Capture a moment", "Tip: film from the side with the whole rider in frame.", [
+        { text: "Record video", onPress: () => void store.recordVideoWithCamera() },
         { text: "Pick from library", onPress: () => void store.uploadVideoFromLibrary() },
         { text: "Cancel", style: "cancel" }
       ]);
@@ -121,15 +120,7 @@ export default function App() {
               <Plus color={tokens.graphite} size={28} strokeWidth={2.6} />
             </Pressable>
           </View>
-          <CaptureSheet
-            store={store}
-            visible={captureOpen}
-            intent={captureIntent}
-            onClose={() => {
-              setCaptureOpen(false);
-              setCaptureIntent(undefined);
-            }}
-          />
+          <CaptureSheet store={store} visible={captureOpen} onClose={() => setCaptureOpen(false)} />
         </Screen>
       </SafeAreaView>
     </SafeAreaProvider>
