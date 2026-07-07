@@ -1,6 +1,6 @@
 import { FileVideo, Settings, X } from "lucide-react-native";
 import { useMemo, useRef, useState } from "react";
-import { FlatList, Image, Modal, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { FlatList, Image, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, View } from "react-native";
 
 import { RecordCard } from "../components/RecordCard";
 import { SettingsSheet } from "./SettingsSheet";
@@ -31,6 +31,18 @@ export function SessionsScreen({ store }: SessionsScreenProps) {
   // The library is just the grid; a tapped record opens in a full-screen sheet.
   const [openRecordId, setOpenRecordId] = useState<string | undefined>();
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+
+  // Pull-to-refresh = "nudge my queued records now" instead of waiting for the
+  // 30s auto-retry probe. The grid itself is local state and always current.
+  async function handleRefresh() {
+    setRefreshing(true);
+    try {
+      await store.retryPendingRecords();
+    } finally {
+      setRefreshing(false);
+    }
+  }
   const sheetScrollRef = useRef<ScrollView>(null);
   const keyboardNudge = useKeyboardNudge(sheetScrollRef);
 
@@ -79,6 +91,7 @@ export function SessionsScreen({ store }: SessionsScreenProps) {
         showsVerticalScrollIndicator={false}
         initialNumToRender={8}
         windowSize={7}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={tokens.green} />}
         ListHeaderComponent={
           showFilters ? (
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>

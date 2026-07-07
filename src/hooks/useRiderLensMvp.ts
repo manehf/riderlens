@@ -51,6 +51,8 @@ export type RiderLensStore = {
   confirmPendingCapture: () => Promise<void>;
   cancelPendingCapture: () => void;
   retryRecord: (recordId: string) => void;
+  /** Probe the worker and re-run all queued/failed records now (pull-to-refresh). */
+  retryPendingRecords: () => Promise<void>;
   deleteRecord: (recordId: string) => void;
   addRecordTag: (recordId: string, tag: string) => void;
   removeRecordTag: (recordId: string, tag: string) => void;
@@ -489,6 +491,7 @@ export function useRiderLensMvp(): RiderLensStore {
     confirmPendingCapture,
     cancelPendingCapture,
     retryRecord,
+    retryPendingRecords,
     deleteRecord,
     addRecordTag,
     removeRecordTag,
