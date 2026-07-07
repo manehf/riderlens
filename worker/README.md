@@ -198,3 +198,29 @@ These are reserved for the later Storage/job flow:
 SUPABASE_URL=
 SUPABASE_SERVICE_ROLE_KEY=
 ```
+
+## Deploy (Fly.io)
+
+The worker ships as a container (`Dockerfile` + `fly.toml`, both in this directory). One-time setup:
+
+```bash
+brew install flyctl && fly auth signup     # or: fly auth login
+cd worker
+fly launch --copy-config --no-deploy      # accepts fly.toml; pick/confirm the app name
+fly secrets set ANTHROPIC_API_KEY=sk-ant-...
+fly deploy                                 # remote build — no local Docker needed
+curl https://riderlens-worker.fly.dev/health
+```
+
+Then point the app at it in `.env`:
+
+```
+EXPO_PUBLIC_ANALYSIS_WORKER_URL=https://riderlens-worker.fly.dev
+```
+
+URL resolution in the app: the dev bundler host (your Mac) is probed first, the deployed URL second — so local development keeps using the LAN worker for free, and phones away from your network fall through to Fly automatically. Machines scale to zero when idle; the app's health pre-flight plus the retry queue absorb cold starts.
+
+Notes:
+- The dev Analysis Lab (`/dev`) is disabled on the deployment (`RIDERLENS_DEV_UI=0`).
+- Watch per-record Anthropic cost in the dashboard; the cheaper-model test and the local window detector (product plan §7) are the cost path.
+- If long clips ever hit proxy timeouts on `/capture/record`, bump the VM size before reaching for async job queues.

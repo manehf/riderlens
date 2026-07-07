@@ -58,17 +58,26 @@ export type WorkerAnalysisResult = {
   report: CoachingReport;
 };
 
-export function getAnalysisWorkerUrl(): string | undefined {
-  // In dev, prefer the bundler host so the same build reaches the worker from
-  // both the iOS Simulator (localhost) and a physical phone (LAN IP), with no
-  // per-device .env edits. Falls back to the explicit env URL for standalone
-  // builds or when running through a tunnel.
-  const host = getDevBundlerHost();
-  if (host) return `http://${host}:${WORKER_PORT}`;
-
+function getEnvWorkerUrl(): string | undefined {
   const rawUrl = process.env.EXPO_PUBLIC_ANALYSIS_WORKER_URL?.trim();
   if (!rawUrl) return undefined;
   return rawUrl.replace(/\/+$/, "");
+}
+
+/** Worker URLs in preference order: the dev bundler host first (Mac on the
+ * same network — free and fast), then the deployed URL from env. The capture
+ * service probes them in order and uses the first that answers /health. */
+export function getWorkerUrlCandidates(): string[] {
+  const candidates: string[] = [];
+  const host = getDevBundlerHost();
+  if (host) candidates.push(`http://${host}:${WORKER_PORT}`);
+  const envUrl = getEnvWorkerUrl();
+  if (envUrl && !candidates.includes(envUrl)) candidates.push(envUrl);
+  return candidates;
+}
+
+export function getAnalysisWorkerUrl(): string | undefined {
+  return getWorkerUrlCandidates()[0];
 }
 
 // Upload plus MediaPipe processing can legitimately take a while on long clips,

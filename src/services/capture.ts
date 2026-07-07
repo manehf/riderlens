@@ -1,5 +1,5 @@
 import type { CaptureEvent, FilmstripFrame, FlightEstimate, SeriesPoint } from "../types/domain";
-import { getAnalysisWorkerUrl } from "./analysisWorker";
+import { getWorkerUrlCandidates } from "./analysisWorker";
 
 // Reachability is decided by a fast /health pre-flight so a stale or unreachable
 // worker IP fails in seconds instead of hanging until the big-upload timeouts below.
@@ -64,17 +64,37 @@ async function workerReachable(workerUrl: string): Promise<boolean> {
   }
 }
 
+// First healthy candidate wins (LAN worker before the deployed one). Cached
+// briefly so a burst of requests doesn't probe /health repeatedly; a failed
+// resolution is cached shorter so recovery isn't delayed.
+let workerUrlCache: { url: string | null; checkedAt: number } | null = null;
+const WORKER_URL_TTL_MS = 30_000;
+const WORKER_URL_NEGATIVE_TTL_MS = 8_000;
+
+async function resolveWorkerUrl(): Promise<string | null> {
+  if (workerUrlCache) {
+    const ttl = workerUrlCache.url ? WORKER_URL_TTL_MS : WORKER_URL_NEGATIVE_TTL_MS;
+    if (Date.now() - workerUrlCache.checkedAt < ttl) return workerUrlCache.url;
+  }
+  for (const url of getWorkerUrlCandidates()) {
+    if (await workerReachable(url)) {
+      workerUrlCache = { url, checkedAt: Date.now() };
+      return url;
+    }
+  }
+  workerUrlCache = { url: null, checkedAt: Date.now() };
+  return null;
+}
+
 export async function isAnalysisWorkerReachable(): Promise<boolean> {
-  const workerUrl = getAnalysisWorkerUrl();
-  return workerUrl ? workerReachable(workerUrl) : false;
+  return Boolean(await resolveWorkerUrl());
 }
 
 /** Upload the clip and get an AI-proposed window. Returns undefined when the worker
  * is unreachable, slow, or has no AI credentials — the caller falls back to manual trim. */
 export async function proposeWindow(videoUri: string): Promise<WindowProposal | undefined> {
-  const workerUrl = getAnalysisWorkerUrl();
+  const workerUrl = await resolveWorkerUrl();
   if (!workerUrl) return undefined;
-  if (!(await workerReachable(workerUrl))) return undefined;
 
   const formData = new FormData();
   formData.append("video", videoFormPart(videoUri));
@@ -103,11 +123,11 @@ export type ProcessRecordInput = {
 /** Turn a confirmed window into the record. Throws with a readable message on failure
  * so the record can be kept as pending and retried later. */
 export async function processRecord(input: ProcessRecordInput): Promise<RecordPayload> {
-  const workerUrl = getAnalysisWorkerUrl();
-  if (!workerUrl) {
+  if (getWorkerUrlCandidates().length === 0) {
     throw new Error("No analysis worker configured. Set EXPO_PUBLIC_ANALYSIS_WORKER_URL.");
   }
-  if (!(await workerReachable(workerUrl))) {
+  const workerUrl = await resolveWorkerUrl();
+  if (!workerUrl) {
     throw new Error("Could not reach the worker. The record is saved and will be retried.");
   }
 
