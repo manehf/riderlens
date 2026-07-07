@@ -29,6 +29,7 @@ except ImportError:  # pragma: no cover - dotenv ships with pydantic-settings
     pass
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
@@ -48,6 +49,16 @@ except Exception:  # pragma: no cover - optional until Supabase is configured
 
 
 app = FastAPI(title="RiderLens Analysis Worker", version="0.2.0")
+
+# Browser clients (Expo web during development, the share pages later) need
+# CORS; native apps ignore it. The API holds no secrets — auth comes later
+# with accounts.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 SkillType = Literal["regular_jump", "bunnyhop", "manual", "wheelie", "drop"]
 CropPreset = Literal["full_side_view", "rider_centered", "takeoff_landing", "vertical_social"]
