@@ -157,14 +157,14 @@ export function SettingsSheet({ store, visible, onClose }: SettingsSheetProps) {
               </AppText>
               <View style={styles.segmented}>
                 <SegmentButton
-                  label="Metric"
-                  active={profile.units === "metric"}
-                  onPress={() => store.saveProfile({ units: "metric" })}
-                />
-                <SegmentButton
                   label="Imperial"
                   active={profile.units === "imperial"}
                   onPress={() => store.saveProfile({ units: "imperial" })}
+                />
+                <SegmentButton
+                  label="Metric"
+                  active={profile.units === "metric"}
+                  onPress={() => store.saveProfile({ units: "metric" })}
                 />
               </View>
             </View>
