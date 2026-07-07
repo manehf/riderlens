@@ -67,7 +67,10 @@ export function CaptureSheet({ store, visible, onClose }: CaptureSheetProps) {
 
 // --- Window step: confirm where the moment is ---------------------------------
 
-const THUMBNAIL_COUNT = 8;
+/** Roughly one thumbnail per second of clip, bounded for very short/long clips. */
+function thumbnailCountFor(durationSeconds: number): number {
+  return Math.max(10, Math.min(28, Math.round(durationSeconds)));
+}
 
 function WindowStep({
   store,
@@ -78,25 +81,28 @@ function WindowStep({
   capture: PendingCapture;
   onConfirm: () => void;
 }) {
-  const [thumbnails, setThumbnails] = useState<Array<{ t: number; uri: string }>>([]);
+  const [thumbnails, setThumbnails] = useState<Array<{ t: number; uri: string; aspectRatio: number }>>([]);
   const windowSeconds = Math.max(0, capture.trimEndSeconds - capture.trimStartSeconds);
 
   useEffect(() => {
     let active = true;
     setThumbnails([]);
     const duration = capture.durationSeconds;
-    const times = Array.from({ length: THUMBNAIL_COUNT }, (_, index) => (duration * (index + 0.5)) / THUMBNAIL_COUNT);
+    const count = thumbnailCountFor(duration);
+    const times = Array.from({ length: count }, (_, index) => (duration * (index + 0.5)) / count);
     void Promise.all(
       times.map(async (t) => {
         try {
-          const result = await VideoThumbnails.getThumbnailAsync(capture.uri, { time: Math.round(t * 1000), quality: 0.4 });
-          return { t, uri: result.uri };
+          const result = await VideoThumbnails.getThumbnailAsync(capture.uri, { time: Math.round(t * 1000), quality: 0.3 });
+          // Keep the source aspect ratio — a squished frame misleads the trim.
+          const aspectRatio = result.width && result.height ? result.width / result.height : 16 / 9;
+          return { t, uri: result.uri, aspectRatio };
         } catch {
           return undefined;
         }
       })
     ).then((generated) => {
-      if (active) setThumbnails(generated.filter(Boolean) as Array<{ t: number; uri: string }>);
+      if (active) setThumbnails(generated.filter(Boolean) as Array<{ t: number; uri: string; aspectRatio: number }>);
     });
     return () => {
       active = false;
@@ -132,16 +138,20 @@ function WindowStep({
       ) : null}
 
       {thumbnails.length > 0 ? (
-        <View style={styles.thumbnailRow}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.thumbnailRow}>
           {thumbnails.map((thumbnail) => {
             const inWindow = thumbnail.t >= capture.trimStartSeconds && thumbnail.t <= capture.trimEndSeconds;
             return (
               <View key={thumbnail.t} style={[styles.thumbnailCell, !inWindow && styles.thumbnailOutside]}>
-                <Image source={{ uri: thumbnail.uri }} style={styles.thumbnailImage} />
+                <Image
+                  source={{ uri: thumbnail.uri }}
+                  style={[styles.thumbnailImage, { aspectRatio: thumbnail.aspectRatio }]}
+                  resizeMethod="resize"
+                />
               </View>
             );
           })}
-        </View>
+        </ScrollView>
       ) : null}
 
       <WindowControl
@@ -236,11 +246,9 @@ const styles = StyleSheet.create({
     gap: spacing.md
   },
   thumbnailRow: {
-    flexDirection: "row",
     gap: 4
   },
   thumbnailCell: {
-    flex: 1,
     borderRadius: 4,
     overflow: "hidden"
   },
@@ -248,8 +256,7 @@ const styles = StyleSheet.create({
     opacity: 0.3
   },
   thumbnailImage: {
-    width: "100%",
-    height: 44,
+    height: 54,
     backgroundColor: tokens.graphite
   },
   windowControl: {
