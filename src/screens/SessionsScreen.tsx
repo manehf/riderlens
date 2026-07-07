@@ -1,6 +1,6 @@
 import { FileVideo, Settings, X } from "lucide-react-native";
 import { useMemo, useState } from "react";
-import { Image, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { Image, Modal, Pressable, ScrollView, StyleSheet, View } from "react-native";
 
 import { RecordCard } from "../components/RecordCard";
 import { SettingsSheet } from "./SettingsSheet";
@@ -135,11 +135,11 @@ export function SessionsScreen({ store }: SessionsScreenProps) {
                 <X color={tokens.text} size={20} strokeWidth={2.4} />
               </Pressable>
             </View>
-            <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.keyboardArea}>
             <ScrollView
               contentContainerStyle={styles.sheetContent}
               showsVerticalScrollIndicator={false}
               keyboardShouldPersistTaps="handled"
+              automaticallyAdjustKeyboardInsets
             >
               <RecordCard
                 record={openRecord}
@@ -154,7 +154,6 @@ export function SessionsScreen({ store }: SessionsScreenProps) {
                 tagSuggestions={store.knownTags}
               />
             </ScrollView>
-            </KeyboardAvoidingView>
           </View>
         ) : null}
       </Modal>
@@ -342,9 +341,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     borderRadius: radius.pill,
     backgroundColor: tokens.surfaceMuted
-  },
-  keyboardArea: {
-    flex: 1
   },
   sheetContent: {
     paddingHorizontal: spacing.xl,
