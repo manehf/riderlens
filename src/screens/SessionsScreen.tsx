@@ -1,6 +1,6 @@
 import { FileVideo, Settings, X } from "lucide-react-native";
 import { useMemo, useRef, useState } from "react";
-import { Image, Modal, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { FlatList, Image, Modal, Pressable, ScrollView, StyleSheet, View } from "react-native";
 
 import { RecordCard } from "../components/RecordCard";
 import { SettingsSheet } from "./SettingsSheet";
@@ -67,46 +67,53 @@ export function SessionsScreen({ store }: SessionsScreenProps) {
           </Pressable>
         }
       />
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        {showFilters ? (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
-            <FilterChip label="All" active={!filter} onPress={() => setFilter(undefined)} />
-            {tags.map((tag) => (
-              <FilterChip
-                key={`tag-${tag}`}
-                label={`# ${tag}`}
-                active={filter === tag}
-                onPress={() => setFilter(tag)}
-              />
-            ))}
-          </ScrollView>
-        ) : null}
-
-        {store.records.length === 0 ? (
-          <Card style={styles.emptyCard}>
-            <View style={styles.emptyIcon}>
-              <FileVideo color={tokens.green} size={20} />
-            </View>
-            <View style={styles.emptyText}>
-              <AppText weight="bold">No records yet</AppText>
-              <AppText color={tokens.textMuted} size={13}>
-                Tap the + button to capture your first moment.
-              </AppText>
-            </View>
-          </Card>
-        ) : (
-          <View style={styles.grid}>
-            {filtered.map((record) => (
-              <PosterCell key={record.id} record={record} onPress={() => setOpenRecordId(record.id)} />
-            ))}
-            {filtered.length === 0 ? (
-              <AppText color={tokens.textMuted} size={13}>
-                No records match this filter.
-              </AppText>
-            ) : null}
-          </View>
-        )}
-      </ScrollView>
+      {/* Virtualized grid: only visible posters are mounted, so the library
+          scales to hundreds of records without holding every decoded image. */}
+      <FlatList
+        data={filtered}
+        numColumns={2}
+        keyExtractor={(record) => record.id}
+        renderItem={({ item }) => <PosterCell record={item} onPress={() => setOpenRecordId(item.id)} />}
+        columnWrapperStyle={styles.gridRow}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+        initialNumToRender={8}
+        windowSize={7}
+        ListHeaderComponent={
+          showFilters ? (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
+              <FilterChip label="All" active={!filter} onPress={() => setFilter(undefined)} />
+              {tags.map((tag) => (
+                <FilterChip
+                  key={`tag-${tag}`}
+                  label={`# ${tag}`}
+                  active={filter === tag}
+                  onPress={() => setFilter(tag)}
+                />
+              ))}
+            </ScrollView>
+          ) : null
+        }
+        ListEmptyComponent={
+          store.records.length === 0 ? (
+            <Card style={styles.emptyCard}>
+              <View style={styles.emptyIcon}>
+                <FileVideo color={tokens.green} size={20} />
+              </View>
+              <View style={styles.emptyText}>
+                <AppText weight="bold">No records yet</AppText>
+                <AppText color={tokens.textMuted} size={13}>
+                  Tap the + button to capture your first moment.
+                </AppText>
+              </View>
+            </Card>
+          ) : (
+            <AppText color={tokens.textMuted} size={13}>
+              No records match this filter.
+            </AppText>
+          )
+        }
+      />
 
       <Modal
         visible={Boolean(openRecord)}
@@ -188,7 +195,7 @@ function PosterCell({ record, onPress }: { record: JumpRecord; onPress: () => vo
     >
       <View style={styles.poster}>
         {record.posterUri ? (
-          <Image source={{ uri: record.posterUri }} style={styles.posterImage} resizeMode="cover" />
+          <Image source={{ uri: record.posterUri }} style={styles.posterImage} resizeMode="cover" resizeMethod="resize" />
         ) : (
           <View style={styles.posterPlaceholder}>
             <FileVideo color={tokens.textMuted} size={22} />
@@ -232,7 +239,7 @@ const styles = StyleSheet.create({
     backgroundColor: tokens.surfaceMuted
   },
   content: {
-    gap: spacing.lg,
+    gap: spacing.md,
     paddingHorizontal: spacing.xl,
     paddingBottom: 120
   },
@@ -270,15 +277,11 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: 3
   },
-  grid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
+  gridRow: {
     gap: spacing.md
   },
   cell: {
-    // Two columns: half the row minus half the gap.
-    flexBasis: "47%",
-    flexGrow: 1,
+    flex: 1,
     borderRadius: radius.sm,
     borderWidth: 1,
     borderColor: tokens.border,
