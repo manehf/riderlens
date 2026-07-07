@@ -140,6 +140,7 @@ export function SessionsScreen({ store }: SessionsScreenProps) {
               showsVerticalScrollIndicator={false}
               keyboardShouldPersistTaps="handled"
               automaticallyAdjustKeyboardInsets
+              contentInset={{ bottom: 8 }}
             >
               <RecordCard
                 record={openRecord}

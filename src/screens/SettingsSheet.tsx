@@ -94,6 +94,7 @@ export function SettingsSheet({ store, visible, onClose }: SettingsSheetProps) {
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
           automaticallyAdjustKeyboardInsets
+          contentInset={{ bottom: 8 }}
         >
           <Card style={styles.section}>
             <View style={styles.sectionHeader}>
