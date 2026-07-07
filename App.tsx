@@ -19,6 +19,7 @@ import { StatusBar } from "expo-status-bar";
 
 import { AppText, Screen } from "./src/components/ui";
 import { useRiderLensMvp } from "./src/hooks/useRiderLensMvp";
+import { isAnalysisWorkerReachable } from "./src/services/capture";
 import { CaptureSheet } from "./src/screens/CaptureSheet";
 import { SessionsScreen } from "./src/screens/SessionsScreen";
 import { radius, shadows, spacing, tokens } from "./src/theme/tokens";
@@ -39,6 +40,9 @@ export default function App() {
   // (+) shows the native action sheet; the capture sheet only appears when
   // there is real content to show (the camera, or the trim step after picking).
   function onCapturePress() {
+    // Prewarm: a scale-to-zero worker takes ~14s to cold start — pinging now
+    // means it's awake by the time the rider has picked or filmed a clip.
+    void isAnalysisWorkerReachable();
     if (Platform.OS === "ios") {
       ActionSheetIOS.showActionSheetWithOptions(
         { options: ["Record video", "Pick from library", "Cancel"], cancelButtonIndex: 2 },
