@@ -113,12 +113,12 @@ v1 is **one home screen, one action, two sheets**. No tab bar: earlier iteration
 9. Watch per-record AI cost in the Anthropic/Fly dashboards; cheaper-model test remains the mitigation (product-plan §7).
 - **Done when:** the app completes a record on cellular, away from the founder's LAN. *(Remaining: that one phone test.)*
 
-### Phase 3 — Identity & the share page (parallel with Phase 2, cheap)
-10. Buy the domain → watermark becomes a real destination.
-11. QR end-card appended to shared skeleton clips (FFmpeg; was only blocked on the URL).
-12. **Share page** (`riderlens.app`): the destination every watermark and QR points to. One page — an example skeleton clip, one line of pitch, **App Store / Play download links + QR code**. This closes the growth loop: clip → watermark/QR → share page → install. Static hosting (Cloudflare Pages / Vercel), no backend.
-13. Future evolution (needs cloud storage, act two): per-record share pages — `riderlens.app/r/<token>` showing that rider's actual clip + frames behind a tokenized URL. Every shared record becomes its own landing page.
-- **Done when:** someone who sees a shared clip can scan/tap through to the share page and install unaided.
+### Phase 3 — Identity & the share page ✅ (July 7)
+10. ~~Buy the domain~~ ✅ — `riderlens.app` (Cloudflare registrar + Pages).
+11. ~~QR end-card~~ ✅ — every shared skeleton clip closes with a 1.4s card: wordmark + scannable QR to riderlens.app (deployed, unit-tested).
+12. ~~Share page~~ ✅ — live at https://riderlens.app (pitch, beta CTA, safety note) with /privacy and /terms (drafts; legal review before public launch). Beta CTA swaps to store badges at launch.
+13. Future evolution (needs cloud storage, act two): per-record share pages — `riderlens.app/r/<token>` showing that rider's actual clip + frames behind a tokenized URL.
+- **Done when:** ~~someone who sees a shared clip can scan/tap through to the share page~~ ✅ (install link arrives with Phase 4 builds).
 
 ### Phase 4 — Beta
 14. Apple Developer account → EAS build → TestFlight → 3–5 riding buddies. App icon/splash from the hand-drawn logo; privacy policy + terms + support email hosted on the domain (required for TestFlight/App Store).
