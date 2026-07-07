@@ -144,6 +144,7 @@ v1 is **one home screen, one action, two sheets**. No tab bar: earlier iteration
 - **Deal monitor and affiliate layer:** user-tracked products, price alerts, clearly labeled affiliate links, recommendations tied to the rider's actual bike/profile.
 - **Coaching intelligence:** knowledge base already distilled in `worker/app/knowledge/`, added only after the capture archive proves retention and provides enough examples.
 - **Accounts + cloud sync (Supabase auth + storage):** required soon after the first paying users — a paying rider losing their library to a lost phone is a refund and a one-star. Also unlocks per-record share pages (Phase 3 item 13) and real deletion/export.
+- **Web portal (cross-device library + GoPro upload):** riders film on action cams; a browser client lets them upload from a computer and view the same cloud library on any device. Depends entirely on cloud sync above; the worker API is already browser-ready (CORS). ~1–2 weeks once sync exists; doubles as the desktop/coach review surface. Interim GoPro path for beta: GoPro app → phone Photos → Pick from library.
 - **On-device pose:** Expo dev build + MediaPipe/TFLite only if airplane-mode records prove worth it.
 
 ## 6. Success metrics (beta)
