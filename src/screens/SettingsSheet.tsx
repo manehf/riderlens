@@ -1,13 +1,14 @@
 import Constants from "expo-constants";
 import * as FileSystem from "expo-file-system/legacy";
 import * as ImagePicker from "expo-image-picker";
-import { Bike, Ruler, User, X } from "lucide-react-native";
+import { Bike, Ruler, Sparkles, User, X } from "lucide-react-native";
 import { useEffect, useRef, useState } from "react";
 import { Alert, Image, Modal, Pressable, ScrollView, StyleSheet, TextInput, View } from "react-native";
 
 import { AppText, Card, DisplayText, NumberText } from "../components/ui";
 import type { RiderLensStore } from "../hooks/useRiderLensMvp";
 import { useKeyboardNudge } from "../hooks/useKeyboardNudge";
+import { useProStatus } from "../hooks/useProStatus";
 import { radius, spacing, tokens } from "../theme/tokens";
 import type { UnitSystem } from "../types/domain";
 
@@ -72,6 +73,12 @@ export function SettingsSheet({ store, visible, onClose }: SettingsSheetProps) {
   const [nameDraft, setNameDraft] = useState(profile.name ?? "");
   const scrollRef = useRef<ScrollView>(null);
   const keyboardNudge = useKeyboardNudge(scrollRef);
+  const pro = useProStatus();
+
+  async function handleRestore() {
+    const restored = await pro.restore();
+    Alert.alert(restored ? "Purchases restored" : "Nothing to restore", restored ? "RiderLens Pro is active." : "No previous purchases were found for this account.");
+  }
 
   useEffect(() => {
     setNameDraft(profile.name ?? "");
@@ -234,6 +241,31 @@ export function SettingsSheet({ store, visible, onClose }: SettingsSheetProps) {
               onCommit={(radCm) => store.saveProfile({ radCm })}
             />
           </Card>
+
+          {pro.available ? (
+            <Card style={styles.section}>
+              <View style={styles.sectionHeader}>
+                <Sparkles color={tokens.green} size={16} strokeWidth={2.4} />
+                <AppText weight="bold">RiderLens Pro</AppText>
+                <View style={styles.proSpacer} />
+                <AppText weight="bold" size={12} color={pro.isPro ? tokens.green : tokens.textMuted}>
+                  {pro.isPro ? "Active" : "Free plan"}
+                </AppText>
+              </View>
+              {!pro.isPro ? (
+                <Pressable accessibilityRole="button" onPress={() => void pro.upgrade()} style={styles.upgradeButton}>
+                  <AppText weight="bold" size={14} color={tokens.graphite}>
+                    Upgrade
+                  </AppText>
+                </Pressable>
+              ) : null}
+              <Pressable accessibilityRole="button" onPress={() => void handleRestore()}>
+                <AppText size={12} weight="semi" color={tokens.textMuted}>
+                  Restore purchases
+                </AppText>
+              </Pressable>
+            </Card>
+          ) : null}
 
           <Card style={styles.section}>
             <View style={styles.aboutRow}>
@@ -446,5 +478,15 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between"
+  },
+  proSpacer: {
+    flex: 1
+  },
+  upgradeButton: {
+    minHeight: 44,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: radius.sm,
+    backgroundColor: tokens.electric
   }
 });
