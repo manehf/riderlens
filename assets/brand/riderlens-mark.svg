@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" color="#101411" fill="none">
+  <!-- RiderLens mark: raw ink viewfinder + rider, pose skeleton in electric.
+       Ink strokes use currentColor (defaults to graphite via the color attribute
+       above); set `color` in CSS to re-ink for dark grounds. The skeleton stays
+       electric #b6ff2e — it is the product signature. -->
+  <g stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <!-- viewfinder: four marker strokes, corners overshoot like a hand sketch -->
+    <path d="M30 86 C 170 74 340 62 486 70" stroke-width="16"/>
+    <path d="M462 46 C 468 180 470 330 472 462" stroke-width="15"/>
+    <path d="M494 438 C 340 452 170 458 26 450" stroke-width="16"/>
+    <path d="M52 478 C 46 340 44 190 46 60" stroke-width="15"/>
+    <!-- second-pass echoes -->
+    <path d="M40 98 C 180 88 330 78 468 84" stroke-width="6" opacity="0.75"/>
+    <path d="M60 468 C 55 330 53 200 56 74" stroke-width="5" opacity="0.7"/>
+  </g>
+
+  <g transform="rotate(-10 256 280)">
+    <!-- roost / lip hatch -->
+    <g stroke="currentColor" stroke-width="5" stroke-linecap="round" opacity="0.9">
+      <path d="M84 414 L128 392"/>
+      <path d="M98 428 L144 406"/>
+      <path d="M114 440 L154 421"/>
+      <path d="M76 398 L106 385"/>
+    </g>
+
+    <!-- bike -->
+    <g stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" fill="none">
+      <circle cx="152" cy="336" r="50" stroke-width="9" pathLength="100" stroke-dasharray="91 9" transform="rotate(28 152 336)"/>
+      <circle cx="152" cy="336" r="43" stroke-width="4.5" pathLength="100" stroke-dasharray="86 14" transform="rotate(-64 152 336)" opacity="0.85"/>
+      <circle cx="368" cy="310" r="50" stroke-width="9" pathLength="100" stroke-dasharray="90 10" transform="rotate(130 368 310)"/>
+      <circle cx="368" cy="310" r="43" stroke-width="4.5" pathLength="100" stroke-dasharray="87 13" transform="rotate(-20 368 310)" opacity="0.85"/>
+      <path d="M262 322 C 226 330 186 334 148 337" stroke-width="10"/>
+      <path d="M262 326 L 226 240" stroke-width="10"/>
+      <path d="M232 254 L 150 330" stroke-width="8"/>
+      <path d="M260 324 L 358 234" stroke-width="11"/>
+      <path d="M228 256 C 268 250 308 248 344 246" stroke-width="9"/>
+      <path d="M350 242 L 370 306" stroke-width="9"/>
+      <path d="M350 242 L 344 220" stroke-width="8"/>
+      <path d="M328 224 L 364 216" stroke-width="9"/>
+      <path d="M214 247 L 246 240" stroke-width="10"/>
+      <path d="M258 322 L 278 336" stroke-width="7"/>
+      <path d="M272 339 L 288 335" stroke-width="7"/>
+    </g>
+
+    <!-- rider, attack position -->
+    <g stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" fill="none">
+      <path d="M266 228 C 274 258 276 274 279 302" stroke-width="6" opacity="0.8"/>
+      <path d="M262 226 C 244 246 236 260 240 272 C 242 288 245 296 247 308" stroke-width="10"/>
+      <path d="M260 228 C 278 206 296 188 318 172" stroke-width="11"/>
+      <path d="M318 176 C 334 194 342 204 352 214" stroke-width="5" opacity="0.8"/>
+      <path d="M314 172 C 326 188 334 202 346 218" stroke-width="9"/>
+      <circle cx="338" cy="151" r="16" stroke-width="9" pathLength="100" stroke-dasharray="88 12" transform="rotate(-30 338 151)"/>
+      <path d="M350 143 L 364 147" stroke-width="6"/>
+    </g>
+
+    <!-- pose skeleton: the RiderLens signature -->
+    <g stroke="#b6ff2e" stroke-width="7" stroke-linecap="round" stroke-linejoin="round" fill="none">
+      <path d="M316 172 L 262 226 L 240 270 L 247 306"/>
+      <path d="M316 172 L 333 196 L 346 218"/>
+    </g>
+    <g fill="#b6ff2e" stroke="currentColor" stroke-width="2.5">
+      <circle cx="316" cy="172" r="6"/>
+      <circle cx="262" cy="226" r="6"/>
+      <circle cx="240" cy="270" r="6"/>
+      <circle cx="247" cy="306" r="6"/>
+      <circle cx="333" cy="196" r="5"/>
+      <circle cx="346" cy="218" r="5"/>
+    </g>
+  </g>
+</svg>
