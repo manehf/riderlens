@@ -1,11 +1,12 @@
 import { FileVideo, Settings, X } from "lucide-react-native";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Image, Modal, Pressable, ScrollView, StyleSheet, View } from "react-native";
 
 import { RecordCard } from "../components/RecordCard";
 import { SettingsSheet } from "./SettingsSheet";
 import { AppText, BrandHeader, Card, Chip, DisplayText, NumberText } from "../components/ui";
 import type { RiderLensStore } from "../hooks/useRiderLensMvp";
+import { useKeyboardNudge } from "../hooks/useKeyboardNudge";
 import { getRecordTitle, getSystemTags } from "../services/analysis";
 import { radius, spacing, tokens } from "../theme/tokens";
 import type { JumpRecord } from "../types/domain";
@@ -30,6 +31,8 @@ export function SessionsScreen({ store }: SessionsScreenProps) {
   // The library is just the grid; a tapped record opens in a full-screen sheet.
   const [openRecordId, setOpenRecordId] = useState<string | undefined>();
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const sheetScrollRef = useRef<ScrollView>(null);
+  const keyboardNudge = useKeyboardNudge(sheetScrollRef);
 
   const tags = useMemo(() => {
     const seen = new Map<string, string>();
@@ -136,11 +139,13 @@ export function SessionsScreen({ store }: SessionsScreenProps) {
               </Pressable>
             </View>
             <ScrollView
+              ref={sheetScrollRef}
               contentContainerStyle={styles.sheetContent}
               showsVerticalScrollIndicator={false}
               keyboardShouldPersistTaps="handled"
               automaticallyAdjustKeyboardInsets
-              contentInset={{ bottom: 8 }}
+              scrollEventThrottle={32}
+              onScroll={keyboardNudge.onScroll}
             >
               <RecordCard
                 record={openRecord}

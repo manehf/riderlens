@@ -2,11 +2,12 @@ import Constants from "expo-constants";
 import * as FileSystem from "expo-file-system/legacy";
 import * as ImagePicker from "expo-image-picker";
 import { Bike, Ruler, User, X } from "lucide-react-native";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Alert, Image, Modal, Pressable, ScrollView, StyleSheet, TextInput, View } from "react-native";
 
 import { AppText, Card, DisplayText, NumberText } from "../components/ui";
 import type { RiderLensStore } from "../hooks/useRiderLensMvp";
+import { useKeyboardNudge } from "../hooks/useKeyboardNudge";
 import { radius, spacing, tokens } from "../theme/tokens";
 import type { UnitSystem } from "../types/domain";
 
@@ -69,6 +70,8 @@ export function SettingsSheet({ store, visible, onClose }: SettingsSheetProps) {
   const { profile } = store;
   const version = Constants.expoConfig?.version ?? "dev";
   const [nameDraft, setNameDraft] = useState(profile.name ?? "");
+  const scrollRef = useRef<ScrollView>(null);
+  const keyboardNudge = useKeyboardNudge(scrollRef);
 
   useEffect(() => {
     setNameDraft(profile.name ?? "");
@@ -90,11 +93,13 @@ export function SettingsSheet({ store, visible, onClose }: SettingsSheetProps) {
         </View>
 
         <ScrollView
+          ref={scrollRef}
           contentContainerStyle={styles.content}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
           automaticallyAdjustKeyboardInsets
-          contentInset={{ bottom: 8 }}
+          scrollEventThrottle={32}
+          onScroll={keyboardNudge.onScroll}
         >
           <Card style={styles.section}>
             <View style={styles.sectionHeader}>
