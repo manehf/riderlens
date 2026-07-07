@@ -4,7 +4,7 @@ import { Image, Modal, Pressable, ScrollView, StyleSheet, View } from "react-nat
 
 import { RecordCard } from "../components/RecordCard";
 import { SettingsSheet } from "./SettingsSheet";
-import { AppText, BrandHeader, Card, Chip, DisplayText, NumberText } from "../components/ui";
+import { AppText, BrandHeader, Card, Chip, NumberText } from "../components/ui";
 import type { RiderLensStore } from "../hooks/useRiderLensMvp";
 import { useKeyboardNudge } from "../hooks/useKeyboardNudge";
 import { getRecordTitle, getSystemTags } from "../services/analysis";
@@ -68,15 +68,6 @@ export function SessionsScreen({ store }: SessionsScreenProps) {
         }
       />
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <View style={styles.intro}>
-          <DisplayText size={34} style={styles.introTitle}>
-            YOUR PROGRESSION
-          </DisplayText>
-          <AppText color={tokens.textMuted} size={13} style={styles.introBody}>
-            Every send, trimmed to the action with your body position on every frame. Study it, dial it in.
-          </AppText>
-        </View>
-
         {showFilters ? (
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
             <FilterChip label="All" active={!filter} onPress={() => setFilter(undefined)} />
@@ -244,15 +235,6 @@ const styles = StyleSheet.create({
     gap: spacing.lg,
     paddingHorizontal: spacing.xl,
     paddingBottom: 120
-  },
-  intro: {
-    gap: spacing.xs
-  },
-  introTitle: {
-    lineHeight: 36
-  },
-  introBody: {
-    lineHeight: 18
   },
   filterRow: {
     gap: spacing.sm
