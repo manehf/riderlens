@@ -3,7 +3,7 @@ import * as FileSystem from "expo-file-system/legacy";
 import * as ImagePicker from "expo-image-picker";
 import { Bike, Ruler, User, X } from "lucide-react-native";
 import { useEffect, useState } from "react";
-import { Alert, Image, Modal, Pressable, ScrollView, StyleSheet, TextInput, View } from "react-native";
+import { Alert, Image, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from "react-native";
 
 import { AppText, Card, DisplayText, NumberText } from "../components/ui";
 import type { RiderLensStore } from "../hooks/useRiderLensMvp";
@@ -89,7 +89,12 @@ export function SettingsSheet({ store, visible, onClose }: SettingsSheetProps) {
           </Pressable>
         </View>
 
-        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.keyboardArea}>
+        <ScrollView
+          contentContainerStyle={styles.content}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
           <Card style={styles.section}>
             <View style={styles.sectionHeader}>
               <User color={tokens.green} size={16} strokeWidth={2.4} />
@@ -235,6 +240,7 @@ export function SettingsSheet({ store, visible, onClose }: SettingsSheetProps) {
             </View>
           </Card>
         </ScrollView>
+        </KeyboardAvoidingView>
       </View>
     </Modal>
   );
@@ -335,6 +341,9 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     borderRadius: radius.pill,
     backgroundColor: tokens.surfaceMuted
+  },
+  keyboardArea: {
+    flex: 1
   },
   content: {
     gap: spacing.lg,
