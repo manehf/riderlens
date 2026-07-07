@@ -113,16 +113,27 @@ v1 is **one home screen, one action, two sheets**. No tab bar: earlier iteration
 9. Watch per-record AI cost; cheaper-model test remains the mitigation (product-plan §7).
 - **Done when:** the app completes a record on cellular, away from the founder's LAN.
 
-### Phase 3 — Identity (parallel with Phase 2, cheap)
+### Phase 3 — Identity & the share page (parallel with Phase 2, cheap)
 10. Buy the domain → watermark becomes a real destination.
 11. QR end-card appended to shared skeleton clips (FFmpeg; was only blocked on the URL).
-12. One-screen landing page: an example shared clip + store link placeholder.
-- **Done when:** someone who sees a shared clip can find and (eventually) install the app unaided.
+12. **Share page** (`riderlens.app`): the destination every watermark and QR points to. One page — an example skeleton clip, one line of pitch, **App Store / Play download links + QR code**. This closes the growth loop: clip → watermark/QR → share page → install. Static hosting (Cloudflare Pages / Vercel), no backend.
+13. Future evolution (needs cloud storage, act two): per-record share pages — `riderlens.app/r/<token>` showing that rider's actual clip + frames behind a tokenized URL. Every shared record becomes its own landing page.
+- **Done when:** someone who sees a shared clip can scan/tap through to the share page and install unaided.
 
 ### Phase 4 — Beta
-13. EAS build → TestFlight → 3–5 riding buddies.
-14. Measure the three numbers (§6). Fix what the beta breaks; nothing new.
+14. Apple Developer account → EAS build → TestFlight → 3–5 riding buddies. App icon/splash from the hand-drawn logo; privacy policy + terms + support email hosted on the domain (required for TestFlight/App Store).
+15. **Minimal analytics** (the §6 numbers are currently unmeasured): lightweight event logging (PostHog free tier or worker-side counters) + crash reporting (Sentry free tier).
+16. Measure the three numbers (§6). Fix what the beta breaks; nothing new.
 - **Done when:** a second-week beta rider captures and shares without founder involvement.
+
+### Phase 5 — Monetization (only after beta signal)
+17. App Store Connect: Paid Apps agreement (once per account; already crossed for DayDuet), products `riderlens_pro_monthly` / `riderlens_pro_yearly`.
+18. RevenueCat dashboard: entitlement "RiderLens Pro", offering, paywall design; drop the two API keys into env. The in-app rails are already built and dormant (`src/services/revenueCat.ts`).
+19. Free-tier enforcement in the app: **Free = 3 records per month** (per month, never a lifetime cap — deleting the archive would kill the retention moat), paywall triggers at the limit, Pro bypasses.
+20. Pricing: **Pro $3.99/mo · $29.99/yr with 7-day trial on annual** (market anchors: SwingVision $179.99/yr, Strava $79.99/yr, GoPro Premium $49.99/yr — RiderLens sits deliberately below all). Optional community launch: limited "Founding Rider" lifetime (~$59.99). A cheaper figure ships only as labeled launch pricing, never as list price.
+21. Cost floor: each AI-processed record costs ~$0.10–0.15 until the local window detector lands (product-plan §7) — the free cap is COGS defense (~$0.45/free user/month max).
+- **Never gated:** the watermarked share (acquisition engine) and viewing/tagging the existing library.
+- **Done when:** a stranger can hit the free limit, pay, and process record #4 without help.
 
 ### Act two — after retention proves out (explicitly not scheduled)
 - **Rider profile:** height, weight, inseam, RAD inputs, arm span, shoulder width, stance/preferences, riding style, discipline.
@@ -132,7 +143,7 @@ v1 is **one home screen, one action, two sheets**. No tab bar: earlier iteration
 - **Smart suggestions:** pattern-based, cautious language such as "riders with similar height and arm span often run 760-780mm bars"; never fake certainty.
 - **Deal monitor and affiliate layer:** user-tracked products, price alerts, clearly labeled affiliate links, recommendations tied to the rider's actual bike/profile.
 - **Coaching intelligence:** knowledge base already distilled in `worker/app/knowledge/`, added only after the capture archive proves retention and provides enough examples.
-- **Accounts + cloud sync:** product-plan Phase 3 when device-loss becomes a real user problem.
+- **Accounts + cloud sync (Supabase auth + storage):** required soon after the first paying users — a paying rider losing their library to a lost phone is a refund and a one-star. Also unlocks per-record share pages (Phase 3 item 13) and real deletion/export.
 - **On-device pose:** Expo dev build + MediaPipe/TFLite only if airplane-mode records prove worth it.
 
 ## 6. Success metrics (beta)
@@ -155,8 +166,8 @@ These three decide act two: depth (Garage/coaching) if riders retain and ask "wh
 | Dead watermark link before domain exists | Watermark ships as name-only risk accepted short-term; Phase 3 fixes |
 | Offline queue complexity | Append-only pending records; auto-retry is re-running the same idempotent request |
 
-## 8. Current state (July 6, 2026)
+## 8. Current state (July 7, 2026)
 
-Built, tested, committed: capture flow (camera + video picker), AI window finding with manual fallback, worker pipeline (trim, pose on every frame, skeleton filmstrip, poster, watermarked skeleton share clip), flight metrics (airtime + estimated height, crash-aware, unit-tested), record card (single viewport, lens toggle, transport with speed/frame-step, phase-banner events), tags (auto crash + user, suggestions), library (poster grid, tag filters, detail sheet), share-by-lens, two-tab navigation with (+) quick capture, storage cleanup on delete, foreground/active auto-retry for pending records, beta-facing debug chip removed, action-moment worker prompt. Worker test suite: 46 passing.
+Built, tested, committed: capture flow (camera + video picker), AI window finding with manual fallback, worker pipeline (trim, pose on every frame, skeleton filmstrip, poster, watermarked skeleton share clip), flight metrics (airtime + estimated height, crash-aware, unit-tested), record card (single viewport, lens toggle, transport with speed/frame-step, phase-banner events), tags (auto crash + user, suggestions), library (poster grid, tag filters, detail sheet), share-by-lens, two-tab navigation with (+) quick capture, storage cleanup on delete, foreground/active auto-retry for pending records, beta-facing debug chip removed, action-moment worker prompt. RevenueCat rails (dormant until keys + dev build), rider profile settings (units, body, RAD, lead foot), keyboard handling, fullscreen with landscape rotation, virtualized library grid, filmstrip-as-scrubber viewer with exact frame stepping. Worker test suite: 46 passing.
 
 Open items are exactly Phases 1–4 above.
