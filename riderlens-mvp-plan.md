@@ -108,10 +108,10 @@ v1 is **one home screen, one action, two sheets**. No tab bar: earlier iteration
 - **Done when:** a full trail session — film, trim, pocket the phone, records finished by home WiFi — works without touching Retry.
 
 ### Phase 2 — Unhost the worker
-7. Containerize the worker (FastAPI + FFmpeg + MediaPipe; Dockerfile + deploy config) and deploy to Fly.io/Railway; Anthropic key as a secret.
-8. App resolves the deployed URL as fallback (Metro-host trick stays for LAN dev).
-9. Watch per-record AI cost; cheaper-model test remains the mitigation (product-plan §7).
-- **Done when:** the app completes a record on cellular, away from the founder's LAN.
+7. ~~Containerize the worker and deploy~~ ✅ — live at `riderlens-worker.fly.dev` (Fly.io, cdg, scale-to-zero, 2GB, dev UI off, Anthropic key as secret). End-to-end verified: 18s clip analyze from the public URL.
+8. ~~App resolves the deployed URL as fallback~~ ✅ — ordered candidates: dev bundler host (LAN Mac) first, Fly second; first healthy /health wins.
+9. Watch per-record AI cost in the Anthropic/Fly dashboards; cheaper-model test remains the mitigation (product-plan §7).
+- **Done when:** the app completes a record on cellular, away from the founder's LAN. *(Remaining: that one phone test.)*
 
 ### Phase 3 — Identity & the share page (parallel with Phase 2, cheap)
 10. Buy the domain → watermark becomes a real destination.

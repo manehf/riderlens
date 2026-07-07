@@ -1,38 +1,31 @@
-# Fly.io config for the RiderLens analysis worker.
-# Deploy from the worker/ directory:
-#   fly launch --copy-config --no-deploy   (first time; keeps this file)
-#   fly secrets set ANTHROPIC_API_KEY=sk-ant-...
-#   fly deploy
-app = "riderlens-worker"
-primary_region = "mad"
+# fly.toml app configuration file generated for riderlens-worker on 2026-07-07T12:02:30+01:00
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = 'riderlens-worker'
+primary_region = 'cdg'
 
 [build]
-  dockerfile = "Dockerfile"
+  dockerfile = 'Dockerfile'
 
 [env]
-  # The Analysis Lab dev UI stays off on the public deployment.
-  RIDERLENS_DEV_UI = "0"
+  RIDERLENS_DEV_UI = '0'
 
 [http_service]
   internal_port = 8080
   force_https = true
-  # Scale to zero when idle: records are bursty, and a cold start
-  # (machine boot + model load, a few seconds) is absorbed by the app's
-  # health pre-flight and retry queue.
-  auto_stop_machines = "stop"
+  auto_stop_machines = 'stop'
   auto_start_machines = true
   min_machines_running = 0
 
   [[http_service.checks]]
-    interval = "30s"
-    timeout = "5s"
-    grace_period = "20s"
-    method = "GET"
-    path = "/health"
+    interval = '30s'
+    timeout = '5s'
+    grace_period = '20s'
+    method = 'GET'
+    path = '/health'
 
 [[vm]]
-  # MediaPipe + FFmpeg on 30s clips needs headroom; 2GB avoids OOM on
-  # 4K uploads. shared-cpu-2x keeps record processing under the proxy's
-  # idle window on typical clips.
-  size = "shared-cpu-2x"
-  memory = "2048mb"
+  size = 'shared-cpu-2x'
+  memory = '2048mb'
