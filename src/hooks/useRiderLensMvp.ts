@@ -79,6 +79,10 @@ export type RiderLensStore = {
   addMeasurement: (measurement: Omit<ToolMeasurement, "id" | "bikeId" | "bikeSetupId" | "createdAt">) => void;
 };
 
+// Library uploads longer than this get the pre-upload trim gate: the camera
+// already caps at 30s, and the AI's 24-frame scan is reliable at that length.
+const LIBRARY_MAX_SECONDS = 30;
+
 const MIN_WINDOW_SECONDS = 0.5;
 
 export function useRiderLensMvp(): RiderLensStore {
@@ -499,6 +503,12 @@ export function useRiderLensMvp(): RiderLensStore {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ["videos"],
       quality: 1,
+      // Pre-upload trim gate: the AI scans 24 frames across the whole upload,
+      // so a long video hides a 3s jump between samples. iOS opens the system
+      // trimmer so long picks get cut to the action before upload; Android has
+      // no system trimmer and gets the duration nudge below instead.
+      allowsEditing: true,
+      videoMaxDuration: LIBRARY_MAX_SECONDS,
       // iOS transcodes the picked video to 1080p H.264 on-device before we
       // ever see it; Android ignores this and relies on worker normalization.
       videoExportPreset: ImagePicker.VideoExportPreset.H264_1920x1080
@@ -508,6 +518,17 @@ export function useRiderLensMvp(): RiderLensStore {
     const asset = result.assets[0];
     const rawDuration = asset.duration ?? 6000;
     const durationSeconds = rawDuration > 1000 ? rawDuration / 1000 : rawDuration;
+    if (Platform.OS === "android" && durationSeconds > LIBRARY_MAX_SECONDS) {
+      Alert.alert(
+        "Long video",
+        "RiderLens finds the action best in clips under 30 seconds. Trim the clip to the moment in your gallery for the most accurate result.",
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Use anyway", onPress: () => startCaptureFromUri(asset.uri, durationSeconds) }
+        ]
+      );
+      return;
+    }
     startCaptureFromUri(asset.uri, durationSeconds);
   }, [startCaptureFromUri]);
 
