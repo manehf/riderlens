@@ -38,6 +38,8 @@ export type PendingCapture = {
   trimStartSeconds: number;
   trimEndSeconds: number;
   windowStatus: WindowStatus;
+  /** Clockwise display/processing rotation the rider dialed in (0/90/180/270). */
+  rotateDegrees: number;
   proposal?: WindowProposal;
 };
 
@@ -48,6 +50,8 @@ export type RiderLensStore = {
   setSelectedSkill: (skill: SkillType) => void;
   startCaptureFromUri: (uri: string, durationSeconds?: number) => void;
   updatePendingWindow: (updates: Partial<Pick<PendingCapture, "trimStartSeconds" | "trimEndSeconds">>) => void;
+  /** Rotate the pending clip 90° clockwise (cycles back to 0 after 270). */
+  rotatePendingCapture: () => void;
   confirmPendingCapture: () => Promise<void>;
   cancelPendingCapture: () => void;
   retryRecord: (recordId: string) => void;
@@ -149,7 +153,8 @@ export function useRiderLensMvp(): RiderLensStore {
       durationSeconds: safeDuration,
       trimStartSeconds: 0,
       trimEndSeconds: safeDuration,
-      windowStatus: "checking"
+      windowStatus: "checking",
+      rotateDegrees: 0
     });
 
     // Ask the worker for an AI-proposed window; on timeout/unreachable/no-credentials
@@ -201,7 +206,8 @@ export function useRiderLensMvp(): RiderLensStore {
         uploadId,
         startSeconds: record.windowStart,
         endSeconds: record.windowEnd,
-        events: record.events
+        events: record.events,
+        rotateDegrees: record.rotateDegrees
       })
         .then(async (payload) => {
           const { clipUri, skeletonClipUri, posterUri } = await persistRecordPayload(record.id, payload);
@@ -252,6 +258,7 @@ export function useRiderLensMvp(): RiderLensStore {
       windowStart: pendingCapture.trimStartSeconds,
       windowEnd: pendingCapture.trimEndSeconds,
       aiWindow: pendingCapture.windowStatus === "ai",
+      rotateDegrees: pendingCapture.rotateDegrees || undefined,
       eventType: pendingCapture.proposal?.eventType,
       summary: pendingCapture.proposal?.summary,
       events: pendingCapture.proposal?.events
@@ -262,6 +269,12 @@ export function useRiderLensMvp(): RiderLensStore {
     setRecords((current) => [record, ...current]);
     runRecordProcessing(record, pendingCapture.proposal?.uploadId);
   }, [pendingCapture, runRecordProcessing, selectedSkill]);
+
+  const rotatePendingCapture = useCallback(() => {
+    setPendingCapture((current) =>
+      current ? { ...current, rotateDegrees: (current.rotateDegrees + 90) % 360 } : current
+    );
+  }, []);
 
   const cancelPendingCapture = useCallback(() => {
     pendingUriRef.current = undefined;
@@ -503,6 +516,7 @@ export function useRiderLensMvp(): RiderLensStore {
     setSelectedSkill,
     startCaptureFromUri,
     updatePendingWindow,
+    rotatePendingCapture,
     confirmPendingCapture,
     cancelPendingCapture,
     retryRecord,

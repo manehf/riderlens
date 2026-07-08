@@ -1,5 +1,5 @@
 import * as VideoThumbnails from "expo-video-thumbnails";
-import { AlertTriangle, Scissors, Sparkles, X } from "lucide-react-native";
+import { AlertTriangle, RotateCw, Scissors, Sparkles, X } from "lucide-react-native";
 import { useEffect, useState } from "react";
 import { Image, Modal, Pressable, ScrollView, StyleSheet, View } from "react-native";
 
@@ -67,6 +67,8 @@ export function CaptureSheet({ store, visible, onClose }: CaptureSheetProps) {
 
 // --- Window step: confirm where the moment is ---------------------------------
 
+const THUMBNAIL_HEIGHT = 54;
+
 /** Roughly one thumbnail per second of clip, bounded for very short/long clips. */
 function thumbnailCountFor(durationSeconds: number): number {
   return Math.max(10, Math.min(28, Math.round(durationSeconds)));
@@ -123,9 +125,24 @@ function WindowStep({
         <Chip tone={capture.windowStatus === "ai" ? "cyan" : "neutral"} icon={capture.windowStatus === "ai" ? Sparkles : Scissors}>
           {capture.windowStatus === "ai" ? "AI window" : "Window"}
         </Chip>
-        <NumberText color={tokens.textMuted} size={12} weight="bold">
-          {windowSeconds.toFixed(1)}s selected
-        </NumberText>
+        <View style={styles.splitRowRight}>
+          <NumberText color={tokens.textMuted} size={12} weight="bold">
+            {windowSeconds.toFixed(1)}s selected
+          </NumberText>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Rotate clip 90 degrees"
+            onPress={store.rotatePendingCapture}
+            style={[styles.rotateButton, capture.rotateDegrees > 0 && styles.rotateButtonActive]}
+          >
+            <RotateCw color={capture.rotateDegrees > 0 ? tokens.graphite : tokens.text} size={16} strokeWidth={2.4} />
+            {capture.rotateDegrees > 0 ? (
+              <NumberText size={11} weight="bold" color={tokens.graphite}>
+                {capture.rotateDegrees}°
+              </NumberText>
+            ) : null}
+          </Pressable>
+        </View>
       </View>
       <AppText color={tokens.textMuted} size={13}>
         {statusLine}
@@ -141,11 +158,27 @@ function WindowStep({
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.thumbnailRow}>
           {thumbnails.map((thumbnail) => {
             const inWindow = thumbnail.t >= capture.trimStartSeconds && thumbnail.t <= capture.trimEndSeconds;
+            // A quarter turn swaps the cell's aspect; the image keeps its own
+            // aspect and is rotated into place, so nothing distorts.
+            const quarterTurn = capture.rotateDegrees % 180 !== 0;
+            const displayAspect = quarterTurn ? 1 / thumbnail.aspectRatio : thumbnail.aspectRatio;
+            const cellWidth = THUMBNAIL_HEIGHT * displayAspect;
             return (
-              <View key={thumbnail.t} style={[styles.thumbnailCell, !inWindow && styles.thumbnailOutside]}>
+              <View
+                key={thumbnail.t}
+                style={[
+                  styles.thumbnailCell,
+                  !inWindow && styles.thumbnailOutside,
+                  { width: cellWidth, height: THUMBNAIL_HEIGHT }
+                ]}
+              >
                 <Image
                   source={{ uri: thumbnail.uri }}
-                  style={[styles.thumbnailImage, { aspectRatio: thumbnail.aspectRatio }]}
+                  style={{
+                    width: quarterTurn ? THUMBNAIL_HEIGHT : cellWidth,
+                    height: quarterTurn ? cellWidth : THUMBNAIL_HEIGHT,
+                    transform: capture.rotateDegrees ? [{ rotate: `${capture.rotateDegrees}deg` }] : undefined
+                  }}
                   resizeMethod="resize"
                 />
               </View>
@@ -250,14 +283,32 @@ const styles = StyleSheet.create({
   },
   thumbnailCell: {
     borderRadius: 4,
-    overflow: "hidden"
+    overflow: "hidden",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: tokens.graphite
+  },
+  splitRowRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm
+  },
+  rotateButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    minWidth: 34,
+    height: 30,
+    paddingHorizontal: 8,
+    borderRadius: radius.pill,
+    backgroundColor: tokens.surfaceMuted,
+    justifyContent: "center"
+  },
+  rotateButtonActive: {
+    backgroundColor: tokens.electric
   },
   thumbnailOutside: {
     opacity: 0.3
-  },
-  thumbnailImage: {
-    height: 54,
-    backgroundColor: tokens.graphite
   },
   windowControl: {
     flexDirection: "row",

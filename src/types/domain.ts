@@ -151,6 +151,9 @@ export type JumpRecord = {
   windowStart: number;
   windowEnd: number;
   aiWindow: boolean;
+  /** Clockwise rotation the rider applied at trim time; the worker processes
+   * the corrected orientation, so pose runs on an upright rider. */
+  rotateDegrees?: number;
   eventType?: string;
   summary?: string;
   events?: CaptureEvent[];

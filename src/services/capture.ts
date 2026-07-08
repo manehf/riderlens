@@ -120,6 +120,7 @@ export type ProcessRecordInput = {
   startSeconds: number;
   endSeconds: number;
   events?: CaptureEvent[];
+  rotateDegrees?: number;
 };
 
 /** Turn a confirmed window into the record. Throws with a readable message on failure
@@ -138,6 +139,9 @@ export async function processRecord(input: ProcessRecordInput): Promise<RecordPa
   formData.append("end_seconds", String(input.endSeconds));
   if (input.events && input.events.length > 0) {
     formData.append("events_json", JSON.stringify(input.events));
+  }
+  if (input.rotateDegrees) {
+    formData.append("rotate_degrees", String(input.rotateDegrees));
   }
   if (input.uploadId) {
     formData.append("upload_id", input.uploadId);

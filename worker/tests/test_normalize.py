@@ -2,6 +2,7 @@
 
 import shutil
 import subprocess
+from pathlib import Path
 
 import cv2
 import pytest
@@ -60,3 +61,16 @@ def test_small_upload_is_left_alone(tmp_path):
 
     assert dims(clip) == (1280, 720)
     assert clip.stat().st_size == before  # untouched, not re-encoded
+
+
+def test_rotated_source_swaps_dimensions_and_is_reused(tmp_path):
+    from app.main import _rotated_source
+
+    clip = tmp_path / "clip.mp4"
+    synth_clip(clip, 640, 360)
+
+    rotated = _rotated_source(str(clip), 90)
+    assert dims(rotated) == (360, 640)
+    first_mtime = Path(rotated).stat().st_mtime
+    assert _rotated_source(str(clip), 90) == rotated  # retry reuses the copy
+    assert Path(rotated).stat().st_mtime == first_mtime

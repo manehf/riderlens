@@ -1628,6 +1628,36 @@ def _save_capture_upload(video: UploadFile) -> str:
     return upload_id
 
 
+ROTATE_FILTERS = {90: "transpose=1", 180: "hflip,vflip", 270: "transpose=2"}
+
+
+def _rotated_source(video_path: str, degrees: int) -> str:
+    """Clockwise-rotated sibling copy for this record run. The stored upload stays
+    pristine so retries carrying the same rotation are idempotent, and the copy
+    ages out of CAPTURE_DIR with the regular cleanup."""
+    source = FilePath(video_path)
+    rotated = source.with_name(f"{source.stem}-rot{degrees}.mp4")
+    if rotated.exists() and rotated.stat().st_size > 0:
+        return str(rotated)
+    result = subprocess.run(
+        [
+            "ffmpeg", "-y", "-i", str(source),
+            "-vf", ROTATE_FILTERS[degrees],
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+            "-c:a", "copy",
+            "-movflags", "+faststart",
+            "-f", "mp4",
+            str(rotated),
+        ],
+        capture_output=True,
+        timeout=240,
+    )
+    if result.returncode != 0 or not rotated.exists() or rotated.stat().st_size == 0:
+        rotated.unlink(missing_ok=True)
+        raise HTTPException(status_code=500, detail="Could not rotate the video.")
+    return str(rotated)
+
+
 def _capture_path(upload_id: str) -> FilePath:
     if not UPLOAD_ID_PATTERN.match(upload_id):
         raise HTTPException(status_code=400, detail="Invalid upload id.")
@@ -1752,6 +1782,7 @@ async def capture_record(
     upload_id: str | None = Form(None),
     video: UploadFile | None = File(None),
     events_json: str | None = Form(None),
+    rotate_degrees: int = Form(0),
 ):
     if cv2 is None or mp is None or np is None:
         raise HTTPException(status_code=503, detail="Install worker dependencies: mediapipe, opencv-python-headless, numpy.")
@@ -1759,11 +1790,15 @@ async def capture_record(
         raise HTTPException(status_code=422, detail="Provide upload_id or a video file.")
     if video is not None and (not video.content_type or not video.content_type.startswith("video/")):
         raise HTTPException(status_code=415, detail="Upload a video file.")
+    if rotate_degrees not in (0, *ROTATE_FILTERS):
+        raise HTTPException(status_code=422, detail="rotate_degrees must be 0, 90, 180, or 270.")
 
     if upload_id is not None:
         video_path = str(_capture_path(upload_id))
     else:
         video_path = str(_capture_path(_save_capture_upload(video)))
+    if rotate_degrees:
+        video_path = _rotated_source(video_path, rotate_degrees)
 
     duration = video_duration_seconds(video_path)
     start = max(0.0, min(start_seconds, duration))
