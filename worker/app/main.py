@@ -1565,7 +1565,7 @@ def _cleanup_captures() -> None:
 # 4K/HEVC phone footage decodes an order of magnitude slower. Heavy uploads are
 # transcoded once at ingest; every downstream step (pose sampling, crop,
 # overlay, filmstrip) then works on a light, uniform file.
-NORMALIZE_MAX_HEIGHT = 1080
+NORMALIZE_MAX_EDGE = 1920  # cap the longest side, so portrait keeps 1080x1920
 NORMALIZE_PIXEL_BUDGET = 1920 * 1088  # anything bigger than ~1080p gets scaled
 
 
@@ -1583,7 +1583,14 @@ def _normalize_upload(path: FilePath) -> None:
         return
 
     normalized = path.with_name(f"{path.stem}-norm.mp4.tmp")
-    scale = f"scale=-2:'min({NORMALIZE_MAX_HEIGHT},ih)'" if too_big else "null"
+    # Fit inside a MAX_EDGE square without upscaling: landscape 4K -> 1920x1080,
+    # portrait 4K -> 1080x1920, small clips pass through untouched.
+    edge = NORMALIZE_MAX_EDGE
+    scale = (
+        f"scale='min({edge},iw)':'min({edge},ih)':force_original_aspect_ratio=decrease:force_divisible_by=2"
+        if too_big
+        else "null"
+    )
     result = subprocess.run(
         [
             "ffmpeg", "-y", "-i", str(path),
@@ -1591,6 +1598,7 @@ def _normalize_upload(path: FilePath) -> None:
             "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
             "-c:a", "aac", "-b:a", "96k",
             "-movflags", "+faststart",
+            "-f", "mp4",  # the .tmp extension would otherwise leave ffmpeg without a container
             str(normalized),
         ],
         capture_output=True,
