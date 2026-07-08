@@ -561,10 +561,13 @@ def measure_window(
     capture.release()
 
     span = max(window_end - window_start, 0.2)
-    step = 1.0 / min(fps, 30.0)
+    # Every frame is the point: analysis runs at source frame rate up to 60fps
+    # (slow-mo footage keeps its detail). The sample ceiling only bounds
+    # pathologically long windows — a 15s window at 30fps still gets every frame.
+    step = 1.0 / min(fps, 60.0)
     count = int(span / step) + 1
-    if count > 120:
-        count = 120
+    if count > 450:
+        count = 450
         step = span / (count - 1)
 
     pose = mp.solutions.pose.Pose(
@@ -577,10 +580,18 @@ def measure_window(
     series: list[dict] = []
     air_candidates: list[tuple[float, object]] = []
     filmstrip: list[dict] = []
-    # Frame-by-frame inspection needs every sampled frame in the strip. Short
-    # windows (the normal case: a trimmed moment) keep all samples; only long
-    # windows fall back to ~36 evenly spaced thumbnails to bound the payload.
-    thumb_step = 1 if count <= 96 else max(1, count // 36)
+    # Frame-by-frame inspection needs every sampled frame in the strip — the
+    # frames ARE the analysis. Density is never thinned; instead the encode
+    # budget (width/quality) shrinks as the strip grows, keeping the payload
+    # bounded (~16MB worst case) while every frame stays steppable.
+    if count <= 96:
+        strip_width, strip_quality = 960, 86
+    elif count <= 200:
+        strip_width, strip_quality = 800, 80
+    elif count <= 300:
+        strip_width, strip_quality = 640, 74
+    else:
+        strip_width, strip_quality = 560, 70
     overlay = OverlayClipWriter(fps=1.0 / step) if render_overlay else None
     capture = cv2.VideoCapture(video_path)
     # Decode sequentially: one seek to the window start, then read straight
@@ -661,17 +672,13 @@ def measure_window(
 
             if air_span[0] <= time_seconds <= air_span[1]:
                 air_candidates.append((time_seconds, frame))
-            if index % thumb_step == 0:
-                # 960px: sharp in the card and fullscreen viewers while keeping the
-                # now-denser strip payload bounded. Higher JPEG quality — these
-                # frames ARE the record.
-                target_width = filmstrip_width if filmstrip_width is not None else min(width, 960)
-                small = cv2.resize(frame, (target_width, max(1, int(height * target_width / width)))) if target_width < width else frame.copy()
-                if result.pose_landmarks:
-                    draw_skeleton(small, result.pose_landmarks.landmark)
-                image = encode_frame_jpeg(small, quality=86)
-                if image:
-                    filmstrip.append({"t": round(time_seconds, 2), "image": image})
+            target_width = filmstrip_width if filmstrip_width is not None else min(width, strip_width)
+            small = cv2.resize(frame, (target_width, max(1, int(height * target_width / width)))) if target_width < width else frame.copy()
+            if result.pose_landmarks:
+                draw_skeleton(small, result.pose_landmarks.landmark)
+            image = encode_frame_jpeg(small, quality=strip_quality)
+            if image:
+                filmstrip.append({"t": round(time_seconds, 2), "image": image})
             series.append(entry)
     finally:
         pose.close()

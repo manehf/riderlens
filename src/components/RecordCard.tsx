@@ -93,6 +93,11 @@ const DEFAULT_SPEED = 1;
 const FILMSTRIP_CELL_WIDTH = 114;
 const FILMSTRIP_GAP = 8;
 const FILMSTRIP_STEP = FILMSTRIP_CELL_WIDTH + FILMSTRIP_GAP;
+// The scrubber renders at most this many cells. Records now carry every
+// analyzed frame (up to 450); mounting them all as Images would blow the
+// decoded-bitmap budget on iOS. The strip shows every Nth frame for
+// navigation — stepping (and the fullscreen slider) still hits every frame.
+const FILMSTRIP_MAX_CELLS = 120;
 
 function speedLabel(speed: number): string {
   return speed === 1 ? "1×" : speed === 0.5 ? "½×" : "¼×";
@@ -292,9 +297,27 @@ function JumpViewer({
   // Edge padding lets the first and last frames reach the center playhead.
   const stripEdgePadding = Math.max(0, (stripWidth - FILMSTRIP_CELL_WIDTH) / 2);
 
+  // One strip cell represents `stripStride` frames; scroll position maps
+  // fractionally so single-frame stepping still moves the strip smoothly.
+  const stripStride = Math.max(1, Math.ceil(frames.length / FILMSTRIP_MAX_CELLS));
+  const stripCells = useMemo(
+    () => frames.map((frame, index) => ({ frame, index })).filter((cell) => cell.index % stripStride === 0),
+    [frames, stripStride]
+  );
+  // Event labels land on the nearest rendered cell so tags survive thinning.
+  const cellLabels = useMemo(() => {
+    if (stripStride === 1) return labels;
+    const mapped = new Map<number, string>();
+    for (const [index, name] of labels.entries()) {
+      mapped.set(Math.round(index / stripStride) * stripStride, name);
+    }
+    return mapped;
+  }, [labels, stripStride]);
+
   const scrubToOffset = useCallback(
     (offsetX: number) => {
-      const index = Math.max(0, Math.min(Math.round(offsetX / FILMSTRIP_STEP), frames.length - 1));
+      const cell = Math.round(offsetX / FILMSTRIP_STEP);
+      const index = Math.max(0, Math.min(cell * stripStride, frames.length - 1));
       if (index === frameIndexRef.current) return;
       suppressVideoSyncUntilRef.current = Date.now() + 350;
       commitFrameIndex(index);
@@ -303,7 +326,7 @@ function JumpViewer({
         player.currentTime = clipTimeOf(frame);
       }
     },
-    [clipTimeOf, clipUri, commitFrameIndex, frames, player]
+    [clipTimeOf, clipUri, commitFrameIndex, frames, player, stripStride]
   );
 
   const handleStripDragStart = useCallback(() => {
@@ -348,8 +371,8 @@ function JumpViewer({
   // Playback/stepping moves the strip; user drags move the frame (guarded above).
   useEffect(() => {
     if (stripInteractingRef.current) return;
-    stripRef.current?.scrollTo({ x: frameIndex * FILMSTRIP_STEP, animated: false });
-  }, [frameIndex, stripWidth]);
+    stripRef.current?.scrollTo({ x: (frameIndex / stripStride) * FILMSTRIP_STEP, animated: false });
+  }, [frameIndex, stripStride, stripWidth]);
 
   // Carry the current moment across mode switches so the toggle never jumps in time.
   const previousModeRef = useRef(mode);
@@ -453,17 +476,20 @@ function JumpViewer({
             onMomentumScrollEnd={handleStripMomentumEnd}
             contentContainerStyle={[styles.filmstrip, { paddingHorizontal: stripEdgePadding }]}
           >
-            {frames.map((frame, index) => (
+            {stripCells.map(({ frame, index }) => (
               <Pressable key={frame.t} onPress={() => seekToFrame(index)} style={styles.filmstripCell}>
                 <Image
                   source={{ uri: frame.image }}
                   resizeMethod="resize"
-                  style={[styles.filmstripImage, index === frameIndex && styles.filmstripImageActive]}
+                  style={[
+                    styles.filmstripImage,
+                    Math.abs(index - frameIndex) < stripStride && styles.filmstripImageActive
+                  ]}
                 />
-                {labels.has(index) ? (
+                {cellLabels.has(index) ? (
                   <View style={styles.eventTag}>
                     <AppText size={10} weight="bold" color={tokens.graphite}>
-                      {labels.get(index)}
+                      {cellLabels.get(index)}
                     </AppText>
                   </View>
                 ) : null}
