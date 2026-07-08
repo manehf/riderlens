@@ -162,6 +162,10 @@ export function SessionsScreen({ store }: SessionsScreenProps) {
                 record={openRecord}
                 onShare={store.shareRecordClip}
                 onRetry={(record) => store.retryRecord(record.id)}
+                onReprocess={(record) => {
+                  setOpenRecordId(undefined);
+                  store.reprocessRecord(record.id);
+                }}
                 onDelete={(record) => {
                   setOpenRecordId(undefined);
                   store.deleteRecord(record.id);

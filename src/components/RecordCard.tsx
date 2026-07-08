@@ -43,6 +43,8 @@ type RecordCardProps = {
   record: JumpRecord;
   onShare?: (record: JumpRecord, preferSkeleton?: boolean) => void;
   onRetry?: (record: JumpRecord) => void;
+  /** Reopen the trim step to fix rotation or the window and rebuild the record. */
+  onReprocess?: (record: JumpRecord) => void;
   onDelete?: (record: JumpRecord) => void;
   onAddTag?: (recordId: string, tag: string) => void;
   onRemoveTag?: (recordId: string, tag: string) => void;
@@ -659,7 +661,7 @@ function TagSection({ record, suggestions, onAdd, onRemove }: TagSectionProps) {
   );
 }
 
-export function RecordCard({ record, onShare, onRetry, onDelete, onAddTag, onRemoveTag, tagSuggestions }: RecordCardProps) {
+export function RecordCard({ record, onShare, onRetry, onDelete, onReprocess, onAddTag, onRemoveTag, tagSuggestions }: RecordCardProps) {
   const [detail, setDetail] = useState<JumpRecordDetail | undefined>();
   const [zoomed, setZoomed] = useState<FilmstripFrame | undefined>();
   const [mode, setMode] = useState<ViewerMode>("skeleton");
@@ -818,6 +820,11 @@ export function RecordCard({ record, onShare, onRetry, onDelete, onAddTag, onRem
             style={styles.actionButton}
           >
             Share
+          </Button>
+        ) : null}
+        {record.status === "ready" && onReprocess ? (
+          <Button icon={RefreshCcw} variant="secondary" onPress={() => onReprocess(record)} style={styles.actionButton}>
+            Reprocess
           </Button>
         ) : null}
         {(record.status === "pending" || record.status === "failed") && onRetry ? (

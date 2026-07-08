@@ -17,6 +17,8 @@ type CaptureSheetProps = {
  * native UIs (system camera / photo picker); this sheet opens once a clip
  * exists, to confirm the window and create the record. */
 export function CaptureSheet({ store, visible, onClose }: CaptureSheetProps) {
+  const reprocessing = Boolean(store.pendingCapture?.reprocessRecordId);
+
   function close() {
     store.cancelPendingCapture();
     onClose();
@@ -32,9 +34,11 @@ export function CaptureSheet({ store, visible, onClose }: CaptureSheetProps) {
       <View style={styles.sheetRoot}>
         <View style={styles.sheetHeader}>
           <View style={styles.sheetHeaderText}>
-            <DisplayText size={24}>TRIM THE MOMENT</DisplayText>
+            <DisplayText size={24}>{reprocessing ? "REPROCESS" : "TRIM THE MOMENT"}</DisplayText>
             <AppText color={tokens.textMuted} size={12}>
-              Set the window around the action — RiderLens does the rest.
+              {reprocessing
+                ? "Rotate or re-trim — the record is rebuilt from the original video."
+                : "Set the window around the action — RiderLens does the rest."}
             </AppText>
           </View>
           <Pressable accessibilityRole="button" accessibilityLabel="Close capture" onPress={close} style={styles.sheetClose}>
@@ -200,7 +204,7 @@ function WindowStep({
 
       <View style={styles.actionGrid}>
         <Button onPress={onConfirm} style={styles.actionButton}>
-          Create record
+          {capture.reprocessRecordId ? "Rebuild record" : "Create record"}
         </Button>
         <Button variant="secondary" onPress={store.cancelPendingCapture} style={styles.actionButton}>
           Cancel

@@ -40,6 +40,8 @@ export type PendingCapture = {
   windowStatus: WindowStatus;
   /** Clockwise display/processing rotation the rider dialed in (0/90/180/270). */
   rotateDegrees: number;
+  /** Set when this capture rebuilds an existing record instead of creating one. */
+  reprocessRecordId?: string;
   proposal?: WindowProposal;
 };
 
@@ -55,6 +57,9 @@ export type RiderLensStore = {
   confirmPendingCapture: () => Promise<void>;
   cancelPendingCapture: () => void;
   retryRecord: (recordId: string) => void;
+  /** Reopen the trim sheet for an existing record (kept source video) to fix
+   * rotation or the window; confirming rebuilds the record in place. */
+  reprocessRecord: (recordId: string) => void;
   /** Probe the worker and re-run all queued/failed records now (pull-to-refresh). */
   retryPendingRecords: () => Promise<void>;
   deleteRecord: (recordId: string) => void;
@@ -179,6 +184,44 @@ export function useRiderLensMvp(): RiderLensStore {
     });
   }, []);
 
+  const reprocessRecord = useCallback(
+    (recordId: string) => {
+      const record = records.find((item) => item.id === recordId);
+      if (!record || record.status === "processing") return;
+      const uri = record.sourceVideoUri;
+      pendingUriRef.current = uri;
+      setPendingCapture({
+        uri,
+        // Rough seed; the analyze response corrects it and thumbnails follow.
+        durationSeconds: Math.max(record.windowEnd + 1, MIN_WINDOW_SECONDS + 1),
+        trimStartSeconds: record.windowStart,
+        trimEndSeconds: record.windowEnd,
+        windowStatus: "manual",
+        rotateDegrees: record.rotateDegrees ?? 0,
+        reprocessRecordId: record.id
+      });
+
+      // Upload once for the true duration and an uploadId the rebuild can reuse.
+      // The rider's window stays — reprocess exists to fix the result, and on a
+      // sideways source a fresh AI window would be reading sideways frames.
+      void proposeWindow(uri).then((proposal) => {
+        if (pendingUriRef.current !== uri) return;
+        setPendingCapture((current) => {
+          if (!current || current.uri !== uri || current.reprocessRecordId !== record.id) return current;
+          const duration =
+            proposal?.durationSeconds && proposal.durationSeconds > 0 ? proposal.durationSeconds : current.durationSeconds;
+          return {
+            ...current,
+            durationSeconds: duration,
+            trimEndSeconds: Math.min(current.trimEndSeconds, duration),
+            proposal
+          };
+        });
+      });
+    },
+    [records]
+  );
+
   const updatePendingWindow = useCallback(
     (updates: Partial<Pick<PendingCapture, "trimStartSeconds" | "trimEndSeconds">>) => {
       setPendingCapture((current) => {
@@ -241,6 +284,26 @@ export function useRiderLensMvp(): RiderLensStore {
   const confirmPendingCapture = useCallback(async () => {
     if (!pendingCapture) return;
 
+    if (pendingCapture.reprocessRecordId) {
+      const existing = records.find((item) => item.id === pendingCapture.reprocessRecordId);
+      if (existing) {
+        const updated: JumpRecord = {
+          ...existing,
+          status: "pending",
+          windowStart: pendingCapture.trimStartSeconds,
+          windowEnd: pendingCapture.trimEndSeconds,
+          rotateDegrees: pendingCapture.rotateDegrees || undefined,
+          aiWindow: false,
+          error: undefined
+        };
+        pendingUriRef.current = undefined;
+        setPendingCapture(undefined);
+        setRecords((current) => current.map((item) => (item.id === updated.id ? updated : item)));
+        runRecordProcessing(updated, pendingCapture.proposal?.uploadId);
+        return;
+      }
+    }
+
     let storedUri: string;
     try {
       storedUri = await persistVideoToLibrary(pendingCapture.uri);
@@ -268,7 +331,7 @@ export function useRiderLensMvp(): RiderLensStore {
     setPendingCapture(undefined);
     setRecords((current) => [record, ...current]);
     runRecordProcessing(record, pendingCapture.proposal?.uploadId);
-  }, [pendingCapture, runRecordProcessing, selectedSkill]);
+  }, [pendingCapture, records, runRecordProcessing, selectedSkill]);
 
   const rotatePendingCapture = useCallback(() => {
     setPendingCapture((current) =>
@@ -520,6 +583,7 @@ export function useRiderLensMvp(): RiderLensStore {
     confirmPendingCapture,
     cancelPendingCapture,
     retryRecord,
+    reprocessRecord,
     retryPendingRecords,
     deleteRecord,
     addRecordTag,
