@@ -210,7 +210,6 @@ function FilterChip({ label, active, onPress }: { label: string; active: boolean
 
 function PosterCell({ record, onPress }: { record: JumpRecord; onPress: () => void }) {
   const tags = recordTags(record);
-  const durationSeconds = record.windowEnd - record.windowStart;
 
   return (
     <Pressable
@@ -239,9 +238,6 @@ function PosterCell({ record, onPress }: { record: JumpRecord; onPress: () => vo
         <AppText weight="bold" size={13}>
           {getRecordTitle(record)}
         </AppText>
-        <NumberText size={11} color={tokens.textMuted}>
-          {durationSeconds.toFixed(1)}s
-        </NumberText>
         {tags.length > 0 ? (
           <AppText color={tokens.green} size={11} weight="semi" numberOfLines={1}>
             {tags.map((tag) => `# ${tag}`).join("  ")}
