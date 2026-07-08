@@ -137,9 +137,17 @@ export function SessionsScreen({ store }: SessionsScreenProps) {
         {openRecord ? (
           <View style={styles.sheetRoot}>
             <View style={styles.sheetHeader}>
-              <AppText weight="bold" size={17}>
-                {getRecordTitle(openRecord)}
-              </AppText>
+              <View style={styles.sheetHeaderText}>
+                <AppText weight="bold" size={17}>
+                  {getRecordTitle(openRecord)}
+                </AppText>
+                <AppText color={tokens.textMuted} size={12}>
+                  <NumberText size={12} color={tokens.textMuted}>
+                    {openRecord.windowStart.toFixed(1)}s–{openRecord.windowEnd.toFixed(1)}s
+                  </NumberText>
+                  {openRecord.aiWindow ? " · AI window" : " · manual window"}
+                </AppText>
+              </View>
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel="Close record"
@@ -160,6 +168,7 @@ export function SessionsScreen({ store }: SessionsScreenProps) {
             >
               <RecordCard
                 record={openRecord}
+                showTitle={false}
                 onShare={store.shareRecordClip}
                 onRetry={(record) => store.retryRecord(record.id)}
                 onReprocess={(record) => {
@@ -341,6 +350,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xl,
     paddingTop: spacing.lg,
     paddingBottom: spacing.md
+  },
+  sheetHeaderText: {
+    flex: 1,
+    gap: 2
   },
   sheetClose: {
     width: 38,

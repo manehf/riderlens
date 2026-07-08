@@ -45,6 +45,8 @@ type RecordCardProps = {
   onRetry?: (record: JumpRecord) => void;
   /** Reopen the trim step to fix rotation or the window and rebuild the record. */
   onReprocess?: (record: JumpRecord) => void;
+  /** Off when a surrounding header (the detail sheet) already names the record. */
+  showTitle?: boolean;
   onDelete?: (record: JumpRecord) => void;
   onAddTag?: (recordId: string, tag: string) => void;
   onRemoveTag?: (recordId: string, tag: string) => void;
@@ -661,7 +663,7 @@ function TagSection({ record, suggestions, onAdd, onRemove }: TagSectionProps) {
   );
 }
 
-export function RecordCard({ record, onShare, onRetry, onDelete, onReprocess, onAddTag, onRemoveTag, tagSuggestions }: RecordCardProps) {
+export function RecordCard({ record, onShare, onRetry, onDelete, onReprocess, onAddTag, onRemoveTag, tagSuggestions, showTitle = true }: RecordCardProps) {
   const [detail, setDetail] = useState<JumpRecordDetail | undefined>();
   const [zoomed, setZoomed] = useState<FilmstripFrame | undefined>();
   const [mode, setMode] = useState<ViewerMode>("skeleton");
@@ -720,15 +722,17 @@ export function RecordCard({ record, onShare, onRetry, onDelete, onReprocess, on
   return (
     <Card style={styles.card}>
       <View style={styles.headerRow}>
-        <View style={styles.headerText}>
-          <AppText weight="bold">{getRecordTitle(record)}</AppText>
-          <AppText color={tokens.textMuted} size={12}>
-            <NumberText size={12} color={tokens.textMuted}>
-              {record.windowStart.toFixed(1)}s–{record.windowEnd.toFixed(1)}s
-            </NumberText>
-            {record.aiWindow ? " · AI window" : " · manual window"}
-          </AppText>
-        </View>
+        {showTitle ? (
+          <View style={styles.headerText}>
+            <AppText weight="bold">{getRecordTitle(record)}</AppText>
+            <AppText color={tokens.textMuted} size={12}>
+              <NumberText size={12} color={tokens.textMuted}>
+                {record.windowStart.toFixed(1)}s–{record.windowEnd.toFixed(1)}s
+              </NumberText>
+              {record.aiWindow ? " · AI window" : " · manual window"}
+            </AppText>
+          </View>
+        ) : null}
         {showModeToggle ? (
           <View style={styles.segmented}>
             <SegmentButton
@@ -824,9 +828,14 @@ export function RecordCard({ record, onShare, onRetry, onDelete, onReprocess, on
           </Button>
         ) : null}
         {record.status === "ready" && onReprocess ? (
-          <Button icon={RefreshCcw} variant="secondary" size="sm" onPress={() => onReprocess(record)} style={styles.actionButton}>
-            Reprocess
-          </Button>
+          <Button
+            icon={RefreshCcw}
+            variant="secondary"
+            size="sm"
+            accessibilityLabel="Reprocess this record"
+            onPress={() => onReprocess(record)}
+            style={styles.iconAction}
+          />
         ) : null}
         {(record.status === "pending" || record.status === "failed") && onRetry ? (
           <Button icon={RefreshCcw} size="sm" onPress={() => onRetry(record)} style={styles.actionButton}>
@@ -834,9 +843,14 @@ export function RecordCard({ record, onShare, onRetry, onDelete, onReprocess, on
           </Button>
         ) : null}
         {onDelete ? (
-          <Button icon={Trash2} variant="secondary" size="sm" onPress={() => onDelete(record)} style={styles.actionButton}>
-            Delete
-          </Button>
+          <Button
+            icon={Trash2}
+            variant="secondary"
+            size="sm"
+            accessibilityLabel="Delete this record"
+            onPress={() => onDelete(record)}
+            style={styles.iconAction}
+          />
         ) : null}
       </View>
 
@@ -1202,6 +1216,9 @@ const styles = StyleSheet.create({
   },
   actionButton: {
     flex: 1
+  },
+  iconAction: {
+    width: 46
   },
   zoomOverlay: {
     flex: 1,

@@ -134,9 +134,11 @@ export function Button({
       ]}
     >
       {Icon ? <Icon color={textColor} size={size === "sm" ? 15 : 18} strokeWidth={2.4} /> : null}
-      <AppText weight="bold" size={size === "sm" ? 13 : 15} color={textColor} numberOfLines={1}>
-        {children}
-      </AppText>
+      {children ? (
+        <AppText weight="bold" size={size === "sm" ? 13 : 15} color={textColor} numberOfLines={1}>
+          {children}
+        </AppText>
+      ) : null}
     </Pressable>
   );
 }
