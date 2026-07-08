@@ -1,0 +1,33 @@
+{
+  "cli": {
+    "version": ">= 12.0.0",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_ANALYSIS_WORKER_URL": "https://riderlens-worker.fly.dev"
+      }
+    },
+    "preview": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_ANALYSIS_WORKER_URL": "https://riderlens-worker.fly.dev"
+      }
+    },
+    "production": {
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_ANALYSIS_WORKER_URL": "https://riderlens-worker.fly.dev"
+      }
+    }
+  },
+  "submit": {
+    "production": {}
+  }
+}

@@ -11,3 +11,4 @@ __pycache__/
 .DS_Store
 snapshots/
 moment-*.mp4
+fly_logs.md
