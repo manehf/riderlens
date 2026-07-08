@@ -400,7 +400,10 @@ export function useRiderLensMvp(): RiderLensStore {
 
     const result = await ImagePicker.launchCameraAsync({
       mediaTypes: ["videos"],
-      videoMaxDuration: 30
+      videoMaxDuration: 30,
+      // Caps camera output around 1080p on iOS — pose never needs 4K, and
+      // uploads shrink 3-4x. The worker normalizes whatever gets through.
+      videoQuality: ImagePicker.UIImagePickerControllerQualityType.High
     });
 
     if (result.canceled) return;
@@ -419,7 +422,10 @@ export function useRiderLensMvp(): RiderLensStore {
 
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ["videos"],
-      quality: 1
+      quality: 1,
+      // iOS transcodes the picked video to 1080p H.264 on-device before we
+      // ever see it; Android ignores this and relies on worker normalization.
+      videoExportPreset: ImagePicker.VideoExportPreset.H264_1920x1080
     });
 
     if (result.canceled) return;

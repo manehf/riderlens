@@ -4,10 +4,12 @@ import { getWorkerUrlCandidates } from "./analysisWorker";
 // Reachability is decided by a fast /health pre-flight so a stale or unreachable
 // worker IP fails in seconds instead of hanging until the big-upload timeouts below.
 const HEALTH_TIMEOUT_MS = 4_000;
-// Upload + contact sheet + AI window-finding legitimately takes 15-25s when connected.
-const ANALYZE_TIMEOUT_MS = 60_000;
-// Processing uploads the clip and runs the full pipeline; allow more, still bounded.
-const RECORD_TIMEOUT_MS = 180_000;
+// Upload + ingest normalization + contact sheet + AI window-finding: big
+// files over cellular need real headroom.
+const ANALYZE_TIMEOUT_MS = 120_000;
+// Processing uploads the clip and runs the full pipeline; allow more, still
+// bounded. Cloud processing of 4K phone footage can legitimately take minutes.
+const RECORD_TIMEOUT_MS = 300_000;
 
 export type WindowProposal = {
   uploadId: string;

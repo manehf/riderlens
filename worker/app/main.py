@@ -583,14 +583,29 @@ def measure_window(
     thumb_step = 1 if count <= 96 else max(1, count // 36)
     overlay = OverlayClipWriter(fps=1.0 / step) if render_overlay else None
     capture = cv2.VideoCapture(video_path)
+    # Decode sequentially: one seek to the window start, then read straight
+    # through, keeping every `stride`-th frame. Per-sample seeking re-decodes
+    # from the previous keyframe each time — on 4K/HEVC phone footage that is
+    # minutes of redundant work and starved the cloud worker into timeouts.
+    capture.set(cv2.CAP_PROP_POS_MSEC, max(0.0, window_start) * 1000.0)
+    stride = max(1, round(fps * step))
     try:
-        for index in range(count):
+        frame_cursor = 0
+        index = -1
+        while index + 1 < count:
+            grabbed = capture.grab()
+            if not grabbed:
+                break
+            keep = frame_cursor % stride == 0
+            frame_cursor += 1
+            if not keep:
+                continue
+            ok, frame = capture.retrieve()
+            if not ok:
+                break
+            index += 1
             time_seconds = window_start + index * step
             if time_seconds < 0:
-                continue
-            capture.set(cv2.CAP_PROP_POS_MSEC, time_seconds * 1000.0)
-            ok, frame = capture.read()
-            if not ok:
                 continue
             height, width = frame.shape[:2]
             entry: dict = {
@@ -1546,13 +1561,62 @@ def _cleanup_captures() -> None:
             pass
 
 
+# Ingest normalization: pose and the filmstrip never need more than 1080p, and
+# 4K/HEVC phone footage decodes an order of magnitude slower. Heavy uploads are
+# transcoded once at ingest; every downstream step (pose sampling, crop,
+# overlay, filmstrip) then works on a light, uniform file.
+NORMALIZE_MAX_HEIGHT = 1080
+NORMALIZE_PIXEL_BUDGET = 1920 * 1088  # anything bigger than ~1080p gets scaled
+
+
+def _normalize_upload(path: FilePath) -> None:
+    capture = cv2.VideoCapture(str(path))
+    if not capture.isOpened():
+        return
+    width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    fourcc = int(capture.get(cv2.CAP_PROP_FOURCC)).to_bytes(4, "little", signed=False).decode("ascii", "ignore").lower()
+    capture.release()
+    is_hevc = "hev" in fourcc or "hvc" in fourcc or "265" in fourcc
+    too_big = width * height > NORMALIZE_PIXEL_BUDGET
+    if not (too_big or is_hevc) or not shutil.which("ffmpeg"):
+        return
+
+    normalized = path.with_name(f"{path.stem}-norm.mp4.tmp")
+    scale = f"scale=-2:'min({NORMALIZE_MAX_HEIGHT},ih)'" if too_big else "null"
+    result = subprocess.run(
+        [
+            "ffmpeg", "-y", "-i", str(path),
+            "-vf", scale,
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+            "-c:a", "aac", "-b:a", "96k",
+            "-movflags", "+faststart",
+            str(normalized),
+        ],
+        capture_output=True,
+        timeout=240,
+    )
+    if result.returncode == 0 and normalized.exists() and normalized.stat().st_size > 0:
+        final = path.with_suffix(".mp4")
+        path.unlink(missing_ok=True)
+        normalized.rename(final)
+    else:
+        normalized.unlink(missing_ok=True)
+
+
 def _save_capture_upload(video: UploadFile) -> str:
     CAPTURE_DIR.mkdir(parents=True, exist_ok=True)
     _cleanup_captures()
     upload_id = uuid.uuid4().hex
     suffix = os.path.splitext(video.filename or "clip.mp4")[1] or ".mp4"
-    with open(CAPTURE_DIR / f"{upload_id}{suffix}", "wb") as out:
+    destination = CAPTURE_DIR / f"{upload_id}{suffix}"
+    with open(destination, "wb") as out:
         shutil.copyfileobj(video.file, out)
+    try:
+        _normalize_upload(destination)
+    except Exception:
+        # Normalization is an optimization — a failure must never lose the upload.
+        pass
     return upload_id
 
 
