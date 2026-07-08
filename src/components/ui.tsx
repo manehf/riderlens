@@ -83,6 +83,8 @@ export function Heading({ children, level = 2, style }: HeadingProps) {
 type ButtonProps = PropsWithChildren<{
   onPress?: () => void;
   variant?: "primary" | "secondary" | "dark" | "danger";
+  /** "sm" tightens padding and type so several buttons share a row without wrapping. */
+  size?: "md" | "sm";
   icon?: IconType;
   disabled?: boolean;
   accessibilityLabel?: string;
@@ -93,6 +95,7 @@ export function Button({
   children,
   onPress,
   variant = "primary",
+  size = "md",
   icon: Icon,
   disabled = false,
   accessibilityLabel,
@@ -123,14 +126,15 @@ export function Button({
       onPress={onPress}
       style={({ pressed }) => [
         styles.button,
+        size === "sm" && styles.buttonSm,
         variantStyle,
         disabled && styles.disabled,
         pressed && !disabled && styles.pressed,
         style
       ]}
     >
-      {Icon ? <Icon color={textColor} size={18} strokeWidth={2.4} /> : null}
-      <AppText weight="bold" size={15} color={textColor}>
+      {Icon ? <Icon color={textColor} size={size === "sm" ? 15 : 18} strokeWidth={2.4} /> : null}
+      <AppText weight="bold" size={size === "sm" ? 13 : 15} color={textColor} numberOfLines={1}>
         {children}
       </AppText>
     </Pressable>
@@ -346,6 +350,11 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     paddingHorizontal: spacing.lg,
     borderWidth: 1
+  },
+  buttonSm: {
+    minHeight: 38,
+    gap: 6,
+    paddingHorizontal: spacing.sm
   },
   buttonPrimary: {
     backgroundColor: tokens.electric,

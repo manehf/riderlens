@@ -816,6 +816,7 @@ export function RecordCard({ record, onShare, onRetry, onDelete, onReprocess, on
           <Button
             icon={Share2}
             variant="secondary"
+            size="sm"
             onPress={() => onShare(record, mode === "skeleton" && Boolean(record.skeletonClipUri))}
             style={styles.actionButton}
           >
@@ -823,17 +824,17 @@ export function RecordCard({ record, onShare, onRetry, onDelete, onReprocess, on
           </Button>
         ) : null}
         {record.status === "ready" && onReprocess ? (
-          <Button icon={RefreshCcw} variant="secondary" onPress={() => onReprocess(record)} style={styles.actionButton}>
+          <Button icon={RefreshCcw} variant="secondary" size="sm" onPress={() => onReprocess(record)} style={styles.actionButton}>
             Reprocess
           </Button>
         ) : null}
         {(record.status === "pending" || record.status === "failed") && onRetry ? (
-          <Button icon={RefreshCcw} onPress={() => onRetry(record)} style={styles.actionButton}>
+          <Button icon={RefreshCcw} size="sm" onPress={() => onRetry(record)} style={styles.actionButton}>
             Retry
           </Button>
         ) : null}
         {onDelete ? (
-          <Button icon={Trash2} variant="secondary" onPress={() => onDelete(record)} style={styles.actionButton}>
+          <Button icon={Trash2} variant="secondary" size="sm" onPress={() => onDelete(record)} style={styles.actionButton}>
             Delete
           </Button>
         ) : null}
@@ -1200,8 +1201,7 @@ const styles = StyleSheet.create({
     gap: spacing.md
   },
   actionButton: {
-    flex: 1,
-    minHeight: 42
+    flex: 1
   },
   zoomOverlay: {
     flex: 1,
