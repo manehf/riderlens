@@ -129,6 +129,19 @@ def test_measure_window_produces_series():
     assert overlay is None  # not requested
 
 
+def test_filmstrip_quality_uses_more_of_landscape_pixel_budget():
+    landscape_width, landscape_quality = main.filmstrip_encode_settings(250, 1024, 576)
+    portrait_width, portrait_quality = main.filmstrip_encode_settings(250, 1080, 1920)
+
+    assert (landscape_width, landscape_quality) == (768, 78)
+    assert (portrait_width, portrait_quality) == (640, 78)
+
+
+def test_filmstrip_quality_respects_explicit_width_and_source_size():
+    assert main.filmstrip_encode_settings(450, 1024, 576, 480) == (480, 74)
+    assert main.filmstrip_encode_settings(80, 640, 360) == (640, 88)
+
+
 def test_measure_window_renders_shareable_overlay_clip():
     _series, _air, _filmstrip, overlay = main.measure_window(
         "../clips/regular_jump/fail/jump_fail.mp4", 4.0, 5.0, (4.4, 5.0), include_bike=False, render_overlay=True
@@ -136,3 +149,18 @@ def test_measure_window_renders_shareable_overlay_clip():
     assert overlay is not None
     assert len(overlay) > 10_000  # a real encoded mp4, not an empty stub
     assert overlay[4:8] == b"ftyp"  # mp4 container signature
+
+
+def test_measure_window_can_skip_unused_air_frames():
+    series, air_frames, filmstrip, overlay = main.measure_window(
+        "../clips/regular_jump/fail/jump_fail.mp4",
+        4.0,
+        4.5,
+        (4.0, 4.5),
+        include_bike=False,
+        include_air_frames=False,
+    )
+    assert series
+    assert filmstrip
+    assert air_frames == []
+    assert overlay is None

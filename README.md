@@ -20,7 +20,7 @@ The MVP is intentionally narrow:
 Implemented in the Expo app (capture-first — see `riderlens-product-plan.md`):
 
 - Capture tab: record live or pick from the photo library.
-- Window step: AI-proposed trim (worker + Claude) with silent timeout fallback to manual start/end controls, over on-device thumbnails.
+- Jump selection: the rider previews the source, chooses one 0.5–8 second range, and can explicitly correct rotation before upload. RiderLens does not guess which jump to analyze.
 - Records: the worker crops the moment (FFmpeg), measures pose on every frame in the window, and the app stores the trimmed clip + key frames with skeleton overlays + filmstrip + timeline curves on-device.
 - Offline-tolerant: when processing fails, the record stays pending with a retry — capture never blocks on connectivity.
 - History tab: all records with status, review, share (native share sheet with the clip), and delete.
@@ -54,7 +54,7 @@ MediaPipe:
 
 Filming:
 
-- Best results come from 3 to 10 second side-view clips.
+- Best results come from a 3 to 8 second selection inside a source video no longer than 30 seconds.
 - Keep the whole rider, bike, takeoff, and landing visible.
 - Use stable framing and good light.
 - Avoid shaky, dark, heavily cropped, or zoomed-in clips.

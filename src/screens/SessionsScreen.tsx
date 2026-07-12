@@ -145,7 +145,6 @@ export function SessionsScreen({ store }: SessionsScreenProps) {
                   <NumberText size={12} color={tokens.textMuted}>
                     {openRecord.windowStart.toFixed(1)}s–{openRecord.windowEnd.toFixed(1)}s
                   </NumberText>
-                  {openRecord.aiWindow ? " · AI window" : " · manual window"}
                 </AppText>
               </View>
               <Pressable

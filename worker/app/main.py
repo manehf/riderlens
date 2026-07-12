@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import math
 import os
 import re
 import shutil
 import subprocess
 import tempfile
+import threading
 import time
 import urllib.request
 import uuid
@@ -28,7 +30,7 @@ try:
 except ImportError:  # pragma: no cover - dotenv ships with pydantic-settings
     pass
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
@@ -49,6 +51,8 @@ except Exception:  # pragma: no cover - optional until Supabase is configured
 
 
 app = FastAPI(title="RiderLens Analysis Worker", version="0.2.0")
+logger = logging.getLogger("uvicorn.error")
+CAPTURE_JOB_LOCK = threading.Lock()
 
 # Browser clients (Expo web during development, the share pages later) need
 # CORS; native apps ignore it. The API holds no secrets — auth comes later
@@ -159,6 +163,7 @@ def health():
         "mediapipe": mp is not None,
         "opencv": cv2 is not None,
         "bike_detector_model": BIKE_MODEL_PATH.exists(),
+        "captureBusy": CAPTURE_JOB_LOCK.locked(),
     }
 
 
@@ -535,6 +540,32 @@ class OverlayClipWriter:
                     pass
 
 
+def filmstrip_encode_settings(
+    frame_count: int,
+    frame_width: int,
+    frame_height: int,
+    override_width: int | None = None,
+) -> tuple[int, int]:
+    """Choose dense-frame dimensions without letting landscape clips look unnecessarily soft."""
+    if frame_count <= 96:
+        base_width, quality = 960, 88
+    elif frame_count <= 200:
+        base_width, quality = 800, 84
+    elif frame_count <= 300:
+        base_width, quality = 640, 78
+    else:
+        base_width, quality = 560, 74
+
+    if override_width is not None:
+        return min(frame_width, max(1, override_width)), quality
+
+    # Side-view footage is normally landscape. Its old width-only budget used
+    # far fewer pixels than portrait at the same tier, so spend part of that
+    # unused budget on visible detail without increasing portrait dimensions.
+    target_width = round(base_width * 1.2) if frame_width >= frame_height else base_width
+    return min(frame_width, target_width), quality
+
+
 def measure_window(
     video_path: str,
     window_start: float,
@@ -543,16 +574,17 @@ def measure_window(
     include_bike: bool = True,
     filmstrip_width: int | None = None,
     render_overlay: bool = False,
+    include_air_frames: bool = True,
 ) -> tuple[list[dict], list[dict], list[dict], bytes | None]:
     """Dense per-frame measurement between the anchored window bounds.
 
-    Pose runs on every sampled frame (~30/s, capped at 120) and the full-body skeleton
-    is burned into every filmstrip thumbnail. The bike detector (pitch) only runs when
+    Pose runs at the source frame rate up to 60fps (capped at 450 frames) and the
+    full-body skeleton is burned into every filmstrip thumbnail. The bike detector only runs when
     include_bike is set — the capture path skips it (pose-only records).
-    Returns (series, air_frames, filmstrip, overlay_clip): air_frames are small raw
-    thumbnails inside air_span for the AI review; filmstrip covers the whole window for
-    the user; overlay_clip is the shareable skeleton-burned watermarked mp4 (bytes)
-    when render_overlay is set, else None.
+    Returns (series, air_frames, filmstrip, overlay_clip): air_frames are bounded,
+    encoded thumbnails inside air_span for the AI review; filmstrip covers the whole
+    window for the user; overlay_clip is the shareable skeleton-burned watermarked mp4
+    (bytes) when render_overlay is set, else None.
     """
     capture = cv2.VideoCapture(video_path)
     if not capture.isOpened():
@@ -578,20 +610,13 @@ def measure_window(
         min_tracking_confidence=0.3,
     )
     series: list[dict] = []
-    air_candidates: list[tuple[float, object]] = []
+    air_frames: list[dict] = []
     filmstrip: list[dict] = []
-    # Frame-by-frame inspection needs every sampled frame in the strip — the
-    # frames ARE the analysis. Density is never thinned; instead the encode
-    # budget (width/quality) shrinks as the strip grows, keeping the payload
-    # bounded (~16MB worst case) while every frame stays steppable.
-    if count <= 96:
-        strip_width, strip_quality = 960, 86
-    elif count <= 200:
-        strip_width, strip_quality = 800, 80
-    elif count <= 300:
-        strip_width, strip_quality = 640, 74
-    else:
-        strip_width, strip_quality = 560, 70
+    estimated_air_frames = max(1, int(max(0.0, air_span[1] - air_span[0]) / step) + 1)
+    air_frame_stride = max(1, math.ceil(estimated_air_frames / 8))
+    air_frame_cursor = 0
+    # Frame-by-frame inspection needs every sampled frame in the strip. Density
+    # is never thinned; dimensions and JPEG quality still fall as count rises.
     overlay = OverlayClipWriter(fps=1.0 / step) if render_overlay else None
     capture = cv2.VideoCapture(video_path)
     # Decode sequentially: one seek to the window start, then read straight
@@ -670,10 +695,36 @@ def measure_window(
                 draw_watermark(share)
                 overlay.add(share)
 
-            if air_span[0] <= time_seconds <= air_span[1]:
-                air_candidates.append((time_seconds, frame))
-            target_width = filmstrip_width if filmstrip_width is not None else min(width, strip_width)
-            small = cv2.resize(frame, (target_width, max(1, int(height * target_width / width)))) if target_width < width else frame.copy()
+            if include_air_frames and air_span[0] <= time_seconds <= air_span[1]:
+                # Encode at most eight reference frames immediately. Keeping all
+                # full-resolution candidates alive until the end made a 1080p,
+                # 8-second window consume multiple gigabytes.
+                if air_frame_cursor % air_frame_stride == 0 and len(air_frames) < 8:
+                    air_width = min(width, 480)
+                    air_small = (
+                        cv2.resize(frame, (air_width, max(1, int(height * air_width / width))))
+                        if air_width < width
+                        else frame.copy()
+                    )
+                    air_image = encode_frame_jpeg(air_small)
+                    if air_image:
+                        air_frames.append({"t": round(time_seconds, 2), "image": air_image})
+                air_frame_cursor += 1
+            target_width, strip_quality = filmstrip_encode_settings(
+                count,
+                width,
+                height,
+                filmstrip_width,
+            )
+            small = (
+                cv2.resize(
+                    frame,
+                    (target_width, max(1, int(height * target_width / width))),
+                    interpolation=cv2.INTER_AREA,
+                )
+                if target_width < width
+                else frame.copy()
+            )
             if result.pose_landmarks:
                 draw_skeleton(small, result.pose_landmarks.landmark)
             image = encode_frame_jpeg(small, quality=strip_quality)
@@ -684,15 +735,6 @@ def measure_window(
         pose.close()
         capture.release()
 
-    air_frames: list[dict] = []
-    if air_candidates:
-        keep = max(1, len(air_candidates) // 8)
-        for time_seconds, frame in air_candidates[::keep][:8]:
-            height, width = frame.shape[:2]
-            small = cv2.resize(frame, (480, max(1, int(height * 480 / width))))
-            image = encode_frame_jpeg(small)
-            if image:
-                air_frames.append({"t": round(time_seconds, 2), "image": image})
     overlay_clip = None
     if overlay is not None:
         # Close the share clip with the QR end-card before encoding finishes.
@@ -1553,7 +1595,38 @@ def clamp(value: float, minimum: float, maximum: float) -> float:
 
 CAPTURE_DIR = FilePath(tempfile.gettempdir()) / "riderlens-captures"
 CAPTURE_TTL_SECONDS = 45 * 60
+CAPTURE_MAX_WINDOW_SECONDS = 8.0
 UPLOAD_ID_PATTERN = re.compile(r"^[0-9a-f]{32}$")
+
+
+def reserve_capture_worker():
+    """Allow one MediaPipe record job per machine.
+
+    The mobile app persists the record before processing and automatically retries
+    a busy response, so rejecting overlap is safer than letting two large videos
+    exhaust the machine together.
+    """
+    if not CAPTURE_JOB_LOCK.acquire(blocking=False):
+        raise HTTPException(
+            status_code=429,
+            detail="Analysis worker is busy. This record is saved and will retry shortly.",
+            headers={"Retry-After": "30"},
+        )
+    try:
+        yield
+    finally:
+        CAPTURE_JOB_LOCK.release()
+
+
+def current_rss_mb() -> float | None:
+    """Current Linux resident memory for useful Fly diagnostics."""
+    try:
+        for line in FilePath("/proc/self/status").read_text().splitlines():
+            if line.startswith("VmRSS:"):
+                return round(int(line.split()[1]) / 1024, 1)
+    except (OSError, ValueError, IndexError):
+        pass
+    return None
 
 
 def _cleanup_captures() -> None:
@@ -1568,10 +1641,11 @@ def _cleanup_captures() -> None:
             pass
 
 
-# Ingest normalization: pose and the filmstrip never need more than 1080p, and
-# 4K/HEVC phone footage decodes an order of magnitude slower. Heavy uploads are
-# transcoded once at ingest; every downstream step (pose sampling, crop,
-# overlay, filmstrip) then works on a light, uniform file.
+# Ingest normalization: players honor phone rotation metadata, while OpenCV and
+# stream-copy paths can disagree about it. Transcode every upload once so FFmpeg
+# applies the display transform to the pixels and clears the metadata. Every
+# downstream path then sees the same upright, H.264 source. Oversized footage is
+# also bounded to 1080p-class dimensions for pose and filmstrip work.
 NORMALIZE_MAX_EDGE = 1920  # cap the longest side, so portrait keeps 1080x1920
 NORMALIZE_PIXEL_BUDGET = 1920 * 1088  # anything bigger than ~1080p gets scaled
 
@@ -1582,28 +1656,29 @@ def _normalize_upload(path: FilePath) -> None:
         return
     width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    fourcc = int(capture.get(cv2.CAP_PROP_FOURCC)).to_bytes(4, "little", signed=False).decode("ascii", "ignore").lower()
     capture.release()
-    is_hevc = "hev" in fourcc or "hvc" in fourcc or "265" in fourcc
     too_big = width * height > NORMALIZE_PIXEL_BUDGET
-    if not (too_big or is_hevc) or not shutil.which("ffmpeg"):
+    if not shutil.which("ffmpeg"):
         return
 
     normalized = path.with_name(f"{path.stem}-norm.mp4.tmp")
-    # Fit inside a MAX_EDGE square without upscaling: landscape 4K -> 1920x1080,
-    # portrait 4K -> 1080x1920, small clips pass through untouched.
+    # FFmpeg autorotation is on by default and runs before this filter. Fit large
+    # clips without upscaling; for small clips only make dimensions codec-safe.
     edge = NORMALIZE_MAX_EDGE
     scale = (
         f"scale='min({edge},iw)':'min({edge},ih)':force_original_aspect_ratio=decrease:force_divisible_by=2"
         if too_big
-        else "null"
+        else "scale=trunc(iw/2)*2:trunc(ih/2)*2"
     )
     result = subprocess.run(
         [
             "ffmpeg", "-y", "-i", str(path),
             "-vf", scale,
             "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+            "-pix_fmt", "yuv420p",
             "-c:a", "aac", "-b:a", "96k",
+            "-map_metadata", "-1",
+            "-metadata:s:v:0", "rotate=0",
             "-movflags", "+faststart",
             "-f", "mp4",  # the .tmp extension would otherwise leave ffmpeg without a container
             str(normalized),
@@ -1651,7 +1726,10 @@ def _rotated_source(video_path: str, degrees: int) -> str:
             "ffmpeg", "-y", "-i", str(source),
             "-vf", ROTATE_FILTERS[degrees],
             "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+            "-pix_fmt", "yuv420p",
             "-c:a", "copy",
+            "-map_metadata", "-1",
+            "-metadata:s:v:0", "rotate=0",
             "-movflags", "+faststart",
             "-f", "mp4",
             str(rotated),
@@ -1783,13 +1861,14 @@ async def capture_analyze(
 
 
 @app.post("/capture/record")
-async def capture_record(
+def capture_record(
     start_seconds: float = Form(...),
     end_seconds: float = Form(...),
     upload_id: str | None = Form(None),
     video: UploadFile | None = File(None),
     events_json: str | None = Form(None),
     rotate_degrees: int = Form(0),
+    _capture_slot: None = Depends(reserve_capture_worker),
 ):
     if cv2 is None or mp is None or np is None:
         raise HTTPException(status_code=503, detail="Install worker dependencies: mediapipe, opencv-python-headless, numpy.")
@@ -1810,6 +1889,11 @@ async def capture_record(
     duration = video_duration_seconds(video_path)
     start = max(0.0, min(start_seconds, duration))
     end = max(start + 0.3, min(end_seconds, duration or end_seconds))
+    if end - start > CAPTURE_MAX_WINDOW_SECONDS + 1e-6:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Select an analysis window of {CAPTURE_MAX_WINDOW_SECONDS:g} seconds or less.",
+        )
 
     events: list[dict] = []
     if events_json:
@@ -1818,19 +1902,40 @@ async def capture_record(
         except json.JSONDecodeError:
             raise HTTPException(status_code=422, detail="events_json is not valid JSON.")
 
-    # Pose-only records: every filmstrip frame carries the full skeleton; no bike
-    # geometry (unreliable on real footage) and no separate key-frame metrics — the
-    # AI events label frames in the strip instead.
-    series, _air_frames, filmstrip, overlay_clip = measure_window(
-        video_path, start, end, (start, end), include_bike=False, render_overlay=True
+    started_at = time.perf_counter()
+    logger.info(
+        "capture_record started window=%.2fs source=%.2fs rss_mb=%s",
+        end - start,
+        duration,
+        current_rss_mb(),
     )
-    clip_bytes = crop_clip(video_path, start, end)
+    try:
+        # Pose-only records: every filmstrip frame carries the full skeleton; no
+        # bike geometry and no separate key-frame metrics. AI reference frames are
+        # unused here, so do not allocate them.
+        series, _air_frames, filmstrip, overlay_clip = measure_window(
+            video_path,
+            start,
+            end,
+            (start, end),
+            include_bike=False,
+            render_overlay=True,
+            include_air_frames=False,
+        )
+        clip_bytes = crop_clip(video_path, start, end)
+    except Exception:
+        logger.exception(
+            "capture_record failed elapsed=%.1fs rss_mb=%s",
+            time.perf_counter() - started_at,
+            current_rss_mb(),
+        )
+        raise
 
     # Airtime + estimated height from flight physics; null when the events
     # don't describe a takeoff→landing flight (manual windows, no-jump clips).
     from .flight import estimate_flight
 
-    return {
+    response = {
         "clip": "data:video/mp4;base64," + base64.b64encode(clip_bytes).decode("ascii"),
         # Skeleton-burned, watermarked share version; null if rendering failed.
         "skeletonClip": (
@@ -1842,3 +1947,11 @@ async def capture_record(
         "events": events,
         "flight": estimate_flight(series, events),
     }
+    logger.info(
+        "capture_record completed elapsed=%.1fs frames=%d filmstrip=%d rss_mb=%s",
+        time.perf_counter() - started_at,
+        len(series),
+        len(filmstrip),
+        current_rss_mb(),
+    )
+    return response

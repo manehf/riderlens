@@ -1,6 +1,6 @@
 # RiderLens MVP Plan — MTB Gravity v1 Ship Plan
 
-Status date: July 6, 2026.
+Status date: July 11, 2026.
 This is the operative plan for shipping v1. Background documents: `riderlens-product-plan.md` (v4 — architecture, storage tiers, connectivity ladder) and `bike-technique-app-prerequisites.md` (visual system, design tokens, safety rules, filming guidance). Where they conflict, this document wins.
 
 ---
@@ -31,11 +31,10 @@ Long-term product direction: RiderLens becomes a full MTB gravity app, not a gen
 
 ```
 record live ──┐
-              ├─→ find the window ─→ crop + pose ─→ record ─→ tag ─→ library ─→ share
-pick from    ─┘   (AI proposes,      (worker:        (clip +           (poster    (skeleton mp4
-photo library      manual always      FFmpeg +        skeleton          grid +      w/ watermark,
-                   available)         MediaPipe)      filmstrip +       tag         or clean clip)
-                                                      airtime est.)     filters)
+              ├─→ select one jump ─→ crop + pose ─→ record ─→ tag ─→ library ─→ share
+pick from    ─┘   (rider chooses      (worker:        (clip +           (poster    (skeleton mp4
+photo library      0.5–8 seconds)      FFmpeg +        skeleton          grid +      w/ watermark,
+                                       MediaPipe)      filmstrip)        filters)    or clean clip)
 ```
 
 ### 3.1 Minimum MVP
@@ -43,7 +42,7 @@ photo library      manual always      FFmpeg +        skeleton          grid +  
 The minimum shippable product is the smallest version that proves riders care enough to repeat the loop:
 
 1. **Capture or pick a local video** — no YouTube/external links, no cloud import, no setup flow.
-2. **Choose the action window** — AI can propose it when reachable, but manual trim must always work.
+2. **Choose the action window** — the rider previews and selects one 0.5–8 second jump; no full-video AI search.
 3. **Generate a finished record** — trimmed clip, skeleton overlay on every frame, poster, filmstrip, basic metadata.
 4. **Save records locally** — a rider can leave the app and come back to a list of sessions.
 5. **Review one record well** — Skeleton/Video toggle, play/pause, scrub, frame step, slow speed.
@@ -65,12 +64,12 @@ v1 is **one home screen, one action, two sheets**. No tab bar: earlier iteration
 
 ### 4.2 Capture sheet (`CaptureSheet.tsx`) — modal over the library
 - **Record** (in-app camera, 30s max, side-view hint) and **Pick video** (photo-library picker) — the rider decides behind the single (+).
-- **Window step** after either: AI-proposed trim window when the worker is reachable ("AI found the moment"), manual start/end steppers always available. Thumbnail strip shows what's in/out of the window.
-- **Create record** closes the sheet; the new record lands at the top of the library grid, visibly `queued → processing → ready`.
+- **Jump selection** after either: orientation-preserving video preview, looping selected range, tappable thumbnails, and precise start/end controls. The worker receives only the rider-confirmed range.
+- **Analyze jump** closes the sheet; the new record lands at the top of the library grid, visibly `queued → processing → ready`.
 - Safety note card ("Ride within your limits") lives here.
 
 ### 4.4 Record card (shared component, shown in the record detail sheet)
-- Header: time title ("Today · 14:07"), window + AI/manual note; the status chip slot becomes the **Skeleton | Video** lens toggle once ready.
+- Header: time title ("Today · 14:07") and selected source range; the status chip slot becomes the **Skeleton | Video** lens toggle once ready.
 - Tag row: auto `# crash` (red) + user tags + one-tap add with suggestions.
 - **Single viewport**: skeleton frame sequence or clean video, one shared playback position across both lenses.
 - Transport: frame-step ‹ ›, play/pause, scrubber, speed cycle (1× / ½× / ¼×), timestamp. Event labels behave as phase banners (visible until the next event).
@@ -169,6 +168,6 @@ These three decide act two: depth (Garage/coaching) if riders retain and ask "wh
 
 ## 8. Current state (July 7, 2026)
 
-Built, tested, committed: capture flow (camera + video picker), AI window finding with manual fallback, worker pipeline (trim, pose on every frame, skeleton filmstrip, poster, watermarked skeleton share clip), flight metrics (airtime + estimated height, crash-aware, unit-tested), record card (single viewport, lens toggle, transport with speed/frame-step, phase-banner events), tags (auto crash + user, suggestions), library (poster grid, tag filters, detail sheet), share-by-lens, two-tab navigation with (+) quick capture, storage cleanup on delete, foreground/active auto-retry for pending records, beta-facing debug chip removed, action-moment worker prompt. RevenueCat rails (dormant until keys + dev build), rider profile settings (units, body, RAD, lead foot), keyboard handling, fullscreen with landscape rotation, virtualized library grid, filmstrip-as-scrubber viewer with exact frame stepping. Worker test suite: 46 passing.
+Built and tested: capture flow (camera + video picker), rider-selected 0.5–8 second jump range with looping preview and explicit rotation correction, worker-side orientation canonicalization, worker pipeline (trim, pose on every frame, skeleton filmstrip, poster, watermarked skeleton share clip), record card (single viewport, lens toggle, transport with speed/frame-step), user tags, library (poster grid, tag filters, detail sheet), share-by-lens, storage cleanup on delete, and foreground/active retry for pending records. The full-video AI window search is removed from the mobile critical path; automatic phase suggestions can return later inside the already selected jump.
 
 Open items are exactly Phases 1–4 above.

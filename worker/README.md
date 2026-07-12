@@ -2,14 +2,15 @@
 
 FastAPI MediaPipe/OpenCV worker for the RiderLens regular-jump MVP.
 
-The worker exists because Expo should not do heavy video processing on-device for the first MVP. The mobile app posts uploaded clips to this service when `EXPO_PUBLIC_ANALYSIS_WORKER_URL` is set. If the worker is unavailable, the app marks the session as failed and offers retry plus manual calibration — it does not invent metrics.
+The worker exists because Expo should not do heavy video processing on-device for the first MVP. The rider chooses the jump range locally, then the mobile app posts the source and selected timestamps when `EXPO_PUBLIC_ANALYSIS_WORKER_URL` is set. If the worker is unavailable, the app keeps the record queued for retry.
 
 ## Scope
 
 Implemented:
 
 - Receive uploaded regular-jump video files from the mobile app.
-- Respect the selected trim window.
+- Canonicalize phone orientation metadata into upright H.264 pixels exactly once.
+- Respect the rider-selected trim window (0.5–8 seconds).
 - Sample frames with OpenCV.
 - Run MediaPipe Pose on sampled frames.
 - Pick approach, compression, takeoff, air, and landing frames.

@@ -72,3 +72,27 @@ def test_capture_record_rejects_expired_upload_id():
 def test_capture_record_requires_a_source():
     response = client.post("/capture/record", data={"start_seconds": "0", "end_seconds": "1"})
     assert response.status_code == 422
+
+
+def test_capture_record_rejects_oversized_analysis_window():
+    with open(CLIP, "rb") as video:
+        response = client.post(
+            "/capture/record",
+            files={"video": ("jump.mp4", video, "video/mp4")},
+            data={"start_seconds": "0", "end_seconds": str(main.CAPTURE_MAX_WINDOW_SECONDS + 1)},
+        )
+    assert response.status_code == 422
+    assert response.json()["detail"] == "Select an analysis window of 8 seconds or less."
+
+
+def test_capture_record_rejects_overlapping_job():
+    assert main.CAPTURE_JOB_LOCK.acquire(blocking=False)
+    try:
+        response = client.post(
+            "/capture/record",
+            data={"start_seconds": "0", "end_seconds": "1", "upload_id": "0" * 32},
+        )
+    finally:
+        main.CAPTURE_JOB_LOCK.release()
+    assert response.status_code == 429
+    assert response.headers["retry-after"] == "30"

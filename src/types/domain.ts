@@ -148,6 +148,8 @@ export type JumpRecord = {
   skillType: SkillType;
   status: RecordStatus;
   sourceVideoUri: string;
+  /** Original source duration, retained so reprocessing can select another jump. */
+  sourceDurationSeconds?: number;
   windowStart: number;
   windowEnd: number;
   aiWindow: boolean;

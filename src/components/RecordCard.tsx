@@ -110,6 +110,8 @@ type ViewerMode = "skeleton" | "video";
 // display. Edge frames decode 4 steps before they're needed, which also keeps
 // playback ahead of the JPEG decoder. Memory: ~2*WINDOW+1 decoded frames.
 const FRAME_WINDOW = 4;
+const FRAME_HOLD_DELAY_MS = 400;
+const FRAME_HOLD_REPEAT_MS = 110;
 
 /** Sliding-window frame display: all frames within FRAME_WINDOW of the current
  * index stay mounted (decoded, hidden); only the current one is visible.
@@ -506,6 +508,7 @@ function JumpViewer({
             icon={ChevronLeft}
             label="Previous frame"
             onPress={() => stepFrame(-1)}
+            repeatOnLongPress
           />
           <IconButton
             icon={playing ? Pause : Play}
@@ -517,6 +520,7 @@ function JumpViewer({
             icon={ChevronRight}
             label="Next frame"
             onPress={() => stepFrame(1)}
+            repeatOnLongPress
           />
         </View>
         <View style={styles.transportGroup}>
@@ -547,14 +551,55 @@ type IconButtonProps = {
   label: string;
   onPress: () => void;
   emphasis?: boolean;
+  repeatOnLongPress?: boolean;
 };
 
-function IconButton({ icon: Icon, label, onPress, emphasis = false }: IconButtonProps) {
+function IconButton({ icon: Icon, label, onPress, emphasis = false, repeatOnLongPress = false }: IconButtonProps) {
+  const onPressRef = useRef(onPress);
+  const holdDelayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const repeatTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const handledLongPressRef = useRef(false);
+  onPressRef.current = onPress;
+
+  const stopHolding = useCallback(() => {
+    if (holdDelayTimerRef.current) {
+      clearTimeout(holdDelayTimerRef.current);
+      holdDelayTimerRef.current = null;
+    }
+    if (repeatTimerRef.current) {
+      clearInterval(repeatTimerRef.current);
+      repeatTimerRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => stopHolding, [stopHolding]);
+
+  const handlePressIn = useCallback(() => {
+    handledLongPressRef.current = false;
+    stopHolding();
+    holdDelayTimerRef.current = setTimeout(() => {
+      holdDelayTimerRef.current = null;
+      handledLongPressRef.current = true;
+      onPressRef.current();
+      repeatTimerRef.current = setInterval(() => onPressRef.current(), FRAME_HOLD_REPEAT_MS);
+    }, FRAME_HOLD_DELAY_MS);
+  }, [stopHolding]);
+
+  const handlePress = useCallback(() => {
+    if (repeatOnLongPress && handledLongPressRef.current) return;
+    stopHolding();
+    onPressRef.current();
+  }, [repeatOnLongPress, stopHolding]);
+
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={label}
-      onPress={onPress}
+      accessibilityHint={repeatOnLongPress ? "Hold to move through frames continuously" : undefined}
+      cancelable={repeatOnLongPress ? false : undefined}
+      onPressIn={repeatOnLongPress ? handlePressIn : undefined}
+      onPressOut={repeatOnLongPress ? stopHolding : undefined}
+      onPress={handlePress}
       style={({ pressed }) => [styles.iconButton, emphasis && styles.iconButtonEmphasis, pressed && styles.iconButtonPressed]}
     >
       <Icon color={emphasis ? tokens.graphite : tokens.text} size={18} strokeWidth={2.4} />
@@ -755,7 +800,6 @@ export function RecordCard({ record, onShare, onRetry, onDelete, onReprocess, on
               <NumberText size={12} color={tokens.textMuted}>
                 {record.windowStart.toFixed(1)}s–{record.windowEnd.toFixed(1)}s
               </NumberText>
-              {record.aiWindow ? " · AI window" : " · manual window"}
             </AppText>
           </View>
         ) : null}

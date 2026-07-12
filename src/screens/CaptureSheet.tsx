@@ -1,10 +1,18 @@
+import Slider from "@react-native-community/slider";
+import { useEventListener } from "expo";
+import { useVideoPlayer, VideoView } from "expo-video";
 import * as VideoThumbnails from "expo-video-thumbnails";
-import { AlertTriangle, RotateCw, Scissors, Sparkles, X } from "lucide-react-native";
-import { useEffect, useState } from "react";
+import { AlertTriangle, Minus, Pause, Play, Plus, RotateCw, Scissors, X } from "lucide-react-native";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Image, Modal, Pressable, ScrollView, StyleSheet, View } from "react-native";
 
 import { AppText, Button, Card, Chip, DisplayText, NumberText } from "../components/ui";
 import type { PendingCapture, RiderLensStore } from "../hooks/useRiderLensMvp";
+import {
+  MAX_ANALYSIS_WINDOW_SECONDS,
+  MIN_ANALYSIS_WINDOW_SECONDS,
+  shouldLoopSelection
+} from "../services/captureWindow";
 import { radius, spacing, tokens } from "../theme/tokens";
 
 type CaptureSheetProps = {
@@ -13,9 +21,7 @@ type CaptureSheetProps = {
   onClose: () => void;
 };
 
-/** The trim step as a modal over the library. Filming and picking happen in
- * native UIs (system camera / photo picker); this sheet opens once a clip
- * exists, to confirm the window and create the record. */
+/** Native camera/picker first, then this focused editor chooses one jump. */
 export function CaptureSheet({ store, visible, onClose }: CaptureSheetProps) {
   const reprocessing = Boolean(store.pendingCapture?.reprocessRecordId);
 
@@ -34,11 +40,11 @@ export function CaptureSheet({ store, visible, onClose }: CaptureSheetProps) {
       <View style={styles.sheetRoot}>
         <View style={styles.sheetHeader}>
           <View style={styles.sheetHeaderText}>
-            <DisplayText size={24}>{reprocessing ? "REPROCESS" : "TRIM THE MOMENT"}</DisplayText>
+            <DisplayText size={24}>{reprocessing ? "REPROCESS JUMP" : "SELECT THE JUMP"}</DisplayText>
             <AppText color={tokens.textMuted} size={12}>
               {reprocessing
-                ? "Rotate or re-trim — the record is rebuilt from the original video."
-                : "Set the window around the action — RiderLens does the rest."}
+                ? "Adjust the section or orientation, then rebuild the analysis."
+                : "Choose one jump from approach through landing."}
             </AppText>
           </View>
           <Pressable accessibilityRole="button" accessibilityLabel="Close capture" onPress={close} style={styles.sheetClose}>
@@ -48,7 +54,12 @@ export function CaptureSheet({ store, visible, onClose }: CaptureSheetProps) {
 
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
           {store.pendingCapture ? (
-            <WindowStep store={store} capture={store.pendingCapture} onConfirm={confirmCapture} />
+            <WindowStep
+              store={store}
+              capture={store.pendingCapture}
+              onConfirm={confirmCapture}
+              onCancel={close}
+            />
           ) : null}
 
           <Card style={styles.warningCard}>
@@ -69,11 +80,9 @@ export function CaptureSheet({ store, visible, onClose }: CaptureSheetProps) {
   );
 }
 
-// --- Window step: confirm where the moment is ---------------------------------
-
 const THUMBNAIL_HEIGHT = 54;
+const PREVIEW_HEIGHT = 238;
 
-/** Roughly one thumbnail per second of clip, bounded for very short/long clips. */
 function thumbnailCountFor(durationSeconds: number): number {
   return Math.max(10, Math.min(28, Math.round(durationSeconds)));
 }
@@ -81,14 +90,52 @@ function thumbnailCountFor(durationSeconds: number): number {
 function WindowStep({
   store,
   capture,
-  onConfirm
+  onConfirm,
+  onCancel
 }: {
   store: RiderLensStore;
   capture: PendingCapture;
   onConfirm: () => void;
+  onCancel: () => void;
 }) {
   const [thumbnails, setThumbnails] = useState<Array<{ t: number; uri: string; aspectRatio: number }>>([]);
+  const [previewSize, setPreviewSize] = useState({ width: 0, height: PREVIEW_HEIGHT });
+  const [playing, setPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(capture.trimStartSeconds);
+  const playbackActiveRef = useRef(false);
   const windowSeconds = Math.max(0, capture.trimEndSeconds - capture.trimStartSeconds);
+  const quarterTurn = capture.rotateDegrees % 180 !== 0;
+
+  const player = useVideoPlayer(capture.uri, (instance) => {
+    instance.loop = false;
+    instance.muted = true;
+    instance.timeUpdateEventInterval = 0.1;
+    instance.currentTime = capture.trimStartSeconds;
+  });
+
+  useEventListener(player, "sourceLoad", ({ duration }) => {
+    store.updatePendingDuration(duration);
+  });
+
+  useEventListener(player, "playingChange", ({ isPlaying }) => {
+    playbackActiveRef.current = isPlaying;
+    setPlaying(isPlaying);
+  });
+
+  useEventListener(player, "timeUpdate", ({ currentTime: nextTime }) => {
+    if (shouldLoopSelection(playbackActiveRef.current, nextTime, capture.trimEndSeconds)) {
+      player.currentTime = capture.trimStartSeconds;
+      setCurrentTime(capture.trimStartSeconds);
+      return;
+    }
+    setCurrentTime(nextTime);
+  });
+
+  useEffect(() => {
+    playbackActiveRef.current = false;
+    player.currentTime = capture.trimStartSeconds;
+    setCurrentTime(capture.trimStartSeconds);
+  }, [capture.uri, player]);
 
   useEffect(() => {
     let active = true;
@@ -99,8 +146,10 @@ function WindowStep({
     void Promise.all(
       times.map(async (t) => {
         try {
-          const result = await VideoThumbnails.getThumbnailAsync(capture.uri, { time: Math.round(t * 1000), quality: 0.3 });
-          // Keep the source aspect ratio — a squished frame misleads the trim.
+          const result = await VideoThumbnails.getThumbnailAsync(capture.uri, {
+            time: Math.round(t * 1000),
+            quality: 0.3
+          });
           const aspectRatio = result.width && result.height ? result.width / result.height : 16 / 9;
           return { t, uri: result.uri, aspectRatio };
         } catch {
@@ -108,34 +157,68 @@ function WindowStep({
         }
       })
     ).then((generated) => {
-      if (active) setThumbnails(generated.filter(Boolean) as Array<{ t: number; uri: string; aspectRatio: number }>);
+      if (!active) return;
+      const frames = generated.filter(Boolean) as Array<{ t: number; uri: string; aspectRatio: number }>;
+      setThumbnails(frames);
     });
     return () => {
       active = false;
     };
-    // Thumbnails depend only on the source clip, not on the trim values.
   }, [capture.uri, capture.durationSeconds]);
 
-  const statusLine =
-    capture.windowStatus === "checking"
-      ? "Looking for the moment…"
-      : capture.windowStatus === "ai"
-        ? "AI found the moment — adjust if needed."
-        : "Set the window around the moment.";
+  const seekAndPause = useCallback(
+    (time: number) => {
+      const bounded = Math.max(0, Math.min(time, capture.durationSeconds));
+      playbackActiveRef.current = false;
+      player.pause();
+      setPlaying(false);
+      player.currentTime = bounded;
+      setCurrentTime(bounded);
+    },
+    [capture.durationSeconds, player]
+  );
+
+  const togglePlayback = useCallback(() => {
+    if (playing) {
+      playbackActiveRef.current = false;
+      player.pause();
+      return;
+    }
+    if (player.currentTime < capture.trimStartSeconds || player.currentTime >= capture.trimEndSeconds - 0.03) {
+      player.currentTime = capture.trimStartSeconds;
+      setCurrentTime(capture.trimStartSeconds);
+    }
+    playbackActiveRef.current = true;
+    player.play();
+  }, [capture.trimEndSeconds, capture.trimStartSeconds, player, playing]);
+
+  const previewVideoStyle = useMemo(() => {
+    if (previewSize.width <= 0) return StyleSheet.absoluteFill;
+    const width = quarterTurn ? previewSize.height : previewSize.width;
+    const height = quarterTurn ? previewSize.width : previewSize.height;
+    return {
+      position: "absolute" as const,
+      width,
+      height,
+      left: (previewSize.width - width) / 2,
+      top: (previewSize.height - height) / 2,
+      transform: capture.rotateDegrees ? [{ rotate: `${capture.rotateDegrees}deg` }] : undefined
+    };
+  }, [capture.rotateDegrees, previewSize, quarterTurn]);
 
   return (
     <Card style={styles.windowCard}>
       <View style={styles.splitRow}>
-        <Chip tone={capture.windowStatus === "ai" ? "cyan" : "neutral"} icon={capture.windowStatus === "ai" ? Sparkles : Scissors}>
-          {capture.windowStatus === "ai" ? "AI window" : "Window"}
+        <Chip tone="electric" icon={Scissors}>
+          Jump section
         </Chip>
         <View style={styles.splitRowRight}>
           <NumberText color={tokens.textMuted} size={12} weight="bold">
-            {windowSeconds.toFixed(1)}s selected
+            {windowSeconds.toFixed(1)}s / {MAX_ANALYSIS_WINDOW_SECONDS}s
           </NumberText>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Rotate clip 90 degrees"
+            accessibilityLabel="Rotate video 90 degrees clockwise"
             onPress={store.rotatePendingCapture}
             style={[styles.rotateButton, capture.rotateDegrees > 0 && styles.rotateButtonActive]}
           >
@@ -148,31 +231,56 @@ function WindowStep({
           </Pressable>
         </View>
       </View>
-      <AppText color={tokens.textMuted} size={13}>
-        {statusLine}
-      </AppText>
 
-      {capture.proposal?.summary ? (
-        <AppText color={tokens.textMuted} size={13}>
-          {capture.proposal.summary}
-        </AppText>
-      ) : null}
+      <View
+        style={styles.previewFrame}
+        onLayout={(event) =>
+          setPreviewSize({ width: event.nativeEvent.layout.width, height: event.nativeEvent.layout.height })
+        }
+      >
+        <VideoView
+          player={player}
+          style={previewVideoStyle}
+          contentFit="contain"
+          nativeControls={false}
+          fullscreenOptions={{ enable: false }}
+          surfaceType="textureView"
+        />
+        <View style={styles.previewControls}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={playing ? "Pause selected jump" : "Play selected jump"}
+            onPress={togglePlayback}
+            style={styles.playButton}
+          >
+            {playing ? (
+              <Pause color={tokens.graphite} size={17} fill={tokens.graphite} />
+            ) : (
+              <Play color={tokens.graphite} size={17} fill={tokens.graphite} />
+            )}
+          </Pressable>
+          <NumberText size={12} weight="bold" color={tokens.surface}>
+            {currentTime.toFixed(1)}s
+          </NumberText>
+        </View>
+      </View>
 
       {thumbnails.length > 0 ? (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.thumbnailRow}>
           {thumbnails.map((thumbnail) => {
             const inWindow = thumbnail.t >= capture.trimStartSeconds && thumbnail.t <= capture.trimEndSeconds;
-            // A quarter turn swaps the cell's aspect; the image keeps its own
-            // aspect and is rotated into place, so nothing distorts.
-            const quarterTurn = capture.rotateDegrees % 180 !== 0;
             const displayAspect = quarterTurn ? 1 / thumbnail.aspectRatio : thumbnail.aspectRatio;
             const cellWidth = THUMBNAIL_HEIGHT * displayAspect;
             return (
-              <View
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`Preview at ${thumbnail.t.toFixed(1)} seconds`}
                 key={thumbnail.t}
+                onPress={() => seekAndPause(thumbnail.t)}
                 style={[
                   styles.thumbnailCell,
                   !inWindow && styles.thumbnailOutside,
+                  inWindow && styles.thumbnailSelected,
                   { width: cellWidth, height: THUMBNAIL_HEIGHT }
                 ]}
               >
@@ -185,7 +293,7 @@ function WindowStep({
                   }}
                   resizeMethod="resize"
                 />
-              </View>
+              </Pressable>
             );
           })}
         </ScrollView>
@@ -194,19 +302,35 @@ function WindowStep({
       <WindowControl
         label="Start"
         value={capture.trimStartSeconds}
+        minimumValue={0}
+        maximumValue={capture.durationSeconds}
+        minimumAllowedValue={Math.max(0, capture.trimEndSeconds - MAX_ANALYSIS_WINDOW_SECONDS)}
+        maximumAllowedValue={Math.max(0, capture.trimEndSeconds - MIN_ANALYSIS_WINDOW_SECONDS)}
         onChange={(value) => store.updatePendingWindow({ trimStartSeconds: value })}
+        onPreview={seekAndPause}
       />
       <WindowControl
         label="End"
         value={capture.trimEndSeconds}
+        minimumValue={0}
+        maximumValue={capture.durationSeconds}
+        minimumAllowedValue={Math.min(
+          capture.durationSeconds,
+          capture.trimStartSeconds + MIN_ANALYSIS_WINDOW_SECONDS
+        )}
+        maximumAllowedValue={Math.min(
+          capture.durationSeconds,
+          capture.trimStartSeconds + MAX_ANALYSIS_WINDOW_SECONDS
+        )}
         onChange={(value) => store.updatePendingWindow({ trimEndSeconds: value })}
+        onPreview={seekAndPause}
       />
 
       <View style={styles.actionGrid}>
         <Button onPress={onConfirm} style={styles.actionButton}>
-          {capture.reprocessRecordId ? "Rebuild record" : "Create record"}
+          {capture.reprocessRecordId ? "Rebuild analysis" : "Analyze jump"}
         </Button>
-        <Button variant="secondary" onPress={store.cancelPendingCapture} style={styles.actionButton}>
+        <Button variant="secondary" onPress={onCancel} style={styles.actionButton}>
           Cancel
         </Button>
       </View>
@@ -214,24 +338,105 @@ function WindowStep({
   );
 }
 
-function WindowControl({ label, value, onChange }: { label: string; value: number; onChange: (value: number) => void }) {
+function WindowControl({
+  label,
+  value,
+  minimumValue,
+  maximumValue,
+  minimumAllowedValue,
+  maximumAllowedValue,
+  onChange,
+  onPreview
+}: {
+  label: string;
+  value: number;
+  minimumValue: number;
+  maximumValue: number;
+  minimumAllowedValue: number;
+  maximumAllowedValue: number;
+  onChange: (value: number) => void;
+  onPreview: (value: number) => void;
+}) {
+  const commit = (nextValue: number) => {
+    const bounded = Math.max(minimumAllowedValue, Math.min(nextValue, maximumAllowedValue));
+    onChange(bounded);
+    onPreview(bounded);
+  };
+  const canMoveEarlier = value > minimumAllowedValue + 0.001;
+  const canMoveLater = value < maximumAllowedValue - 0.001;
+
   return (
     <View style={styles.windowControl}>
-      <AppText weight="semi" size={13} style={styles.windowControlLabel}>
-        {label}
-      </AppText>
-      <View style={styles.stepper}>
-        <Button variant="secondary" onPress={() => onChange(Math.max(0, value - 0.5))} style={styles.stepButton}>
-          −
-        </Button>
-        <View style={styles.stepValue}>
-          <NumberText weight="bold">{value.toFixed(1)}s</NumberText>
-        </View>
-        <Button variant="secondary" onPress={() => onChange(value + 0.5)} style={styles.stepButton}>
-          +
-        </Button>
+      <View style={styles.windowControlHeader}>
+        <AppText weight="semi" size={12} color={tokens.textMuted}>
+          {label.toUpperCase()}
+        </AppText>
+        <NumberText weight="bold">{value.toFixed(1)}s</NumberText>
+      </View>
+      <View style={styles.sliderRow}>
+        <WindowStepButton
+          direction="earlier"
+          label={label}
+          disabled={!canMoveEarlier}
+          onPress={() => commit(value - 0.1)}
+        />
+        <Slider
+          style={styles.rangeSlider}
+          minimumValue={minimumValue}
+          maximumValue={Math.max(minimumValue, maximumValue)}
+          step={0.1}
+          value={value}
+          minimumTrackTintColor={tokens.electric}
+          maximumTrackTintColor={tokens.border}
+          thumbTintColor={tokens.electric}
+          onValueChange={commit}
+        />
+        <WindowStepButton
+          direction="later"
+          label={label}
+          disabled={!canMoveLater}
+          onPress={() => commit(value + 0.1)}
+        />
       </View>
     </View>
+  );
+}
+
+function WindowStepButton({
+  direction,
+  label,
+  disabled,
+  onPress
+}: {
+  direction: "earlier" | "later";
+  label: string;
+  disabled: boolean;
+  onPress: () => void;
+}) {
+  const Icon = direction === "earlier" ? Minus : Plus;
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`Move ${label.toLowerCase()} ${direction}`}
+      accessibilityHint="Adjusts the selected frame by one tenth of a second"
+      accessibilityState={{ disabled }}
+      disabled={disabled}
+      hitSlop={4}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.windowStepButton,
+        pressed && !disabled && styles.windowStepButtonPressed,
+        disabled && styles.windowStepButtonDisabled
+      ]}
+    >
+      {({ pressed }) => (
+        <Icon
+          color={disabled ? tokens.textMuted : pressed ? tokens.graphite : tokens.electric}
+          size={18}
+          strokeWidth={2.6}
+        />
+      )}
+    </Pressable>
   );
 }
 
@@ -266,13 +471,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xl,
     paddingBottom: spacing.xl
   },
-  actionGrid: {
-    flexDirection: "row",
-    gap: spacing.md
-  },
-  actionButton: {
-    flex: 1
-  },
   windowCard: {
     gap: spacing.md
   },
@@ -281,16 +479,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     gap: spacing.md
-  },
-  thumbnailRow: {
-    gap: 4
-  },
-  thumbnailCell: {
-    borderRadius: 4,
-    overflow: "hidden",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: tokens.graphite
   },
   splitRowRight: {
     flexDirection: "row",
@@ -311,34 +499,92 @@ const styles = StyleSheet.create({
   rotateButtonActive: {
     backgroundColor: tokens.electric
   },
+  previewFrame: {
+    height: PREVIEW_HEIGHT,
+    overflow: "hidden",
+    backgroundColor: tokens.graphite,
+    borderRadius: radius.md
+  },
+  previewControls: {
+    position: "absolute",
+    left: spacing.sm,
+    right: spacing.sm,
+    bottom: spacing.sm,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between"
+  },
+  playButton: {
+    width: 38,
+    height: 38,
+    borderRadius: radius.pill,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: tokens.electric
+  },
+  thumbnailRow: {
+    gap: 4
+  },
+  thumbnailCell: {
+    borderRadius: 4,
+    overflow: "hidden",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: tokens.graphite,
+    borderWidth: 2,
+    borderColor: "transparent"
+  },
+  thumbnailSelected: {
+    borderColor: tokens.electric
+  },
   thumbnailOutside: {
     opacity: 0.3
   },
   windowControl: {
+    gap: spacing.xs
+  },
+  windowControlHeader: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-    gap: spacing.md
+    justifyContent: "space-between"
   },
-  windowControlLabel: {
-    width: 48
-  },
-  stepper: {
+  sliderRow: {
+    minHeight: 40,
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.sm
   },
-  stepButton: {
-    minWidth: 44,
-    minHeight: 38,
-    paddingHorizontal: 0
+  rangeSlider: {
+    flex: 1,
+    height: 40
   },
-  stepValue: {
-    minWidth: 76,
+  windowStepButton: {
+    width: 44,
+    height: 44,
+    flexShrink: 0,
     alignItems: "center",
-    borderRadius: 8,
+    justifyContent: "center",
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: tokens.graphite,
+    backgroundColor: tokens.graphite
+  },
+  windowStepButtonPressed: {
+    borderColor: tokens.electric,
+    backgroundColor: tokens.electric,
+    transform: [{ scale: 0.94 }]
+  },
+  windowStepButtonDisabled: {
+    borderColor: tokens.border,
     backgroundColor: tokens.surfaceMuted,
-    paddingVertical: spacing.xs
+    opacity: 0.55
+  },
+  actionGrid: {
+    flexDirection: "row",
+    gap: spacing.md
+  },
+  actionButton: {
+    flex: 1
   },
   warningCard: {
     backgroundColor: tokens.amberSoft,

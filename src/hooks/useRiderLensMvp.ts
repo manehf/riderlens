@@ -7,7 +7,12 @@ import { Alert, AppState, Platform, Share } from "react-native";
 
 import { demoGarage } from "../data/demoData";
 import { createId } from "../services/analysis";
-import { isAnalysisWorkerReachable, processRecord, proposeWindow, type WindowProposal } from "../services/capture";
+import { isAnalysisWorkerReachable, processRecord } from "../services/capture";
+import {
+  fitAnalysisWindow,
+  MIN_ANALYSIS_WINDOW_SECONDS,
+  updateAnalysisWindow
+} from "../services/captureWindow";
 import {
   backfillPoster,
   deleteRecordFiles,
@@ -30,19 +35,15 @@ type PersistedState = {
 // Metric and right-foot-forward are the common cases; both stay one tap to change.
 const DEFAULT_PROFILE: RiderProfile = { units: "metric", leadFoot: "right" };
 
-export type WindowStatus = "checking" | "ai" | "manual";
-
 export type PendingCapture = {
   uri: string;
   durationSeconds: number;
   trimStartSeconds: number;
   trimEndSeconds: number;
-  windowStatus: WindowStatus;
   /** Clockwise display/processing rotation the rider dialed in (0/90/180/270). */
   rotateDegrees: number;
   /** Set when this capture rebuilds an existing record instead of creating one. */
   reprocessRecordId?: string;
-  proposal?: WindowProposal;
 };
 
 export type RiderLensStore = {
@@ -52,6 +53,7 @@ export type RiderLensStore = {
   setSelectedSkill: (skill: SkillType) => void;
   startCaptureFromUri: (uri: string, durationSeconds?: number) => void;
   updatePendingWindow: (updates: Partial<Pick<PendingCapture, "trimStartSeconds" | "trimEndSeconds">>) => void;
+  updatePendingDuration: (durationSeconds: number) => void;
   /** Rotate the pending clip 90° clockwise (cycles back to 0 after 270). */
   rotatePendingCapture: () => void;
   confirmPendingCapture: () => Promise<void>;
@@ -79,11 +81,9 @@ export type RiderLensStore = {
   addMeasurement: (measurement: Omit<ToolMeasurement, "id" | "bikeId" | "bikeSetupId" | "createdAt">) => void;
 };
 
-// Library uploads longer than this get the pre-upload trim gate: the camera
-// already caps at 30s, and the AI's 24-frame scan is reliable at that length.
+// Bound source uploads for the MVP. The rider then selects one jump, up to
+// eight seconds, inside RiderLens before any network upload begins.
 const LIBRARY_MAX_SECONDS = 30;
-
-const MIN_WINDOW_SECONDS = 0.5;
 
 export function useRiderLensMvp(): RiderLensStore {
   const [records, setRecords] = useState<JumpRecord[]>([]);
@@ -92,8 +92,6 @@ export function useRiderLensMvp(): RiderLensStore {
   const [selectedSkill, setSelectedSkill] = useState<SkillType>("regular_jump");
   const [pendingCapture, setPendingCapture] = useState<PendingCapture | undefined>();
   const [hydrated, setHydrated] = useState(false);
-  // Guards the async window proposal against a changed/cancelled pending clip.
-  const pendingUriRef = useRef<string | undefined>(undefined);
   const recordsRef = useRef<JumpRecord[]>([]);
   const processingIdsRef = useRef<Set<string>>(new Set());
   const retryProbeActiveRef = useRef(false);
@@ -156,35 +154,13 @@ export function useRiderLensMvp(): RiderLensStore {
 
   const startCaptureFromUri = useCallback((uri: string, durationSeconds = 6) => {
     const safeDuration = Math.max(1, durationSeconds);
-    pendingUriRef.current = uri;
+    const initialWindow = fitAnalysisWindow(0, safeDuration, safeDuration);
     setPendingCapture({
       uri,
       durationSeconds: safeDuration,
-      trimStartSeconds: 0,
-      trimEndSeconds: safeDuration,
-      windowStatus: "checking",
+      trimStartSeconds: initialWindow.start,
+      trimEndSeconds: initialWindow.end,
       rotateDegrees: 0
-    });
-
-    // Ask the worker for an AI-proposed window; on timeout/unreachable/no-credentials
-    // stay on manual with the full range. Never block the rider.
-    void proposeWindow(uri).then((proposal) => {
-      if (pendingUriRef.current !== uri) return;
-      setPendingCapture((current) => {
-        if (!current || current.uri !== uri) return current;
-        const duration = proposal?.durationSeconds && proposal.durationSeconds > 0 ? proposal.durationSeconds : current.durationSeconds;
-        if (proposal?.window) {
-          return {
-            ...current,
-            durationSeconds: duration,
-            trimStartSeconds: Math.max(0, Math.min(proposal.window.start, duration)),
-            trimEndSeconds: Math.max(MIN_WINDOW_SECONDS, Math.min(proposal.window.end, duration)),
-            windowStatus: "ai",
-            proposal
-          };
-        }
-        return { ...current, durationSeconds: duration, windowStatus: "manual", proposal };
-      });
     });
   }, []);
 
@@ -193,34 +169,15 @@ export function useRiderLensMvp(): RiderLensStore {
       const record = records.find((item) => item.id === recordId);
       if (!record || record.status === "processing") return;
       const uri = record.sourceVideoUri;
-      pendingUriRef.current = uri;
+      const seedDuration = record.sourceDurationSeconds ?? Math.max(record.windowEnd + 1, MIN_ANALYSIS_WINDOW_SECONDS + 1);
+      const seedWindow = fitAnalysisWindow(record.windowStart, record.windowEnd, seedDuration);
       setPendingCapture({
         uri,
-        // Rough seed; the analyze response corrects it and thumbnails follow.
-        durationSeconds: Math.max(record.windowEnd + 1, MIN_WINDOW_SECONDS + 1),
-        trimStartSeconds: record.windowStart,
-        trimEndSeconds: record.windowEnd,
-        windowStatus: "manual",
+        durationSeconds: seedDuration,
+        trimStartSeconds: seedWindow.start,
+        trimEndSeconds: seedWindow.end,
         rotateDegrees: record.rotateDegrees ?? 0,
         reprocessRecordId: record.id
-      });
-
-      // Upload once for the true duration and an uploadId the rebuild can reuse.
-      // The rider's window stays — reprocess exists to fix the result, and on a
-      // sideways source a fresh AI window would be reading sideways frames.
-      void proposeWindow(uri).then((proposal) => {
-        if (pendingUriRef.current !== uri) return;
-        setPendingCapture((current) => {
-          if (!current || current.uri !== uri || current.reprocessRecordId !== record.id) return current;
-          const duration =
-            proposal?.durationSeconds && proposal.durationSeconds > 0 ? proposal.durationSeconds : current.durationSeconds;
-          return {
-            ...current,
-            durationSeconds: duration,
-            trimEndSeconds: Math.min(current.trimEndSeconds, duration),
-            proposal
-          };
-        });
       });
     },
     [records]
@@ -230,17 +187,30 @@ export function useRiderLensMvp(): RiderLensStore {
     (updates: Partial<Pick<PendingCapture, "trimStartSeconds" | "trimEndSeconds">>) => {
       setPendingCapture((current) => {
         if (!current) return current;
-        const next = { ...current, ...updates };
-        const trimStartSeconds = Math.max(0, Math.min(next.trimStartSeconds, next.durationSeconds - MIN_WINDOW_SECONDS));
-        const trimEndSeconds = Math.max(
-          trimStartSeconds + MIN_WINDOW_SECONDS,
-          Math.min(next.trimEndSeconds, next.durationSeconds)
+        const window = updateAnalysisWindow(
+          { start: current.trimStartSeconds, end: current.trimEndSeconds },
+          { start: updates.trimStartSeconds, end: updates.trimEndSeconds },
+          current.durationSeconds
         );
-        return { ...next, trimStartSeconds, trimEndSeconds };
+        return { ...current, trimStartSeconds: window.start, trimEndSeconds: window.end };
       });
     },
     []
   );
+
+  const updatePendingDuration = useCallback((durationSeconds: number) => {
+    if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) return;
+    setPendingCapture((current) => {
+      if (!current || Math.abs(current.durationSeconds - durationSeconds) < 0.05) return current;
+      const window = fitAnalysisWindow(current.trimStartSeconds, current.trimEndSeconds, durationSeconds);
+      return {
+        ...current,
+        durationSeconds,
+        trimStartSeconds: window.start,
+        trimEndSeconds: window.end
+      };
+    });
+  }, []);
 
   const runRecordProcessing = useCallback(
     (record: JumpRecord, uploadId?: string) => {
@@ -296,14 +266,18 @@ export function useRiderLensMvp(): RiderLensStore {
           status: "pending",
           windowStart: pendingCapture.trimStartSeconds,
           windowEnd: pendingCapture.trimEndSeconds,
+          sourceDurationSeconds: pendingCapture.durationSeconds,
           rotateDegrees: pendingCapture.rotateDegrees || undefined,
           aiWindow: false,
+          eventType: undefined,
+          summary: undefined,
+          events: undefined,
+          flight: undefined,
           error: undefined
         };
-        pendingUriRef.current = undefined;
         setPendingCapture(undefined);
         setRecords((current) => current.map((item) => (item.id === updated.id ? updated : item)));
-        runRecordProcessing(updated, pendingCapture.proposal?.uploadId);
+        runRecordProcessing(updated);
         return;
       }
     }
@@ -322,19 +296,16 @@ export function useRiderLensMvp(): RiderLensStore {
       skillType: selectedSkill,
       status: "pending",
       sourceVideoUri: storedUri,
+      sourceDurationSeconds: pendingCapture.durationSeconds,
       windowStart: pendingCapture.trimStartSeconds,
       windowEnd: pendingCapture.trimEndSeconds,
-      aiWindow: pendingCapture.windowStatus === "ai",
-      rotateDegrees: pendingCapture.rotateDegrees || undefined,
-      eventType: pendingCapture.proposal?.eventType,
-      summary: pendingCapture.proposal?.summary,
-      events: pendingCapture.proposal?.events
+      aiWindow: false,
+      rotateDegrees: pendingCapture.rotateDegrees || undefined
     };
 
-    pendingUriRef.current = undefined;
     setPendingCapture(undefined);
     setRecords((current) => [record, ...current]);
-    runRecordProcessing(record, pendingCapture.proposal?.uploadId);
+    runRecordProcessing(record);
   }, [pendingCapture, records, runRecordProcessing, selectedSkill]);
 
   const rotatePendingCapture = useCallback(() => {
@@ -344,7 +315,6 @@ export function useRiderLensMvp(): RiderLensStore {
   }, []);
 
   const cancelPendingCapture = useCallback(() => {
-    pendingUriRef.current = undefined;
     setPendingCapture(undefined);
   }, []);
 
@@ -503,12 +473,9 @@ export function useRiderLensMvp(): RiderLensStore {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ["videos"],
       quality: 1,
-      // Pre-upload trim gate: the AI scans 24 frames across the whole upload,
-      // so a long video hides a 3s jump between samples. iOS opens the system
-      // trimmer so long picks get cut to the action before upload; Android has
-      // no system trimmer and gets the duration nudge below instead.
-      allowsEditing: true,
-      videoMaxDuration: LIBRARY_MAX_SECONDS,
+      // RiderLens owns the single trim step after picking; opening the iOS
+      // editor here created two competing selection experiences.
+      allowsEditing: false,
       // iOS transcodes the picked video to 1080p H.264 on-device before we
       // ever see it; Android ignores this and relies on worker normalization.
       videoExportPreset: ImagePicker.VideoExportPreset.H264_1920x1080
@@ -518,14 +485,11 @@ export function useRiderLensMvp(): RiderLensStore {
     const asset = result.assets[0];
     const rawDuration = asset.duration ?? 6000;
     const durationSeconds = rawDuration > 1000 ? rawDuration / 1000 : rawDuration;
-    if (Platform.OS === "android" && durationSeconds > LIBRARY_MAX_SECONDS) {
+    if (durationSeconds > LIBRARY_MAX_SECONDS) {
       Alert.alert(
         "Long video",
-        "RiderLens finds the action best in clips under 30 seconds. Trim the clip to the moment in your gallery for the most accurate result.",
-        [
-          { text: "Cancel", style: "cancel" },
-          { text: "Use anyway", onPress: () => startCaptureFromUri(asset.uri, durationSeconds) }
-        ]
+        "Choose a clip under 30 seconds, then select the jump inside RiderLens.",
+        [{ text: "OK" }]
       );
       return;
     }
@@ -600,6 +564,7 @@ export function useRiderLensMvp(): RiderLensStore {
     setSelectedSkill,
     startCaptureFromUri,
     updatePendingWindow,
+    updatePendingDuration,
     rotatePendingCapture,
     confirmPendingCapture,
     cancelPendingCapture,

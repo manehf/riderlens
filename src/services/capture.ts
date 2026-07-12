@@ -3,23 +3,14 @@ import { getWorkerUrlCandidates } from "./analysisWorker";
 
 // Reachability is decided by a fast /health pre-flight so a stale or unreachable
 // worker IP fails in seconds instead of hanging until the big-upload timeouts below.
-const HEALTH_TIMEOUT_MS = 4_000;
-// Upload + ingest normalization + contact sheet + AI window-finding: big
-// files over cellular need real headroom.
-const ANALYZE_TIMEOUT_MS = 120_000;
+const LOCAL_HEALTH_TIMEOUT_MS = 4_000;
+// A Fly machine stopped at zero can take around 20 seconds to boot. Give only
+// that deployed fallback the longer allowance; a stale LAN IP should still fail
+// quickly so the app can move on to Fly.
+const FLY_COLD_START_HEALTH_TIMEOUT_MS = 30_000;
 // Processing uploads the clip and runs the full pipeline; allow more, still
 // bounded. Cloud processing of 4K phone footage can legitimately take minutes.
 const RECORD_TIMEOUT_MS = 300_000;
-
-export type WindowProposal = {
-  uploadId: string;
-  durationSeconds: number;
-  aiAvailable: boolean;
-  window: { start: number; end: number } | null;
-  events: CaptureEvent[];
-  eventType?: string;
-  summary?: string;
-};
 
 export type RecordPayload = {
   clip: string; // data URL, video/mp4 base64
@@ -59,7 +50,8 @@ async function readDetail(response: Response): Promise<string> {
 
 async function workerReachable(workerUrl: string): Promise<boolean> {
   try {
-    const response = await fetchWithTimeout(`${workerUrl}/health`, { method: "GET" }, HEALTH_TIMEOUT_MS);
+    const timeoutMs = workerUrl.includes(".fly.dev") ? FLY_COLD_START_HEALTH_TIMEOUT_MS : LOCAL_HEALTH_TIMEOUT_MS;
+    const response = await fetchWithTimeout(`${workerUrl}/health`, { method: "GET" }, timeoutMs);
     return response.ok;
   } catch {
     return false;
@@ -90,28 +82,6 @@ async function resolveWorkerUrl(): Promise<string | null> {
 
 export async function isAnalysisWorkerReachable(): Promise<boolean> {
   return Boolean(await resolveWorkerUrl());
-}
-
-/** Upload the clip and get an AI-proposed window. Returns undefined when the worker
- * is unreachable, slow, or has no AI credentials — the caller falls back to manual trim. */
-export async function proposeWindow(videoUri: string): Promise<WindowProposal | undefined> {
-  const workerUrl = await resolveWorkerUrl();
-  if (!workerUrl) return undefined;
-
-  const formData = new FormData();
-  formData.append("video", videoFormPart(videoUri));
-
-  try {
-    const response = await fetchWithTimeout(
-      `${workerUrl}/capture/analyze`,
-      { method: "POST", body: formData },
-      ANALYZE_TIMEOUT_MS
-    );
-    if (!response.ok) return undefined;
-    return (await response.json()) as WindowProposal;
-  } catch {
-    return undefined;
-  }
 }
 
 export type ProcessRecordInput = {
