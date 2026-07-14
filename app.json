@@ -30,7 +30,11 @@
       "blockedPermissions": [
         "android.permission.CAMERA",
         "android.permission.RECORD_AUDIO"
-      ]
+      ],
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#bcfa18"
+      }
     },
     "plugins": [
       "expo-font",
@@ -42,6 +46,15 @@
           "organization": "antonio-fernandes",
           "project": "riderlens-app"
         }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 260,
+          "resizeMode": "contain",
+          "backgroundColor": "#bcfa18"
+        }
       ]
     ],
     "extra": {
@@ -50,6 +63,7 @@
         "projectId": "0f616ef7-14e0-4d22-aafe-a794ba90946a"
       }
     },
-    "owner": "mopiu"
+    "owner": "mopiu",
+    "icon": "./assets/icon.png"
   }
 }
