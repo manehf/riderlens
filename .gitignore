@@ -20,3 +20,6 @@ fly_logs.md
 
 # Supabase CLI local state
 supabase/.temp/
+
+# Generic reusable site template (source of site/, not part of the app)
+/app-website-template

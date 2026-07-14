@@ -1,0 +1,1083 @@
+/* ==========================================================================
+   Layout and component styles.
+   Brand decisions (colors, font, radii) live in theme.css — edit that file
+   to customize the template for each app.
+   ========================================================================== */
+
+:root {
+  --max-width: 1140px;
+  --page-gutter: clamp(18px, 4vw, 28px);
+  --phone-bezel: #101317;
+  --shadow-phone: 0 18px 48px rgba(15, 20, 26, 0.18);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+  scroll-padding-top: 84px;
+}
+
+body {
+  background: var(--page);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  margin: 0;
+  text-rendering: optimizeLegibility;
+}
+
+body,
+button,
+input,
+textarea {
+  font-size: 16px;
+}
+
+img {
+  height: auto;
+  max-width: 100%;
+}
+
+a {
+  color: inherit;
+  text-underline-offset: 3px;
+}
+
+p,
+h1,
+h2,
+h3,
+ul,
+figure {
+  margin-top: 0;
+}
+
+figure {
+  margin-left: 0;
+  margin-right: 0;
+}
+
+h1,
+h2,
+h3 {
+  color: var(--ink);
+  text-wrap: balance;
+}
+
+h1 {
+  font-size: clamp(2.5rem, 1.4rem + 4.2vw, 4.15rem);
+  font-weight: 750;
+  letter-spacing: -0.03em;
+  line-height: 1.04;
+}
+
+h2 {
+  font-size: clamp(1.8rem, 1.2rem + 2.2vw, 2.6rem);
+  font-weight: 700;
+  letter-spacing: -0.022em;
+  line-height: 1.1;
+}
+
+h3 {
+  font-size: 1.3rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+}
+
+p,
+li {
+  color: var(--muted);
+  line-height: 1.65;
+  text-wrap: pretty;
+}
+
+:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.skip-link {
+  background: var(--ink);
+  border-radius: var(--radius-sm);
+  color: var(--page);
+  left: 16px;
+  padding: 10px 14px;
+  position: fixed;
+  top: -100px;
+  z-index: 100;
+}
+
+.skip-link:focus {
+  top: 16px;
+}
+
+.eyebrow {
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  line-height: 1.2;
+  margin-bottom: 16px;
+  text-transform: uppercase;
+}
+
+/* --- Buttons -------------------------------------------------------------- */
+
+.header-cta,
+.plan-card > a,
+.support-action {
+  align-items: center;
+  background: var(--accent);
+  border-radius: var(--radius-sm);
+  color: var(--on-accent);
+  display: inline-flex;
+  font-size: 14px;
+  font-weight: 650;
+  gap: 8px;
+  justify-content: center;
+  min-height: 44px;
+  padding: 0 18px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.header-cta:hover,
+.plan-card > a:hover,
+.support-action:hover {
+  background: var(--accent-strong);
+}
+
+/* --- Header ---------------------------------------------------------------- */
+
+.site-header {
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  background: color-mix(in srgb, var(--page) 88%, transparent);
+  border-bottom: 1px solid var(--line);
+  position: sticky;
+  top: 0;
+  z-index: 50;
+}
+
+.header-inner {
+  align-items: center;
+  display: grid;
+  gap: 28px;
+  grid-template-columns: 220px minmax(0, 1fr) auto;
+  margin: 0 auto;
+  max-width: var(--max-width);
+  min-height: 68px;
+  padding: 10px var(--page-gutter);
+}
+
+.brand {
+  display: inline-flex;
+  line-height: 0;
+  width: 190px;
+}
+
+.brand img {
+  display: block;
+  width: 100%;
+}
+
+.primary-nav {
+  align-items: center;
+  display: flex;
+  gap: 30px;
+  justify-content: center;
+}
+
+.primary-nav a {
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 550;
+  text-decoration: none;
+}
+
+.primary-nav a:hover,
+.footer-nav a:hover {
+  color: var(--ink);
+}
+
+/* --- Hero -------------------------------------------------------------------- */
+
+.hero-inner {
+  align-items: center;
+  display: grid;
+  gap: clamp(40px, 6vw, 84px);
+  grid-template-columns: minmax(0, 1.05fr) minmax(320px, 0.75fr);
+  margin: 0 auto;
+  max-width: var(--max-width);
+  padding: clamp(44px, 7vw, 92px) var(--page-gutter);
+}
+
+.hero-copy {
+  max-width: 640px;
+}
+
+.hero h1 {
+  margin-bottom: 24px;
+}
+
+.hero-lead {
+  font-size: clamp(1.0625rem, 1rem + 0.4vw, 1.25rem);
+  line-height: 1.6;
+  margin-bottom: 30px;
+  max-width: 560px;
+}
+
+.store-links {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.store-link {
+  display: inline-flex;
+  line-height: 0;
+}
+
+.store-link img {
+  display: block;
+  height: 52px;
+  width: auto;
+}
+
+.platform-note {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 550;
+  margin: 14px 0 0;
+}
+
+/* The phone is cropped by the panel with a proportional negative margin,
+   so the composition holds at any width without per-breakpoint tuning. */
+.hero-product {
+  background: var(--accent-soft);
+  border-radius: var(--radius-lg);
+  display: grid;
+  justify-items: center;
+  overflow: hidden;
+  padding: clamp(28px, 4vw, 48px) clamp(24px, 4vw, 44px) 0;
+}
+
+.phone {
+  background: var(--phone-bezel);
+  border-radius: 40px;
+  box-shadow: var(--shadow-phone);
+  line-height: 0;
+  overflow: hidden;
+  padding: 9px;
+}
+
+.phone img {
+  border-radius: 31px;
+  display: block;
+  width: 100%;
+}
+
+.phone-hero {
+  margin-bottom: -16%;
+  width: min(300px, 82%);
+}
+
+/* --- Proof strip -------------------------------------------------------------- */
+
+.proof-strip {
+  border-bottom: 1px solid var(--line);
+  border-top: 1px solid var(--line);
+}
+
+.proof-inner {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 0 auto;
+  max-width: var(--max-width);
+  padding: 0 var(--page-gutter);
+}
+
+.proof-inner p {
+  align-items: center;
+  color: var(--ink);
+  display: flex;
+  font-size: 14px;
+  font-weight: 550;
+  gap: 12px;
+  margin: 0;
+  min-height: 76px;
+  padding: 16px 24px 16px 0;
+}
+
+.proof-inner p::before {
+  background: var(--accent);
+  border-radius: 50%;
+  content: "";
+  flex: 0 0 auto;
+  height: 6px;
+  width: 6px;
+}
+
+/* --- Sections ----------------------------------------------------------------- */
+
+.section {
+  margin: 0 auto;
+  max-width: var(--max-width);
+  padding: clamp(64px, 9vw, 110px) var(--page-gutter);
+}
+
+.section-heading h2 {
+  margin-bottom: 0;
+}
+
+.split-heading {
+  align-items: end;
+  display: grid;
+  gap: clamp(20px, 5vw, 80px);
+  grid-template-columns: minmax(0, 1.5fr) minmax(280px, 0.65fr);
+  margin-bottom: 48px;
+}
+
+.split-heading > p {
+  font-size: 17px;
+  margin-bottom: 4px;
+}
+
+/* --- Features ------------------------------------------------------------------- */
+
+.feature-grid {
+  display: grid;
+  gap: 20px;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+.feature-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: 28px;
+}
+
+.feature-label {
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  margin-bottom: 40px;
+  text-transform: uppercase;
+}
+
+.feature-card h3 {
+  margin-bottom: 10px;
+}
+
+.feature-card p:last-child {
+  font-size: 15px;
+  margin-bottom: 0;
+}
+
+/* --- App tour --------------------------------------------------------------------- */
+
+.app-tour-section {
+  max-width: none;
+  overflow: hidden;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.tour-heading {
+  align-items: end;
+  display: grid;
+  gap: 24px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  margin: 0 auto 44px;
+  max-width: var(--max-width);
+  padding: 0 var(--page-gutter);
+}
+
+.rail-controls {
+  display: flex;
+  gap: 10px;
+}
+
+/* display: flex above would otherwise override the UA [hidden] rule */
+.rail-controls[hidden] {
+  display: none;
+}
+
+.rail-btn {
+  align-items: center;
+  background: var(--page);
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  color: var(--ink);
+  cursor: pointer;
+  display: inline-flex;
+  height: 46px;
+  justify-content: center;
+  padding: 0;
+  width: 46px;
+}
+
+.rail-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.rail-btn:disabled {
+  cursor: default;
+  opacity: 0.35;
+}
+
+.tour-heading h2 {
+  max-width: 720px;
+}
+
+.tour-heading > p:last-child {
+  font-size: 17px;
+  margin: 18px 0 0;
+  max-width: 640px;
+}
+
+.screenshot-grid {
+  /* Indent the rail so the first slide lines up with the content column;
+     scroll-padding must match or scroll-snap drags the rail left on load.
+     The 264px card and 24px gap are mirrored in the centering rule in
+     index.njk — keep them in sync. */
+  --rail-inset: max(var(--page-gutter), calc((100vw - var(--max-width)) / 2 + var(--page-gutter)));
+  display: grid;
+  gap: 24px;
+  grid-auto-columns: 264px;
+  grid-auto-flow: column;
+  overflow-x: auto;
+  padding: 4px var(--rail-inset) 26px;
+  scroll-padding-left: var(--rail-inset);
+  scroll-snap-type: x proximity;
+  scrollbar-color: var(--accent) transparent;
+}
+
+.screenshot-item {
+  margin-bottom: 0;
+  scroll-snap-align: start;
+}
+
+.phone-gallery {
+  border-radius: 34px;
+  padding: 8px;
+}
+
+.phone-gallery img {
+  border-radius: 26px;
+}
+
+.screenshot-item figcaption {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 16px 6px 0;
+}
+
+.screenshot-item figcaption strong {
+  color: var(--ink);
+  font-size: 16px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.screenshot-item figcaption span {
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+/* --- Editorial band ---------------------------------------------------------------- */
+
+.editorial-band {
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+  border-top: 1px solid var(--line);
+}
+
+.editorial-inner {
+  align-items: center;
+  display: grid;
+  gap: clamp(40px, 6vw, 84px);
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 0.6fr);
+  margin: 0 auto;
+  max-width: var(--max-width);
+  padding: clamp(64px, 9vw, 104px) var(--page-gutter);
+}
+
+.editorial-copy {
+  max-width: 640px;
+}
+
+.editorial-copy h2 {
+  margin-bottom: 22px;
+}
+
+.editorial-copy > p:not(.eyebrow) {
+  font-size: 17px;
+  max-width: 600px;
+}
+
+.benefit-list {
+  list-style: none;
+  margin: 30px 0 0;
+  padding: 0;
+}
+
+.benefit-list li {
+  border-top: 1px solid var(--line);
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 500;
+  padding: 15px 0 15px 30px;
+  position: relative;
+}
+
+.benefit-list li::before {
+  color: var(--accent);
+  content: "✓";
+  font-weight: 800;
+  left: 1px;
+  position: absolute;
+}
+
+.editorial-visual {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.phone-editorial {
+  width: min(300px, 100%);
+}
+
+.editorial-visual > p {
+  color: var(--muted);
+  font-size: 14px;
+  margin: 0;
+  max-width: 320px;
+  text-align: center;
+}
+
+.editorial-visual > p strong {
+  color: var(--ink);
+}
+
+/* --- Plans ----------------------------------------------------------------------- */
+
+.centered-heading {
+  margin: 0 auto 46px;
+  max-width: 720px;
+  text-align: center;
+}
+
+.centered-heading h2 {
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.centered-heading > p:last-child {
+  font-size: 17px;
+  margin: 16px auto 0;
+}
+
+.plan-grid {
+  display: grid;
+  gap: 20px;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  margin: 0 auto;
+  max-width: 880px;
+}
+
+.plan-card {
+  background: var(--page);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  display: flex;
+  flex-direction: column;
+  padding: 32px;
+}
+
+.plan-featured {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.plan-topline {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+}
+
+.plan-topline h3 {
+  margin-bottom: 0;
+}
+
+.plan-topline span {
+  background: var(--accent-soft);
+  border-radius: 999px;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 650;
+  padding: 5px 11px;
+}
+
+.plan-price {
+  color: var(--ink);
+  font-size: 2.75rem;
+  font-weight: 750;
+  letter-spacing: -0.025em;
+  line-height: 1;
+  margin: 28px 0 12px;
+}
+
+.plan-price span {
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 550;
+  letter-spacing: 0;
+}
+
+.plan-description {
+  font-size: 15px;
+}
+
+.plan-card ul {
+  border-top: 1px solid var(--line);
+  list-style: none;
+  margin: 20px 0 28px;
+  padding: 20px 0 0;
+}
+
+.plan-card li {
+  font-size: 14px;
+  padding: 5px 0 5px 26px;
+  position: relative;
+}
+
+.plan-card li::before {
+  color: var(--accent);
+  content: "✓";
+  font-weight: 800;
+  left: 0;
+  position: absolute;
+}
+
+.plan-card > a {
+  justify-content: space-between;
+  margin-top: auto;
+  min-height: 48px;
+}
+
+.billing-note {
+  font-size: 13px;
+  margin: 20px auto 0;
+  max-width: 720px;
+  text-align: center;
+}
+
+/* --- FAQ ------------------------------------------------------------------------ */
+
+.faq-layout {
+  display: grid;
+  gap: clamp(36px, 6vw, 96px);
+  grid-template-columns: minmax(280px, 0.65fr) minmax(0, 1fr);
+}
+
+.faq-intro {
+  align-self: start;
+  position: sticky;
+  top: 104px;
+}
+
+.faq-intro h2 {
+  margin-bottom: 20px;
+}
+
+.faq-intro p:last-child {
+  font-size: 15px;
+}
+
+.faq-intro a {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.faq-list {
+  border-top: 1px solid var(--line);
+}
+
+.faq-list details {
+  border-bottom: 1px solid var(--line);
+}
+
+.faq-list summary {
+  align-items: center;
+  color: var(--ink);
+  cursor: pointer;
+  display: flex;
+  font-size: 17px;
+  font-weight: 600;
+  gap: 24px;
+  justify-content: space-between;
+  letter-spacing: -0.01em;
+  list-style: none;
+  padding: 22px 0;
+}
+
+.faq-list summary::-webkit-details-marker {
+  display: none;
+}
+
+.faq-icon {
+  flex: 0 0 16px;
+  height: 16px;
+  position: relative;
+  width: 16px;
+}
+
+.faq-icon::before,
+.faq-icon::after {
+  background: var(--accent);
+  border-radius: 1px;
+  content: "";
+  height: 2px;
+  left: 0;
+  position: absolute;
+  top: 7px;
+  width: 16px;
+}
+
+.faq-icon::after {
+  transform: rotate(90deg);
+  transition: transform 160ms ease;
+}
+
+details[open] .faq-icon::after {
+  transform: rotate(0);
+}
+
+.faq-answer {
+  max-width: 640px;
+  padding: 0 46px 24px 0;
+}
+
+.faq-answer p {
+  font-size: 15px;
+  margin-bottom: 0;
+}
+
+/* --- Download band ------------------------------------------------------------- */
+
+.download-band {
+  background: var(--band);
+  color: var(--band-ink);
+}
+
+.download-inner {
+  align-items: center;
+  display: grid;
+  gap: clamp(32px, 5vw, 80px);
+  grid-template-columns: minmax(0, 1.1fr) minmax(300px, 0.7fr);
+  margin: 0 auto;
+  max-width: var(--max-width);
+  padding: clamp(64px, 8vw, 90px) var(--page-gutter);
+}
+
+.download-band .eyebrow {
+  color: var(--band-muted);
+}
+
+.download-band h2 {
+  color: var(--band-ink);
+  margin-bottom: 0;
+}
+
+.download-inner > div:last-child > p {
+  color: var(--band-muted);
+  margin-bottom: 20px;
+}
+
+/* --- Footer ----------------------------------------------------------------------- */
+
+.site-footer {
+  border-top: 1px solid var(--line);
+}
+
+.footer-main,
+.footer-meta {
+  margin: 0 auto;
+  max-width: var(--max-width);
+  padding-left: var(--page-gutter);
+  padding-right: var(--page-gutter);
+}
+
+.footer-main {
+  display: grid;
+  gap: 60px;
+  grid-template-columns: minmax(280px, 1fr) 150px 150px;
+  padding-bottom: 56px;
+  padding-top: 64px;
+}
+
+.footer-brand img {
+  display: block;
+  width: 180px;
+}
+
+.footer-brand p {
+  font-size: 14px;
+  margin: 16px 0 0;
+  max-width: 320px;
+}
+
+.footer-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.footer-nav p {
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 650;
+  margin-bottom: 5px;
+}
+
+.footer-nav a {
+  color: var(--muted);
+  font-size: 13px;
+  text-decoration: none;
+}
+
+.footer-meta {
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  display: flex;
+  font-size: 12px;
+  justify-content: space-between;
+  padding-bottom: 24px;
+  padding-top: 24px;
+}
+
+/* --- Legal and support pages -------------------------------------------------------- */
+
+.legal-page {
+  margin: 0 auto;
+  max-width: 880px;
+  padding: clamp(56px, 8vw, 82px) var(--page-gutter) clamp(72px, 9vw, 112px);
+}
+
+.legal-hero {
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 34px;
+  padding-bottom: 44px;
+}
+
+.legal-hero h1 {
+  font-size: clamp(2.1rem, 1.4rem + 2.6vw, 3.2rem);
+  max-width: 720px;
+}
+
+.legal-summary {
+  font-size: 17px;
+  margin: 20px 0 0;
+  max-width: 680px;
+}
+
+.updated {
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  margin-top: 18px;
+  text-transform: uppercase;
+}
+
+.legal-section {
+  border-bottom: 1px solid var(--line);
+  padding: 28px 0;
+}
+
+.legal-section h2 {
+  font-size: 1.45rem;
+  margin-bottom: 12px;
+}
+
+.legal-section p,
+.legal-section li {
+  font-size: 15px;
+}
+
+.legal-section p:last-child,
+.legal-section ol:last-child,
+.legal-section ul:last-child {
+  margin-bottom: 0;
+}
+
+.legal-section a {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.legal-section ol,
+.legal-section ul {
+  padding-left: 22px;
+}
+
+.legal-section li + li {
+  margin-top: 7px;
+}
+
+/* --- Responsive ------------------------------------------------------------------------ */
+
+@media (max-width: 860px) {
+  .header-inner {
+    gap: 18px;
+    grid-template-columns: minmax(150px, 1fr) auto;
+    min-height: 62px;
+  }
+
+  .brand {
+    width: 160px;
+  }
+
+  .primary-nav {
+    display: none;
+  }
+
+  .hero-inner {
+    grid-template-columns: 1fr;
+  }
+
+  .hero-copy {
+    margin: 0 auto;
+    text-align: center;
+  }
+
+  .hero-lead {
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  .hero-copy .store-links {
+    justify-content: center;
+  }
+
+  .hero-product {
+    margin: 0 auto;
+    max-width: 480px;
+    width: 100%;
+  }
+
+  .proof-inner {
+    grid-template-columns: 1fr;
+  }
+
+  .proof-inner p {
+    border-top: 1px solid var(--line);
+    min-height: 56px;
+    padding-right: 0;
+  }
+
+  .proof-inner p:first-child {
+    border-top: 0;
+  }
+
+  .split-heading,
+  .editorial-inner,
+  .faq-layout,
+  .download-inner,
+  .tour-heading {
+    grid-template-columns: 1fr;
+  }
+
+  /* On small screens the rail is swiped directly */
+  .rail-controls {
+    display: none;
+  }
+
+  .editorial-visual {
+    justify-self: center;
+  }
+
+  .faq-intro {
+    position: static;
+  }
+}
+
+@media (max-width: 560px) {
+  .header-cta {
+    font-size: 13px;
+    min-height: 40px;
+    padding: 0 13px;
+  }
+
+  .store-links {
+    flex-wrap: nowrap;
+    gap: 8px;
+  }
+
+  .store-link {
+    flex: 0 1 auto;
+    min-width: 0;
+  }
+
+  .store-link img {
+    height: auto;
+    max-height: 48px;
+    width: 100%;
+  }
+
+  .phone-hero {
+    width: min(240px, 82%);
+  }
+
+  .screenshot-grid {
+    grid-auto-columns: minmax(228px, 72vw);
+  }
+
+  .plan-card {
+    padding: 26px 22px;
+  }
+
+  .footer-main {
+    gap: 34px 24px;
+    grid-template-columns: 1fr 1fr;
+    padding-bottom: 46px;
+    padding-top: 52px;
+  }
+
+  .footer-brand {
+    grid-column: 1 / -1;
+  }
+
+  .footer-meta {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 7px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}

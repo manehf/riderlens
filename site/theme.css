@@ -1,0 +1,50 @@
+/* ==========================================================================
+   THEME — RiderLens brand tokens.
+
+   Every color, font, and shape decision in styles.css reads from these
+   tokens. Matches the app: electric green + graphite, Bebas Neue display,
+   IBM Plex Sans body.
+   ========================================================================== */
+
+@import url("https://fonts.googleapis.com/css2?family=Bebas+Neue&family=IBM+Plex+Sans:wght@400;600;700&display=swap");
+
+:root {
+  color-scheme: light;
+
+  /* --- Brand -------------------------------------------------------------
+     Electric green is light, so text/icons on it are graphite, not white. */
+  --accent: #b6ff2e;        /* electric green */
+  --accent-strong: #9fe816; /* hover / active state */
+  --accent-soft: #efffd8;   /* pale tint for panels and badges */
+  --on-accent: #111613;     /* graphite on the accent color */
+
+  /* --- Neutrals ---------------------------------------------------------- */
+  --page: #f5f7f1;    /* page background (app background) */
+  --surface: #ffffff; /* alternate section and card background */
+  --ink: #101411;     /* headings and primary text */
+  --muted: #60685f;   /* body copy and secondary text */
+  --line: #dde3da;    /* hairline borders and dividers */
+
+  /* --- Dark band (bottom call-to-action section) --------------------------- */
+  --band: #111613;       /* graphite band */
+  --band-ink: #f0f4ec;   /* headings on the band */
+  --band-muted: #8d978b; /* body copy on the band */
+
+  /* --- Typography ---------------------------------------------------------- */
+  --font-sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+
+  /* --- Shape ---------------------------------------------------------------- */
+  --radius-sm: 8px;
+  --radius-md: 14px;
+  --radius-lg: 24px;
+}
+
+/* Display voice: the poster face for headlines, same as the app. */
+h1,
+h2,
+.legal-hero h1 {
+  font-family: "Bebas Neue", var(--font-sans);
+  letter-spacing: 0.5px;
+  font-weight: 400;
+}
