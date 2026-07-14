@@ -9,7 +9,8 @@
       "distribution": "internal",
       "env": {
         "EXPO_PUBLIC_ANALYSIS_WORKER_URL": "https://riderlens-worker.fly.dev",
-        "EXPO_PUBLIC_ANALYSIS_WORKER_KEY": "e8f903859e0f111f42cc1f4ed95fed74116ae5d851821b77"
+        "EXPO_PUBLIC_ANALYSIS_WORKER_KEY": "e8f903859e0f111f42cc1f4ed95fed74116ae5d851821b77",
+        "EXPO_PUBLIC_SENTRY_DSN": "https://96a6c019160e2dfc6e8ae3073709c0b4@o4511693741948928.ingest.us.sentry.io/4511733883404288"
       }
     },
     "preview": {
@@ -19,14 +20,16 @@
       },
       "env": {
         "EXPO_PUBLIC_ANALYSIS_WORKER_URL": "https://riderlens-worker.fly.dev",
-        "EXPO_PUBLIC_ANALYSIS_WORKER_KEY": "e8f903859e0f111f42cc1f4ed95fed74116ae5d851821b77"
+        "EXPO_PUBLIC_ANALYSIS_WORKER_KEY": "e8f903859e0f111f42cc1f4ed95fed74116ae5d851821b77",
+        "EXPO_PUBLIC_SENTRY_DSN": "https://96a6c019160e2dfc6e8ae3073709c0b4@o4511693741948928.ingest.us.sentry.io/4511733883404288"
       }
     },
     "production": {
       "autoIncrement": true,
       "env": {
         "EXPO_PUBLIC_ANALYSIS_WORKER_URL": "https://riderlens-worker.fly.dev",
-        "EXPO_PUBLIC_ANALYSIS_WORKER_KEY": "e8f903859e0f111f42cc1f4ed95fed74116ae5d851821b77"
+        "EXPO_PUBLIC_ANALYSIS_WORKER_KEY": "e8f903859e0f111f42cc1f4ed95fed74116ae5d851821b77",
+        "EXPO_PUBLIC_SENTRY_DSN": "https://96a6c019160e2dfc6e8ae3073709c0b4@o4511693741948928.ingest.us.sentry.io/4511733883404288"
       }
     }
   },
