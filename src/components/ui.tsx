@@ -1,5 +1,5 @@
 import type { ComponentType, PropsWithChildren, ReactNode } from "react";
-import { Pressable, StyleSheet, Text, View, type StyleProp, type TextStyle, type ViewStyle } from "react-native";
+import { Image, Pressable, StyleSheet, Text, View, type StyleProp, type TextStyle, type ViewStyle } from "react-native";
 import type { LucideProps } from "lucide-react-native";
 
 import { numericText, numericTextBold, radius, shadows, spacing, tokens } from "../theme/tokens";
@@ -258,11 +258,7 @@ export function BrandHeader({ subtitle, action }: BrandHeaderProps) {
   return (
     <View style={styles.brandHeader}>
       <View style={styles.brandRow}>
-        <View style={styles.brandMark}>
-          <AppText weight="bold" size={13} color={tokens.electric}>
-            RL
-          </AppText>
-        </View>
+        <Image source={require("../../assets/brand-mark.png")} style={styles.brandMark} />
         <View>
           <DisplayText size={26}>RIDERLENS</DisplayText>
           {subtitle ? (
@@ -466,10 +462,7 @@ const styles = StyleSheet.create({
   brandMark: {
     width: 42,
     height: 42,
-    borderRadius: 12,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: tokens.graphite
+    borderRadius: 12
   },
   tabBar: {
     position: "absolute",
