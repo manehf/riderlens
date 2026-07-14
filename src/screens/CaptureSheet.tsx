@@ -373,7 +373,7 @@ function WindowStep({
             : reprocessing
               ? "Rebuild analysis"
               : needsPro
-                ? "Upgrade to Pro"
+                ? "Upgrade"
                 : "Analyze"}
         </Button>
         <Button variant="secondary" onPress={onCancel} style={styles.actionButton}>
