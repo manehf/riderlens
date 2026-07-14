@@ -1081,3 +1081,72 @@ details[open] .faq-icon::after {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* --- RiderLens boldness pass ---------------------------------------------
+   Bebas Neue is condensed, so it earns real size. Headlines scale up hard,
+   the hero name gets an electric highlight, and accents grow with it.
+   (Lives at the end of styles.css so the cascade cannot undo it.) */
+
+h1 {
+  font-size: clamp(3.4rem, 1.8rem + 6vw, 6rem);
+  letter-spacing: 0.5px;
+  line-height: 0.94;
+}
+
+h2 {
+  font-size: clamp(2.4rem, 1.6rem + 3vw, 3.6rem);
+  letter-spacing: 0.5px;
+  line-height: 0.96;
+}
+
+/* The name wears the brand: graphite type on an electric swash. */
+.hero-copy h1 span {
+  background: var(--accent);
+  color: var(--on-accent);
+  padding: 0 0.18em;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+.eyebrow {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.hero-lead {
+  font-size: clamp(1.2rem, 1.05rem + 0.6vw, 1.45rem);
+  max-width: 620px;
+}
+
+.proof-inner p {
+  font-size: 16px;
+  font-weight: 650;
+}
+
+.proof-inner p::before {
+  height: 12px;
+  width: 12px;
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+.feature-card h3 {
+  font-size: 24px;
+}
+
+.plan-price {
+  font-size: clamp(2.2rem, 1.8rem + 1.4vw, 3rem);
+}
+
+.header-cta,
+.plan-card > a,
+.support-action {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.download-band h2 {
+  font-size: clamp(2.6rem, 1.8rem + 3.4vw, 4.2rem);
+}
