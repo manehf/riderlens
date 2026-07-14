@@ -1156,7 +1156,7 @@ h2 {
    eyebrows, metrics, prices, and small technical labels. */
 
 h1 {
-  font-size: clamp(3.8rem, 1.8rem + 7vw, 7rem);
+  font-size: clamp(3.4rem, 1.7rem + 5.8vw, 5.8rem);
 }
 
 h2 {
