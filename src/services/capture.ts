@@ -31,11 +31,19 @@ function videoFormPart(videoUri: string) {
   return { uri: videoUri, name: name.includes(".") ? name : "clip.mp4", type } as unknown as Blob;
 }
 
+/** Shared client key: identifies requests as coming from the RiderLens app so
+ * the worker can refuse anonymous traffic. Not a real secret (it ships in the
+ * binary) — real auth arrives with accounts. */
+function workerHeaders(): Record<string, string> {
+  const key = process.env.EXPO_PUBLIC_ANALYSIS_WORKER_KEY;
+  return key ? { "x-riderlens-key": key } : {};
+}
+
 async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    return await fetch(url, { ...init, signal: controller.signal });
+    return await fetch(url, { ...init, headers: { ...workerHeaders(), ...init.headers }, signal: controller.signal });
   } finally {
     clearTimeout(timeout);
   }
@@ -130,6 +138,7 @@ export async function processRecord(input: ProcessRecordInput): Promise<RecordPa
   try {
     const response = await fetch(`${workerUrl}/capture/record`, {
       method: "POST",
+      headers: workerHeaders(),
       body: formData,
       signal: controller.signal
     });

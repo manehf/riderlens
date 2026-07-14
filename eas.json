@@ -8,7 +8,8 @@
       "developmentClient": true,
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_ANALYSIS_WORKER_URL": "https://riderlens-worker.fly.dev"
+        "EXPO_PUBLIC_ANALYSIS_WORKER_URL": "https://riderlens-worker.fly.dev",
+        "EXPO_PUBLIC_ANALYSIS_WORKER_KEY": "e8f903859e0f111f42cc1f4ed95fed74116ae5d851821b77"
       }
     },
     "preview": {
@@ -17,13 +18,15 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_ANALYSIS_WORKER_URL": "https://riderlens-worker.fly.dev"
+        "EXPO_PUBLIC_ANALYSIS_WORKER_URL": "https://riderlens-worker.fly.dev",
+        "EXPO_PUBLIC_ANALYSIS_WORKER_KEY": "e8f903859e0f111f42cc1f4ed95fed74116ae5d851821b77"
       }
     },
     "production": {
       "autoIncrement": true,
       "env": {
-        "EXPO_PUBLIC_ANALYSIS_WORKER_URL": "https://riderlens-worker.fly.dev"
+        "EXPO_PUBLIC_ANALYSIS_WORKER_URL": "https://riderlens-worker.fly.dev",
+        "EXPO_PUBLIC_ANALYSIS_WORKER_KEY": "e8f903859e0f111f42cc1f4ed95fed74116ae5d851821b77"
       }
     }
   },

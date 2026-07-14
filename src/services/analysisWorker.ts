@@ -107,8 +107,10 @@ export async function analyzeRegularJumpWithWorker(session: RideSession): Promis
   const timeout = setTimeout(() => controller.abort(), ANALYSIS_TIMEOUT_MS);
   let response: Response;
   try {
+    const key = process.env.EXPO_PUBLIC_ANALYSIS_WORKER_KEY;
     response = await fetch(`${workerUrl}/analysis/regular-jump`, {
       method: "POST",
+      headers: key ? { "x-riderlens-key": key } : undefined,
       body: formData,
       signal: controller.signal
     });

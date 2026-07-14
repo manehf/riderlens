@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import base64
 import json
+import hmac
 import logging
+from collections import deque
 import math
 import os
 import re
@@ -30,7 +32,7 @@ try:
 except ImportError:  # pragma: no cover - dotenv ships with pydantic-settings
     pass
 
-from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import HTMLResponse
@@ -54,6 +56,53 @@ except Exception:  # pragma: no cover - optional until Supabase is configured
 app = FastAPI(title="RiderLens Analysis Worker", version="0.2.0")
 logger = logging.getLogger("uvicorn.error")
 CAPTURE_JOB_LOCK = threading.Lock()
+
+# --- Abuse containment -------------------------------------------------------
+# The processing endpoints spend real money (Claude) and real CPU. Until
+# accounts exist, three cheap layers bound anonymous abuse:
+#   1. A client key shipped inside the app. Extractable from the binary by a
+#      determined attacker, but it ends drive-by scanners and casual curl.
+#      Enforcement is off until RIDERLENS_CLIENT_KEY is set, so builds already
+#      in testers' hands keep working; flip the Fly secret once new builds ship.
+#   2. A per-IP sliding-window rate limit (in-memory; one machine serves all).
+#   3. A hard upload size cap enforced while streaming to disk.
+
+
+def require_client_key(x_riderlens_key: str | None = Header(None)) -> None:
+    expected = os.getenv("RIDERLENS_CLIENT_KEY", "").strip()
+    if not expected:
+        return
+    if not x_riderlens_key or not hmac.compare_digest(x_riderlens_key, expected):
+        raise HTTPException(status_code=401, detail="This endpoint requires the RiderLens app.")
+
+
+RATE_BUCKETS: dict[str, deque] = {}
+RATE_LOCK = threading.Lock()
+
+
+def enforce_rate_limit(request: Request) -> None:
+    max_requests = int(os.getenv("RIDERLENS_RATE_LIMIT_MAX", "30"))
+    window_seconds = float(os.getenv("RIDERLENS_RATE_LIMIT_WINDOW_SECONDS", "3600"))
+    client_ip = request.headers.get("fly-client-ip") or (request.client.host if request.client else "unknown")
+    now = time.time()
+    with RATE_LOCK:
+        if len(RATE_BUCKETS) > 4096:
+            for ip in [ip for ip, bucket in RATE_BUCKETS.items() if not bucket or now - bucket[-1] > window_seconds]:
+                del RATE_BUCKETS[ip]
+        bucket = RATE_BUCKETS.setdefault(client_ip, deque())
+        while bucket and now - bucket[0] > window_seconds:
+            bucket.popleft()
+        if len(bucket) >= max_requests:
+            retry_after = max(1, int(window_seconds - (now - bucket[0])))
+            raise HTTPException(
+                status_code=429,
+                detail="Too many analyses from this connection. Try again later.",
+                headers={"Retry-After": str(retry_after)},
+            )
+        bucket.append(now)
+
+
+PROTECTED = [Depends(require_client_key), Depends(enforce_rate_limit)]
 
 # Browser clients (Expo web during development, the share pages later) need
 # CORS; native apps ignore it. The API holds no secrets — auth comes later
@@ -815,7 +864,7 @@ def dev_find_key_frames(request: DevKeyframesRequest):
 
 
 @app.post("/dev/find-key-frames-upload")
-async def dev_find_key_frames_upload(
+def dev_find_key_frames_upload(
     video: UploadFile = File(...),
     trim_start_seconds: float = Form(0),
     trim_end_seconds: float | None = Form(None),
@@ -951,8 +1000,8 @@ def dev_save_labels(request: SaveLabelsRequest):
     return {"ok": True, "count": len(entries)}
 
 
-@app.post("/analysis/regular-jump", response_model=AnalyzeResponse)
-async def analyze_regular_jump_upload(
+@app.post("/analysis/regular-jump", response_model=AnalyzeResponse, dependencies=PROTECTED)
+def analyze_regular_jump_upload(
     video: UploadFile = File(...),
     session_id: str = Form(...),
     trim_start_seconds: float = Form(0),
@@ -984,7 +1033,7 @@ async def analyze_regular_jump_upload(
             pass
 
 
-@app.post("/jobs/{job_id}/analyze", response_model=AnalyzeResponse)
+@app.post("/jobs/{job_id}/analyze", response_model=AnalyzeResponse, dependencies=PROTECTED)
 def analyze(job_id: str, request: AnalyzeRequest):
     if request.skill_type != "regular_jump":
         raise HTTPException(status_code=422, detail="Only regular_jump is implemented in the MVP worker.")
@@ -1724,8 +1773,22 @@ def _save_capture_upload(video: UploadFile) -> str:
     upload_id = uuid.uuid4().hex
     suffix = os.path.splitext(video.filename or "clip.mp4")[1] or ".mp4"
     destination = CAPTURE_DIR / f"{upload_id}{suffix}"
-    with open(destination, "wb") as out:
-        shutil.copyfileobj(video.file, out)
+    # Stream with a hard cap: an unbounded body could fill the machine's disk.
+    max_bytes = int(os.getenv("RIDERLENS_MAX_UPLOAD_BYTES", str(512 * 1024 * 1024)))
+    written = 0
+    try:
+        with open(destination, "wb") as out:
+            while chunk := video.file.read(1024 * 1024):
+                written += len(chunk)
+                if written > max_bytes:
+                    raise HTTPException(
+                        status_code=413,
+                        detail=f"Video too large (over {max_bytes // (1024 * 1024)} MB). Trim it shorter and retry.",
+                    )
+                out.write(chunk)
+    except HTTPException:
+        destination.unlink(missing_ok=True)
+        raise
     try:
         _normalize_upload(destination)
     except Exception:
@@ -1837,8 +1900,8 @@ def crop_clip(video_path: str, start_seconds: float, end_seconds: float) -> byte
             pass
 
 
-@app.post("/capture/analyze")
-async def capture_analyze(
+@app.post("/capture/analyze", dependencies=PROTECTED)
+def capture_analyze(
     video: UploadFile = File(...),
     trim_start_seconds: float = Form(0),
     trim_end_seconds: float | None = Form(None),
@@ -1884,7 +1947,7 @@ async def capture_analyze(
     }
 
 
-@app.post("/capture/record")
+@app.post("/capture/record", dependencies=PROTECTED)
 def capture_record(
     start_seconds: float = Form(...),
     end_seconds: float = Form(...),
