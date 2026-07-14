@@ -258,11 +258,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     borderRadius: radius.pill,
-    // surfaceMuted melts into the page background; a bordered white pill
-    // reads as a control at a glance.
-    backgroundColor: tokens.surface,
-    borderWidth: 1,
-    borderColor: tokens.border
+    // surfaceMuted melts into the page background; plain white stands out.
+    backgroundColor: tokens.surface
   },
   content: {
     gap: spacing.md,
