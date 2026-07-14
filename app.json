@@ -2,7 +2,7 @@
   "expo": {
     "name": "RiderLens",
     "slug": "riderlens",
-    "version": "0.1.0",
+    "version": "1.0.0",
     "orientation": "default",
     "scheme": "riderlens",
     "userInterfaceStyle": "light",
