@@ -20,7 +20,9 @@
 
     header { padding: 28px 0; }
     .brand { display: flex; align-items: center; gap: 12px; }
-    .lockup { height: 76px; width: auto; display: block; }
+    .mark-img { width: 64px; height: 64px; border-radius: 14px; display: block; }
+    .lockup-word { font-family: "Bebas Neue", sans-serif; font-size: 40px; line-height: 0.92; letter-spacing: 0.5px; }
+    .lockup-tag { font-family: "Bebas Neue", sans-serif; font-size: 15px; letter-spacing: 1.3px; text-transform: uppercase; color: #2c332c; margin-top: 1px; }
 
     .hero { background: var(--graphite); color: #f0f4ec; border-radius: 18px; padding: clamp(40px, 7vw, 84px) clamp(24px, 5vw, 64px); }
     .hero h1 { font-family: "Bebas Neue", sans-serif; font-size: clamp(44px, 8vw, 88px); line-height: 0.95; letter-spacing: 0.5px; }
@@ -52,7 +54,11 @@
   <div class="wrap">
     <header>
       <div class="brand">
-        <img src="/brand-lockup.png" alt="RiderLens — see your riding, frame by frame" class="lockup">
+        <img src="/brand-mark.png" alt="" class="mark-img">
+        <div>
+          <div class="lockup-word">RIDERLENS</div>
+          <div class="lockup-tag">See your riding, frame by frame.</div>
+        </div>
       </div>
     </header>
 
