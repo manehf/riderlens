@@ -1242,29 +1242,19 @@ h3,
   background-color: var(--page);
   background-image:
     radial-gradient(ellipse 90% 70% at 82% 8%, rgba(182, 255, 46, 0.4), transparent 62%),
-    radial-gradient(ellipse 60% 50% at 8% 96%, rgba(46, 125, 50, 0.14), transparent 70%),
-    url("/assets/texture-dirt.png");
-  background-size: auto, auto, 420px 420px;
+    radial-gradient(ellipse 60% 50% at 8% 96%, rgba(46, 125, 50, 0.14), transparent 70%);
 }
 
 /* Proof strip becomes a tire track: angled knob marks rolling across. */
 .proof-strip {
   background-color: var(--surface);
-  background-image: repeating-linear-gradient(
-    -55deg,
-    transparent 0 26px,
-    rgba(17, 22, 19, 0.06) 26px 34px
-  );
-  border-bottom: 2px solid var(--ink);
-  border-top: 2px solid var(--ink);
+  border-bottom: 1px solid var(--line);
+  border-top: 1px solid var(--line);
 }
 
 /* Editorial band: grit under the promise, soft green light from the left. */
 .editorial-band {
-  background-image:
-    radial-gradient(ellipse 70% 90% at 0% 30%, rgba(182, 255, 46, 0.16), transparent 60%),
-    url("/assets/texture-dirt.png");
-  background-size: auto, 420px 420px;
+  background-image: radial-gradient(ellipse 70% 90% at 0% 30%, rgba(182, 255, 46, 0.16), transparent 60%);
 }
 
 /* Featured plan: standing in its own headlight. */
@@ -1278,26 +1268,7 @@ h3,
   background-color: var(--band);
   background-image:
     radial-gradient(ellipse 80% 90% at 85% 15%, rgba(182, 255, 46, 0.2), transparent 58%),
-    radial-gradient(ellipse 120% 100% at 50% 120%, rgba(0, 0, 0, 0.55), transparent 70%),
-    url("/assets/texture-dirt-light.png");
-  background-size: auto, auto, 420px 420px;
-  border-top: none;
-  position: relative;
-}
-
-.download-band::before {
-  background: repeating-linear-gradient(
-    -55deg,
-    var(--accent) 0 14px,
-    transparent 14px 30px
-  );
-  content: "";
-  display: block;
-  height: 8px;
-  left: 0;
-  position: absolute;
-  right: 0;
-  top: 0;
+    radial-gradient(ellipse 120% 100% at 50% 120%, rgba(0, 0, 0, 0.55), transparent 70%);
 }
 
 /* Phones catch the light. */
@@ -1305,11 +1276,7 @@ h3,
   filter: drop-shadow(0 34px 70px rgba(46, 125, 50, 0.35));
 }
 
-/* FAQ + footer keep a whisper of grit so the world doesn't end mid-page. */
-.site-footer {
-  background-image: url("/assets/texture-dirt.png");
-  background-size: 420px 420px;
-}
+
 
 /* --- Pricing pop: Pro goes graphite ----------------------------------------
    The featured plan flips to the brand's dark chip language - graphite card,
