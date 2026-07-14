@@ -462,9 +462,9 @@ const styles = StyleSheet.create({
     gap: spacing.md
   },
   brandMark: {
-    width: 42,
-    height: 42,
-    borderRadius: 12
+    width: 52,
+    height: 52,
+    borderRadius: 14
   },
   brandTagline: {
     letterSpacing: 1.05,
