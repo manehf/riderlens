@@ -76,7 +76,7 @@ export function SessionsScreen({ store }: SessionsScreenProps) {
             onPress={() => setSettingsOpen(true)}
             style={styles.settingsButton}
           >
-            <Settings color={tokens.electric} size={20} strokeWidth={2.2} />
+            <Settings color={tokens.green} size={20} strokeWidth={2.2} />
           </Pressable>
         }
       />
@@ -258,9 +258,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     borderRadius: radius.pill,
-    // Brand treatment: graphite pill + electric gear, echoing the dark chip
-    // style — unmissable without competing with the electric (+) button.
-    backgroundColor: tokens.graphite
+    // Quiet but branded: soft electric tint + green gear. Visible against
+    // the page, clearly secondary to the (+) action.
+    backgroundColor: tokens.electricSoft
   },
   content: {
     gap: spacing.md,
