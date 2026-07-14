@@ -8,10 +8,13 @@ import { demoGarage } from "../data/demoData";
 import { useProStatus } from "./useProStatus";
 import { createId } from "../services/analysis";
 import {
+  consumeFreeAnalysis,
   FREE_ANALYSIS_LIMIT,
   getFreeAnalysesRemaining,
-  loadFreeAnalysesUsed,
-  saveFreeAnalysesUsed
+  loadFreeAllowance,
+  saveFreeAllowance,
+  usedThisMonth,
+  type FreeAllowance
 } from "../services/analysisAllowance";
 import { isAnalysisWorkerReachable, processRecord } from "../services/capture";
 import {
@@ -112,10 +115,10 @@ export function useRiderLensMvp(): RiderLensStore {
   const [profile, setProfile] = useState<RiderProfile>(DEFAULT_PROFILE);
   const [selectedSkill, setSelectedSkill] = useState<SkillType>("regular_jump");
   const [pendingCapture, setPendingCapture] = useState<PendingCapture | undefined>();
-  const [freeAnalysesUsed, setFreeAnalysesUsed] = useState(0);
+  const [freeAllowance, setFreeAllowance] = useState<FreeAllowance | undefined>();
   const [hydrated, setHydrated] = useState(false);
   const recordsRef = useRef<JumpRecord[]>([]);
-  const freeAnalysesUsedRef = useRef(0);
+  const freeAllowanceRef = useRef<FreeAllowance | undefined>(undefined);
   const processingIdsRef = useRef<Set<string>>(new Set());
   const retryProbeActiveRef = useRef(false);
 
@@ -125,9 +128,9 @@ export function useRiderLensMvp(): RiderLensStore {
       // v1 held sessions + garage; carry the garage over once.
       AsyncStorage.getItem("riderlens:mvp-state:v1").catch(() => null),
       loadRecords(),
-      loadFreeAnalysesUsed()
+      loadFreeAllowance()
     ])
-      .then(([raw, legacyRaw, storedRecords, storedFreeAnalysesUsed]) => {
+      .then(([raw, legacyRaw, storedRecords, storedAllowance]) => {
         if (raw) {
           const parsed = JSON.parse(raw) as PersistedState;
           if (parsed.garage) setGarage(parsed.garage);
@@ -137,8 +140,8 @@ export function useRiderLensMvp(): RiderLensStore {
           if (legacy.garage) setGarage(legacy.garage);
         }
         setRecords(storedRecords);
-        freeAnalysesUsedRef.current = storedFreeAnalysesUsed;
-        setFreeAnalysesUsed(storedFreeAnalysesUsed);
+        freeAllowanceRef.current = storedAllowance;
+        setFreeAllowance(storedAllowance);
       })
       .catch(() => undefined)
       .finally(() => setHydrated(true));
@@ -246,14 +249,18 @@ export function useRiderLensMvp(): RiderLensStore {
       entitled = await pro.refresh();
     }
     if (entitled) return "pro";
-    if (getFreeAnalysesRemaining(freeAnalysesUsedRef.current) > 0) return "free";
+    if (getFreeAnalysesRemaining(freeAllowanceRef.current) > 0) return "free";
 
     if (!pro.available) {
+      // Purchases can't open in this build (Expo Go / no store keys), so a
+      // paywall here would be a dead end. Never brick the rider: let the
+      // analysis through and say so. Store builds carry keys, so this path
+      // only exists in test/dev builds.
       Alert.alert(
-        "RiderLens Pro unavailable",
-        "This build cannot open subscriptions. Install the latest RiderLens test or store build and try again."
+        "Free limit reached",
+        "Upgrades aren't available in this test build, so this analysis is on us. The store version unlocks unlimited analyses with RiderLens Pro."
       );
-      return undefined;
+      return "free";
     }
 
     return (await pro.upgrade()) ? "pro" : undefined;
@@ -356,10 +363,10 @@ export function useRiderLensMvp(): RiderLensStore {
     setPendingCapture(undefined);
     setRecords((current) => [record, ...current]);
     if (access === "free") {
-      const nextUsed = freeAnalysesUsedRef.current + 1;
-      freeAnalysesUsedRef.current = nextUsed;
-      setFreeAnalysesUsed(nextUsed);
-      await saveFreeAnalysesUsed(nextUsed).catch(() => undefined);
+      const next = consumeFreeAnalysis(freeAllowanceRef.current);
+      freeAllowanceRef.current = next;
+      setFreeAllowance(next);
+      await saveFreeAllowance(next).catch(() => undefined);
     }
     runRecordProcessing(record);
     return true;
@@ -588,12 +595,12 @@ export function useRiderLensMvp(): RiderLensStore {
       ready: hydrated && (!pro.available || pro.ready),
       isPro: pro.isPro,
       freeLimit: FREE_ANALYSIS_LIMIT,
-      freeUsed: freeAnalysesUsed,
-      freeRemaining: getFreeAnalysesRemaining(freeAnalysesUsed),
+      freeUsed: usedThisMonth(freeAllowance),
+      freeRemaining: getFreeAnalysesRemaining(freeAllowance),
       upgrade: pro.upgrade,
       restore: pro.restore
     }),
-    [freeAnalysesUsed, hydrated, pro.available, pro.isPro, pro.ready, pro.restore, pro.upgrade]
+    [freeAllowance, hydrated, pro.available, pro.isPro, pro.ready, pro.restore, pro.upgrade]
   );
 
   return {

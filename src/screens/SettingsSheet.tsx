@@ -258,7 +258,7 @@ export function SettingsSheet({ store, visible, onClose }: SettingsSheetProps) {
                       {pro.freeRemaining}
                     </NumberText>
                     <AppText size={12} weight="semi" color={tokens.textMuted}>
-                      {pro.freeRemaining === 1 ? "free analysis remaining" : "free analyses remaining"}
+                      {pro.freeRemaining === 1 ? "free analysis left this month" : "free analyses left this month"}
                     </AppText>
                   </View>
                   <Pressable accessibilityRole="button" onPress={() => void pro.upgrade()} style={styles.upgradeButton}>

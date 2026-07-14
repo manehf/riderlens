@@ -353,7 +353,7 @@ function WindowStep({
                 {analysisAccess.freeRemaining}
               </NumberText>
               <AppText size={12} weight="semi" color={tokens.textMuted}>
-                {analysisAccess.freeRemaining === 1 ? "free analysis remaining" : "free analyses remaining"}
+                {analysisAccess.freeRemaining === 1 ? "free analysis left this month" : "free analyses left this month"}
               </AppText>
             </>
           )}
