@@ -262,9 +262,11 @@ export function BrandHeader({ subtitle, action }: BrandHeaderProps) {
         <View>
           <DisplayText size={26}>RIDERLENS</DisplayText>
           {subtitle ? (
-            <AppText weight="semi" size={12} color={tokens.textMuted}>
+            /* Tagline mirrors the brand lockup: same condensed caps as the
+             * wordmark at roughly a third of its size, same ink. */
+            <DisplayText size={10.5} color={tokens.text} style={styles.brandTagline}>
               {subtitle}
-            </AppText>
+            </DisplayText>
           ) : null}
         </View>
       </View>
@@ -463,6 +465,12 @@ const styles = StyleSheet.create({
     width: 42,
     height: 42,
     borderRadius: 12
+  },
+  brandTagline: {
+    letterSpacing: 1.05,
+    textTransform: "uppercase",
+    marginTop: 1,
+    opacity: 0.85
   },
   tabBar: {
     position: "absolute",
