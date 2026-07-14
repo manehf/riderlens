@@ -128,14 +128,14 @@ Removing the in-app camera and relying only on Photos/Gallery has been discussed
 
 | Platform | Current identifier |
 |---|---|
-| iOS bundle identifier | `app.riderlens.mvp` |
+| iOS bundle identifier | `com.riderlens.app` |
 | Android application ID | `com.riderlens.app` |
 | App version | `0.1.0` |
 | Build service | Expo Application Services (EAS) |
 | EAS project ID | Configured in `app.json` |
 | Production worker URL | `https://riderlens-worker.fly.dev` |
 
-The `mvp` segment in the iOS bundle identifier is an internal identifier and is not shown as the customer-facing app name. It cannot be changed for an already-created App Store app without creating a different app identity.
+Both platforms now ship as `com.riderlens.app` (unified July 14, 2026, before any public release; the earlier `app.riderlens.mvp` TestFlight app is abandoned).
 
 ### 4.3 Python analysis worker
 
@@ -210,7 +210,7 @@ The dashboard configuration reported during setup is:
 | Google subscription | `riderlens_pro_v1` |
 | Google base plans | `monthly` and `annual` |
 
-These values live in the stores/RevenueCat rather than the repository and should be rechecked before release. Apple in-app product IDs do not need to share the iOS bundle identifier's prefix; RevenueCat's Apple app configuration itself must still point to the actual bundle identifier, `app.riderlens.mvp`.
+These values live in the stores/RevenueCat rather than the repository and should be rechecked before release. Apple in-app product IDs do not need to share the iOS bundle identifier's prefix; RevenueCat's Apple app configuration itself must still point to the actual bundle identifier, `com.riderlens.app`.
 
 ## 5. Current Architecture
 

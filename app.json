@@ -12,7 +12,7 @@
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "app.riderlens.mvp",
+      "bundleIdentifier": "com.riderlens.app",
       "infoPlist": {
         "NSCameraUsageDescription": "RiderLens uses the camera to record short bike technique clips for coaching feedback.",
         "NSMicrophoneUsageDescription": "RiderLens may record audio with bike technique clips.",
