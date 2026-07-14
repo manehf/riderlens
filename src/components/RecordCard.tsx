@@ -1,5 +1,5 @@
 import Slider from "@react-native-community/slider";
-import { useEventListener } from "expo";
+import { useEvent, useEventListener } from "expo";
 import * as ScreenOrientation from "expo-screen-orientation";
 import { useVideoPlayer, VideoView } from "expo-video";
 import {
@@ -145,6 +145,9 @@ type JumpViewerProps = {
   /** Owned by RecordCard: the toggle lives in the card header. */
   mode: ViewerMode;
   clipUri?: string;
+  /** Skeleton-burned video used for smooth native playback. The JPEG filmstrip
+   * remains the paused, frame-accurate inspection surface. */
+  skeletonClipUri?: string;
   /** Source-video time of the clip's first frame: filmstrip `t` values are in
    * source time, the clip starts at the confirmed window start. */
   clipStartSeconds: number;
@@ -165,6 +168,7 @@ type JumpViewerProps = {
 function JumpViewer({
   mode,
   clipUri,
+  skeletonClipUri,
   clipStartSeconds,
   frames,
   labels,
@@ -177,25 +181,35 @@ function JumpViewer({
   const maxFrameIndex = Math.max(0, frames.length - 1);
   const initialIndex = Math.max(0, Math.min(initialFrameIndex, maxFrameIndex));
   const [frameIndex, setFrameIndex] = useState(initialIndex);
-  const [playing, setPlaying] = useState(false);
+  const [skeletonPlaying, setSkeletonPlaying] = useState(false);
   const [speed, setSpeed] = useState(DEFAULT_SPEED);
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const frameIndexRef = useRef(initialIndex);
   const suppressVideoSyncUntilRef = useRef(0);
+  const stripRef = useRef<ScrollView>(null);
+  const [stripWidth, setStripWidth] = useState(0);
+  const stripInteractingRef = useRef(false);
+  const stripSettleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const playbackUri = mode === "skeleton" ? skeletonClipUri : clipUri;
+  const usesNativePlayback = Boolean(playbackUri);
   // In landscape fullscreen every vertical point goes to the footage.
   const compactControls = variant === "fullscreen" && windowWidth > windowHeight;
 
-  const player = useVideoPlayer(clipUri ?? null, (instance) => {
-    instance.loop = true;
+  const player = useVideoPlayer(playbackUri ?? null, (instance) => {
+    // The skeleton share clip contains an end card after the analyzed frames,
+    // so its loop is bounded manually by the filmstrip duration below.
+    instance.loop = mode === "video";
     instance.muted = true;
     instance.playbackRate = DEFAULT_SPEED;
-    instance.timeUpdateEventInterval = 0.15;
+    instance.timeUpdateEventInterval = 0.05;
   });
+  const { isPlaying: videoPlaying } = useEvent(player, "playingChange", { isPlaying: player.playing });
+  const playing = usesNativePlayback ? videoPlaying : skeletonPlaying;
 
   // One speed for both lenses.
   useEffect(() => {
-    if (clipUri) player.playbackRate = speed;
-  }, [clipUri, player, speed]);
+    if (playbackUri) player.playbackRate = speed;
+  }, [playbackUri, player, speed]);
 
   const cycleSpeed = useCallback(() => {
     setSpeed((current) => {
@@ -215,6 +229,13 @@ function JumpViewer({
     [clipStartSeconds]
   );
 
+  const analyzedClipDuration = useMemo(() => {
+    if (frames.length === 0) return 0;
+    const frameStep =
+      frames.length > 1 ? Math.max(1 / 60, (frames[frames.length - 1].t - frames[0].t) / (frames.length - 1)) : 1 / 30;
+    return Math.max(frameStep, clipTimeOf(frames[frames.length - 1]) + frameStep);
+  }, [clipTimeOf, frames]);
+
   const commitFrameIndex = useCallback(
     (index: number) => {
       const nextIndex = Math.max(0, Math.min(index, Math.max(0, frames.length - 1)));
@@ -225,30 +246,36 @@ function JumpViewer({
     [frames.length]
   );
 
-  // Skeleton playback: step through frames on a timer.
+  // Legacy fallback for records whose skeleton video failed to render. Normal
+  // Skeleton playback uses the native player and never enters this timer.
   useEffect(() => {
-    if (mode !== "skeleton" || !playing || frames.length < 2) return;
+    if (mode !== "skeleton" || usesNativePlayback || !skeletonPlaying || frames.length < 2) return;
     const timer = setInterval(() => {
       commitFrameIndex((frameIndexRef.current + 1) % frames.length);
     }, frameIntervalMs);
     return () => clearInterval(timer);
-  }, [commitFrameIndex, mode, playing, frames.length, frameIntervalMs]);
+  }, [commitFrameIndex, mode, usesNativePlayback, skeletonPlaying, frames.length, frameIntervalMs]);
 
-  // Video playback follows the shared `playing` flag.
-  useEffect(() => {
-    if (!clipUri) return;
-    if (mode === "video" && playing) {
-      player.play();
-    } else {
-      player.pause();
-    }
-  }, [clipUri, mode, playing, player]);
-
-  // While the video plays, keep frameIndex (slider + strip highlight) in sync.
+  // While either native clip plays, keep frameIndex (slider + strip highlight)
+  // in sync. The skeleton clip has a share end card, so loop at the final
+  // analyzed frame before that card can enter the viewer.
   // Manual frame steps are authoritative while paused; native video can emit a
   // nearby decoded timestamp immediately after seeking.
   useEventListener(player, "timeUpdate", ({ currentTime }) => {
-    if (mode !== "video" || !playing || frames.length === 0 || Date.now() < suppressVideoSyncUntilRef.current) {
+    if (!usesNativePlayback || !videoPlaying || frames.length === 0 || Date.now() < suppressVideoSyncUntilRef.current) {
+      return;
+    }
+    if (mode === "skeleton" && analyzedClipDuration > 0 && currentTime >= analyzedClipDuration) {
+      // Wrap before the end card. The seek must not run while playing:
+      // resuming into AVFoundation's in-flight seek livelocks the clock
+      // (time reports bounce around the boundary and the viewer flickers).
+      // Pause -> seek -> play serializes it; the suppression window keeps
+      // post-seek echo timestamps from re-entering this handler.
+      suppressVideoSyncUntilRef.current = Date.now() + 350;
+      player.pause();
+      player.currentTime = 0;
+      player.play();
+      commitFrameIndex(0);
       return;
     }
     const sourceTime = currentTime + clipStartSeconds;
@@ -267,14 +294,15 @@ function JumpViewer({
   const seekToFrame = useCallback(
     (index: number) => {
       suppressVideoSyncUntilRef.current = Date.now() + 350;
-      setPlaying(false);
+      if (usesNativePlayback) player.pause();
+      setSkeletonPlaying(false);
       const nextIndex = commitFrameIndex(index);
       const frame = frames[nextIndex];
-      if (frame && clipUri) {
+      if (frame && playbackUri) {
         player.currentTime = clipTimeOf(frame);
       }
     },
-    [clipTimeOf, clipUri, commitFrameIndex, frames, player]
+    [clipTimeOf, commitFrameIndex, frames, playbackUri, player, usesNativePlayback]
   );
 
   const stepFrame = useCallback(
@@ -284,18 +312,39 @@ function JumpViewer({
     [seekToFrame]
   );
 
-  const togglePlayback = useCallback(() => {
-    if (!playing) {
-      suppressVideoSyncUntilRef.current = 0;
+  const cancelStripInteraction = useCallback(() => {
+    if (stripSettleTimerRef.current) {
+      clearTimeout(stripSettleTimerRef.current);
+      stripSettleTimerRef.current = null;
     }
-    setPlaying((value) => !value);
-  }, [playing]);
+    stripInteractingRef.current = false;
+  }, []);
+
+  useEffect(() => cancelStripInteraction, [cancelStripInteraction]);
+
+  const togglePlayback = useCallback(() => {
+    cancelStripInteraction();
+    if (usesNativePlayback) {
+      if (videoPlaying) {
+        player.pause();
+      } else {
+        // Resuming at (or past) the analyzed end would race the wrap seek -
+        // restart cleanly from the top instead. Keep a short suppression
+        // window so echo timestamps from a just-issued seek don't fight the
+        // fresh playback position.
+        if (mode === "skeleton" && analyzedClipDuration > 0 && player.currentTime >= analyzedClipDuration - 0.05) {
+          player.currentTime = 0;
+          commitFrameIndex(0);
+        }
+        suppressVideoSyncUntilRef.current = Date.now() + 350;
+        player.play();
+      }
+      return;
+    }
+    setSkeletonPlaying((value) => !value);
+  }, [analyzedClipDuration, cancelStripInteraction, commitFrameIndex, mode, player, usesNativePlayback, videoPlaying]);
 
   // --- Filmstrip as scrubber: drag the strip under the fixed playhead. ------
-  const stripRef = useRef<ScrollView>(null);
-  const [stripWidth, setStripWidth] = useState(0);
-  const stripInteractingRef = useRef(false);
-  const stripSettleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Edge padding lets the first and last frames reach the center playhead.
   const stripEdgePadding = Math.max(0, (stripWidth - FILMSTRIP_CELL_WIDTH) / 2);
 
@@ -318,17 +367,22 @@ function JumpViewer({
 
   const scrubToOffset = useCallback(
     (offsetX: number) => {
+      // Playback scrolls the strip to follow the current frame. Those native
+      // onScroll events must never seek the player back to a stale offset.
+      // Check the event-driven state too: the native flag reads false while a
+      // seek is in flight even though playback is logically running.
+      if (player.playing || videoPlaying || skeletonPlaying) return;
       const cell = Math.round(offsetX / FILMSTRIP_STEP);
       const index = Math.max(0, Math.min(cell * stripStride, frames.length - 1));
       if (index === frameIndexRef.current) return;
       suppressVideoSyncUntilRef.current = Date.now() + 350;
       commitFrameIndex(index);
       const frame = frames[index];
-      if (frame && clipUri) {
+      if (frame && playbackUri) {
         player.currentTime = clipTimeOf(frame);
       }
     },
-    [clipTimeOf, clipUri, commitFrameIndex, frames, player, stripStride]
+    [clipTimeOf, commitFrameIndex, frames, playbackUri, player, skeletonPlaying, stripStride, videoPlaying]
   );
 
   const handleStripDragStart = useCallback(() => {
@@ -337,8 +391,9 @@ function JumpViewer({
       stripSettleTimerRef.current = null;
     }
     stripInteractingRef.current = true;
-    setPlaying(false);
-  }, []);
+    if (usesNativePlayback) player.pause();
+    setSkeletonPlaying(false);
+  }, [player, usesNativePlayback]);
 
   const handleStripScroll = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -356,14 +411,28 @@ function JumpViewer({
   }, []);
 
   const handleStripMomentumStart = useCallback(() => {
+    if (!stripInteractingRef.current) return;
     if (stripSettleTimerRef.current) {
       clearTimeout(stripSettleTimerRef.current);
-      stripSettleTimerRef.current = null;
     }
+    // Failsafe instead of a plain cancel: iOS never fires momentumScrollEnd
+    // when a programmatic scrollTo interrupts the momentum, and a stuck
+    // interacting flag turns the playback-follow scrolls into seeks.
+    stripSettleTimerRef.current = setTimeout(() => {
+      stripSettleTimerRef.current = null;
+      stripInteractingRef.current = false;
+    }, 1000);
   }, []);
 
   const handleStripMomentumEnd = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      // Programmatic scrollTo calls used during playback can emit momentum
+      // events on iOS. Never feed those stale offsets back into frameIndex.
+      if (!stripInteractingRef.current) return;
+      if (stripSettleTimerRef.current) {
+        clearTimeout(stripSettleTimerRef.current);
+        stripSettleTimerRef.current = null;
+      }
       scrubToOffset(event.nativeEvent.contentOffset.x);
       stripInteractingRef.current = false;
     },
@@ -381,16 +450,18 @@ function JumpViewer({
   useEffect(() => {
     if (previousModeRef.current === mode) return;
     previousModeRef.current = mode;
-    if (mode === "video" && clipUri) {
+    if (usesNativePlayback) player.pause();
+    setSkeletonPlaying(false);
+    if (playbackUri) {
       const frame = frames[frameIndexRef.current];
       if (frame) player.currentTime = clipTimeOf(frame);
     }
-  }, [clipTimeOf, clipUri, frames, mode, player]);
+  }, [clipTimeOf, frames, mode, playbackUri, player, usesNativePlayback]);
 
   // Start the video at the initial frame (matters when opening fullscreen mid-scrub).
   useEffect(() => {
     const frame = frames[frameIndexRef.current];
-    if (clipUri && frame) player.currentTime = clipTimeOf(frame);
+    if (playbackUri && frame) player.currentTime = clipTimeOf(frame);
     // Mount only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -416,14 +487,21 @@ function JumpViewer({
   return (
     <View style={variant === "fullscreen" ? styles.viewerFullscreen : styles.viewer}>
       <View style={variant === "fullscreen" ? styles.viewportFullscreen : styles.viewport}>
-        {mode === "video" && clipUri ? (
-          <VideoView
-            player={player}
-            style={StyleSheet.absoluteFill}
-            contentFit="contain"
-            nativeControls={false}
-            surfaceType="textureView"
-          />
+        {playbackUri ? (
+          <>
+            <VideoView
+              player={player}
+              style={StyleSheet.absoluteFill}
+              contentFit="contain"
+              nativeControls={false}
+              surfaceType="textureView"
+            />
+            {mode === "skeleton" && !videoPlaying ? (
+              <Pressable style={StyleSheet.absoluteFill} onPress={() => onZoom(currentFrame)}>
+                <FrameWindow frames={frames} index={boundedFrameIndex} />
+              </Pressable>
+            ) : null}
+          </>
         ) : (
           <Pressable style={StyleSheet.absoluteFill} onPress={() => onZoom(currentFrame)}>
             <FrameWindow frames={frames} index={boundedFrameIndex} />
@@ -827,9 +905,10 @@ export function RecordCard({ record, onShare, onRetry, onDelete, onReprocess, on
         // decoded-image memory and Android's Fresco starts returning black
         // bitmaps. The viewer remounts at the shared frame on close.
         <JumpViewer
-          key={`${record.id}-${viewerEpoch}`}
+          key={`${record.id}-${viewerEpoch}-${mode}`}
           mode={mode}
           clipUri={record.clipUri}
+          skeletonClipUri={record.skeletonClipUri}
           clipStartSeconds={record.windowStart}
           frames={frames}
           labels={labels}
@@ -966,10 +1045,11 @@ export function RecordCard({ record, onShare, onRetry, onDelete, onReprocess, on
           </View>
           {fullscreen && detail && frames.length > 0 ? (
             <JumpViewer
-              key={`${record.id}-fullscreen`}
+              key={`${record.id}-fullscreen-${mode}`}
               variant="fullscreen"
               mode={mode}
               clipUri={record.clipUri}
+              skeletonClipUri={record.skeletonClipUri}
               clipStartSeconds={record.windowStart}
               frames={frames}
               labels={labels}

@@ -12,6 +12,7 @@ import type {
   SkillType,
   VideoAsset
 } from "../types/domain";
+import { MAX_ANALYSIS_WINDOW_SECONDS } from "./captureWindow";
 
 const skillLabels: Record<SkillType, string> = {
   regular_jump: "Regular jump",
@@ -63,7 +64,7 @@ export function createQueuedSession(skillType: SkillType, videoUri: string, clip
     durationSeconds,
     fps: 60,
     trimStartSeconds: clip?.trimStartSeconds ?? 0,
-    trimEndSeconds: clip?.trimEndSeconds ?? Math.min(10, durationSeconds),
+    trimEndSeconds: clip?.trimEndSeconds ?? Math.min(MAX_ANALYSIS_WINDOW_SECONDS, durationSeconds),
     cropPreset: clip?.cropPreset ?? "full_side_view",
     createdAt: now
   };

@@ -1,10 +1,8 @@
 import Constants from "expo-constants";
 import { Platform } from "react-native";
 
-// RevenueCat plumbing, ported from the DayDuet pattern. Fully dormant until
-// both are true: running in a dev/standalone build (the SDK is a native
-// module — Expo Go can't load it) AND platform API keys are configured.
-// Nothing in v1 is gated behind Pro; this only prepares the rails.
+// RevenueCat is available only in a native build with a platform public SDK
+// key. Expo Go cannot load the native purchases module.
 
 export const PRO_ENTITLEMENT_ID = process.env.EXPO_PUBLIC_REVENUECAT_ENTITLEMENT_ID || "RiderLens Pro";
 

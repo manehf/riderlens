@@ -116,7 +116,7 @@ export function SessionsScreen({ store }: SessionsScreenProps) {
               <View style={styles.emptyText}>
                 <AppText weight="bold">No records yet</AppText>
                 <AppText color={tokens.textMuted} size={13}>
-                  Tap the + button to capture your first moment.
+                  Film with your phone's camera — from the side, whole rider in frame — then tap + to pick the clip.
                 </AppText>
               </View>
             </Card>

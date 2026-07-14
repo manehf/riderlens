@@ -32,6 +32,7 @@ except ImportError:  # pragma: no cover - dotenv ships with pydantic-settings
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
@@ -63,6 +64,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+# Record responses contain compressed media encoded as base64. Gzip recovers
+# most of that base64 expansion before the payload crosses a mobile network.
+app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=5)
 
 SkillType = Literal["regular_jump", "bunnyhop", "manual", "wheelie", "drop"]
 CropPreset = Literal["full_side_view", "rider_centered", "takeoff_landing", "vertical_social"]
@@ -149,10 +153,10 @@ class PoseFrame:
 
 def get_supabase():
     url = os.getenv("SUPABASE_URL")
-    service_role_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
-    if not url or not service_role_key or create_client is None:
+    secret_key = os.getenv("SUPABASE_SECRET_KEY") or os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+    if not url or not secret_key or create_client is None:
         return None
-    return create_client(url, service_role_key)
+    return create_client(url, secret_key)
 
 
 @app.get("/health")
@@ -546,22 +550,27 @@ def filmstrip_encode_settings(
     frame_height: int,
     override_width: int | None = None,
 ) -> tuple[int, int]:
-    """Choose dense-frame dimensions without letting landscape clips look unnecessarily soft."""
+    """Keep every frame while bounding the response a phone must parse.
+
+    The record also carries two base64 videos, so a filmstrip much above 12 MB
+    can turn an ordinary 6-second clip into a large JSON document. These
+    tiers retain source-frame density and spend resolution on shorter clips,
+    where fewer images share the same mobile payload budget.
+    """
     if frame_count <= 96:
-        base_width, quality = 960, 88
+        base_width, quality = 640, 80
     elif frame_count <= 200:
-        base_width, quality = 800, 84
+        base_width, quality = 480, 66
     elif frame_count <= 300:
-        base_width, quality = 640, 78
+        base_width, quality = 384, 60
     else:
-        base_width, quality = 560, 74
+        base_width, quality = 320, 58
 
     if override_width is not None:
         return min(frame_width, max(1, override_width)), quality
 
-    # Side-view footage is normally landscape. Its old width-only budget used
-    # far fewer pixels than portrait at the same tier, so spend part of that
-    # unused budget on visible detail without increasing portrait dimensions.
+    # At a given width, landscape thumbnails use far fewer pixels than portrait,
+    # so they can spend a little more width without breaking the byte budget.
     target_width = round(base_width * 1.2) if frame_width >= frame_height else base_width
     return min(frame_width, target_width), quality
 
@@ -698,7 +707,7 @@ def measure_window(
             if include_air_frames and air_span[0] <= time_seconds <= air_span[1]:
                 # Encode at most eight reference frames immediately. Keeping all
                 # full-resolution candidates alive until the end made a 1080p,
-                # 8-second window consume multiple gigabytes.
+                # six-second window consume multiple gigabytes.
                 if air_frame_cursor % air_frame_stride == 0 and len(air_frames) < 8:
                     air_width = min(width, 480)
                     air_small = (
@@ -987,42 +996,57 @@ def analyze(job_id: str, request: AnalyzeRequest):
 
     supabase = get_supabase()
     if supabase:
-        supabase.table("analysis_jobs").update({"status": "processing", "progress": 0.2}).eq("id", job_id).execute()
+        started_at = datetime.now(timezone.utc).isoformat()
+        supabase.table("analysis_jobs").update(
+            {
+                "status": "processing",
+                "progress": 20,
+                "started_at": started_at,
+                "error_code": None,
+                "error_message": None,
+            }
+        ).eq("id", job_id).eq("session_id", request.session_id).execute()
+        supabase.table("analysis_sessions").update({"status": "processing"}).eq(
+            "id", request.session_id
+        ).execute()
 
-    response = analyze_regular_jump_file(
-        session_id=request.session_id,
-        video_path=request.raw_video_path,
-        trim_start_seconds=request.trim_start_seconds,
-        trim_end_seconds=request.trim_end_seconds,
-        crop_preset=request.crop_preset,
-    )
+    try:
+        response = analyze_regular_jump_file(
+            session_id=request.session_id,
+            video_path=request.raw_video_path,
+            trim_start_seconds=request.trim_start_seconds,
+            trim_end_seconds=request.trim_end_seconds,
+            crop_preset=request.crop_preset,
+        )
+    except Exception as error:
+        if supabase:
+            finished_at = datetime.now(timezone.utc).isoformat()
+            supabase.table("analysis_jobs").update(
+                {
+                    "status": "failed",
+                    "progress": 0,
+                    "error_code": "analysis_failed",
+                    "error_message": str(error)[:1000],
+                    "finished_at": finished_at,
+                }
+            ).eq("id", job_id).eq("session_id", request.session_id).execute()
+            supabase.table("analysis_sessions").update(
+                {
+                    "status": "failed",
+                    "error_code": "analysis_failed",
+                    "error_message": str(error)[:1000],
+                }
+            ).eq("id", request.session_id).execute()
+        raise
 
     if supabase:
-        for metric in response.metrics:
-            supabase.table("pose_metrics").insert(
-                {
-                    "session_id": request.session_id,
-                    "phase": metric.phase,
-                    "frame_time": metric.frameTime,
-                    "torso_angle": metric.torsoAngle,
-                    "hip_angle": metric.hipAngle,
-                    "knee_angle": metric.kneeAngle,
-                    "elbow_angle": metric.elbowAngle,
-                    "bike_pitch_angle": metric.bikePitchAngle,
-                    "confidence": metric.confidence,
-                }
-            ).execute()
-        supabase.table("reports").insert(
-            {
-                "session_id": request.session_id,
-                "summary": response.report.summary,
-                "strengths": response.report.strengths,
-                "improvements": response.report.improvements,
-                "drills": response.report.drills,
-            }
-        ).execute()
-        supabase.table("analysis_jobs").update({"status": "completed", "progress": 1}).eq("id", job_id).execute()
-        supabase.table("sessions").update({"status": "complete"}).eq("id", request.session_id).execute()
+        finished_at = datetime.now(timezone.utc).isoformat()
+        supabase.table("analysis_jobs").update(
+            {"status": "completed", "progress": 100, "finished_at": finished_at}
+        ).eq("id", job_id).eq("session_id", request.session_id).execute()
+        supabase.table("analysis_sessions").update(
+            {"status": "completed", "completed_at": finished_at}
+        ).eq("id", request.session_id).execute()
 
     return response
 
@@ -1595,7 +1619,7 @@ def clamp(value: float, minimum: float, maximum: float) -> float:
 
 CAPTURE_DIR = FilePath(tempfile.gettempdir()) / "riderlens-captures"
 CAPTURE_TTL_SECONDS = 45 * 60
-CAPTURE_MAX_WINDOW_SECONDS = 8.0
+CAPTURE_MAX_WINDOW_SECONDS = 6.0
 UPLOAD_ID_PATTERN = re.compile(r"^[0-9a-f]{32}$")
 
 
@@ -1947,11 +1971,18 @@ def capture_record(
         "events": events,
         "flight": estimate_flight(series, events),
     }
+    payload_characters = (
+        len(response["clip"])
+        + len(response["skeletonClip"] or "")
+        + sum(len(frame["image"]) for frame in filmstrip)
+        + len(json.dumps(series, separators=(",", ":")))
+    )
     logger.info(
-        "capture_record completed elapsed=%.1fs frames=%d filmstrip=%d rss_mb=%s",
+        "capture_record completed elapsed=%.1fs frames=%d filmstrip=%d payload_mb=%.1f rss_mb=%s",
         time.perf_counter() - started_at,
         len(series),
         len(filmstrip),
+        payload_characters / (1024 * 1024),
         current_rss_mb(),
     )
     return response

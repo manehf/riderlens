@@ -33,7 +33,7 @@ Long-term product direction: RiderLens becomes a full MTB gravity app, not a gen
 record live ──┐
               ├─→ select one jump ─→ crop + pose ─→ record ─→ tag ─→ library ─→ share
 pick from    ─┘   (rider chooses      (worker:        (clip +           (poster    (skeleton mp4
-photo library      0.5–8 seconds)      FFmpeg +        skeleton          grid +      w/ watermark,
+photo library      0.5–6 seconds)      FFmpeg +        skeleton          grid +      w/ watermark,
                                        MediaPipe)      filmstrip)        filters)    or clean clip)
 ```
 
@@ -42,7 +42,7 @@ photo library      0.5–8 seconds)      FFmpeg +        skeleton          grid 
 The minimum shippable product is the smallest version that proves riders care enough to repeat the loop:
 
 1. **Capture or pick a local video** — no YouTube/external links, no cloud import, no setup flow.
-2. **Choose the action window** — the rider previews and selects one 0.5–8 second jump; no full-video AI search.
+2. **Choose the action window** — the rider previews a centered 4-second default and selects one 0.5–6 second jump; no full-video AI search.
 3. **Generate a finished record** — trimmed clip, skeleton overlay on every frame, poster, filmstrip, basic metadata.
 4. **Save records locally** — a rider can leave the app and come back to a list of sessions.
 5. **Review one record well** — Skeleton/Video toggle, play/pause, scrub, frame step, slow speed.
@@ -168,6 +168,6 @@ These three decide act two: depth (Garage/coaching) if riders retain and ask "wh
 
 ## 8. Current state (July 7, 2026)
 
-Built and tested: capture flow (camera + video picker), rider-selected 0.5–8 second jump range with looping preview and explicit rotation correction, worker-side orientation canonicalization, worker pipeline (trim, pose on every frame, skeleton filmstrip, poster, watermarked skeleton share clip), record card (single viewport, lens toggle, transport with speed/frame-step), user tags, library (poster grid, tag filters, detail sheet), share-by-lens, storage cleanup on delete, and foreground/active retry for pending records. The full-video AI window search is removed from the mobile critical path; automatic phase suggestions can return later inside the already selected jump.
+Built and tested: capture flow (camera + video picker), rider-selected 0.5–6 second jump range with a centered 4-second default, looping preview, and explicit rotation correction, worker-side orientation canonicalization, worker pipeline (trim, pose on every frame, skeleton filmstrip, poster, watermarked skeleton share clip), record card (single viewport, lens toggle, transport with speed/frame-step), user tags, library (poster grid, tag filters, detail sheet), share-by-lens, storage cleanup on delete, and foreground/active retry for pending records. The full-video AI window search is removed from the mobile critical path; automatic phase suggestions can return later inside the already selected jump.
 
 Open items are exactly Phases 1–4 above.

@@ -20,13 +20,13 @@ The MVP is intentionally narrow:
 Implemented in the Expo app (capture-first — see `riderlens-product-plan.md`):
 
 - Capture tab: record live or pick from the photo library.
-- Jump selection: the rider previews the source, chooses one 0.5–8 second range, and can explicitly correct rotation before upload. RiderLens does not guess which jump to analyze.
+- Jump selection: the rider previews the source, starts with a centered 4-second selection, and chooses one 0.5–6 second range. The rider can explicitly correct rotation before upload; RiderLens does not guess which jump to analyze.
 - Records: the worker crops the moment (FFmpeg), measures pose on every frame in the window, and the app stores the trimmed clip + key frames with skeleton overlays + filmstrip + timeline curves on-device.
 - Offline-tolerant: when processing fails, the record stays pending with a retry — capture never blocks on connectivity.
 - History tab: all records with status, review, share (native share sheet with the clip), and delete.
 - Garage tab with bike setup, suspension settings, cockpit/tire/service data, and shareable setup-sheet text.
 - Tools tab with inclinometer/level, calibration, saved measurements, and sag calculator.
-- Supabase schema draft in `supabase/schema.sql`.
+- Version-controlled Supabase schema, private media bucket, and owner-only RLS policies in `supabase/migrations`.
 - Electric green / graphite / cyan visual system from `index-electric.html`.
 - IBM Plex Sans for UI and IBM Plex Mono with tabular numbers for metrics and measurements.
 
@@ -82,7 +82,8 @@ worker/app/dev.html             Browser Analysis Lab at /dev (dev tool, annotate
 worker/scripts/analyze_clip.sh  Run a reference clip through the worker from the CLI
 worker/README.md                Worker setup and endpoint notes
 clips/                          Reference clip library for development/validation
-supabase/schema.sql             Planned backend database/storage schema
+supabase/migrations/            Production database, private Storage, and RLS migrations
+supabase/README.md              Linking, deployment, and verification workflow
 ```
 
 ## Local App Setup
@@ -106,11 +107,13 @@ Environment variables:
 
 ```bash
 EXPO_PUBLIC_SUPABASE_URL=
-EXPO_PUBLIC_SUPABASE_ANON_KEY=
+EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY=
 EXPO_PUBLIC_ANALYSIS_WORKER_URL=
 ```
 
 The app runs in demo mode with local persistence when Supabase is not configured.
+The worker reads `SUPABASE_URL` and `SUPABASE_SECRET_KEY` from Fly secrets; never
+put the secret key in an Expo environment variable.
 
 ## MediaPipe Worker Setup
 

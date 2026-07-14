@@ -1,5 +1,13 @@
 export const MIN_ANALYSIS_WINDOW_SECONDS = 0.5;
-export const MAX_ANALYSIS_WINDOW_SECONDS = 8;
+export const DEFAULT_ANALYSIS_WINDOW_SECONDS = 4;
+export const MAX_ANALYSIS_WINDOW_SECONDS = 6;
+
+export function createInitialAnalysisWindow(durationSeconds: number) {
+  const duration = Math.max(MIN_ANALYSIS_WINDOW_SECONDS, durationSeconds);
+  const windowSeconds = Math.min(DEFAULT_ANALYSIS_WINDOW_SECONDS, duration);
+  const start = Math.max(0, (duration - windowSeconds) / 2);
+  return { start, end: start + windowSeconds };
+}
 
 export function shouldLoopSelection(isPlaying: boolean, currentTime: number, endTime: number) {
   return isPlaying && currentTime >= endTime - 0.03;

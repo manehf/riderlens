@@ -22,17 +22,18 @@
       }
     },
     "android": {
-      "package": "app.riderlens.mvp",
+      "package": "com.riderlens.app",
       "permissions": [
-        "android.permission.CAMERA",
-        "android.permission.RECORD_AUDIO",
         "android.permission.READ_MEDIA_VIDEO",
         "android.permission.BODY_SENSORS"
+      ],
+      "blockedPermissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
       ]
     },
     "plugins": [
       "expo-font",
-      "expo-camera",
       "expo-image-picker",
       "expo-video"
     ],

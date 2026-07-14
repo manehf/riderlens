@@ -1,14 +1,21 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import * as Device from "expo-device";
 import * as ImagePicker from "expo-image-picker";
 import * as Sharing from "expo-sharing";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, AppState, Platform, Share } from "react-native";
 
 import { demoGarage } from "../data/demoData";
+import { useProStatus } from "./useProStatus";
 import { createId } from "../services/analysis";
+import {
+  FREE_ANALYSIS_LIMIT,
+  getFreeAnalysesRemaining,
+  loadFreeAnalysesUsed,
+  saveFreeAnalysesUsed
+} from "../services/analysisAllowance";
 import { isAnalysisWorkerReachable, processRecord } from "../services/capture";
 import {
+  createInitialAnalysisWindow,
   fitAnalysisWindow,
   MIN_ANALYSIS_WINDOW_SECONDS,
   updateAnalysisWindow
@@ -46,6 +53,17 @@ export type PendingCapture = {
   reprocessRecordId?: string;
 };
 
+export type AnalysisAccess = {
+  available: boolean;
+  ready: boolean;
+  isPro: boolean;
+  freeLimit: number;
+  freeUsed: number;
+  freeRemaining: number;
+  upgrade: () => Promise<boolean>;
+  restore: () => Promise<boolean>;
+};
+
 export type RiderLensStore = {
   records: JumpRecord[];
   pendingCapture?: PendingCapture;
@@ -56,7 +74,9 @@ export type RiderLensStore = {
   updatePendingDuration: (durationSeconds: number) => void;
   /** Rotate the pending clip 90° clockwise (cycles back to 0 after 270). */
   rotatePendingCapture: () => void;
-  confirmPendingCapture: () => Promise<void>;
+  /** Returns true when a record was created/reprocessed. A cancelled paywall
+   * leaves the trim sheet open and returns false. */
+  confirmPendingCapture: () => Promise<boolean>;
   cancelPendingCapture: () => void;
   retryRecord: (recordId: string) => void;
   /** Reopen the trim sheet for an existing record (kept source video) to fix
@@ -73,7 +93,7 @@ export type RiderLensStore = {
   saveProfile: (updates: Partial<RiderProfile>) => void;
   shareRecordClip: (record: JumpRecord, preferSkeleton?: boolean) => Promise<void>;
   uploadVideoFromLibrary: () => Promise<void>;
-  recordVideoWithCamera: () => Promise<void>;
+  analysisAccess: AnalysisAccess;
   garage: GarageState;
   shareSetupSheet: (permission?: PermissionLevel) => Promise<void>;
   saveSetupNote: (notes: string) => void;
@@ -86,13 +106,16 @@ export type RiderLensStore = {
 const LIBRARY_MAX_SECONDS = 30;
 
 export function useRiderLensMvp(): RiderLensStore {
+  const pro = useProStatus();
   const [records, setRecords] = useState<JumpRecord[]>([]);
   const [garage, setGarage] = useState<GarageState>(demoGarage);
   const [profile, setProfile] = useState<RiderProfile>(DEFAULT_PROFILE);
   const [selectedSkill, setSelectedSkill] = useState<SkillType>("regular_jump");
   const [pendingCapture, setPendingCapture] = useState<PendingCapture | undefined>();
+  const [freeAnalysesUsed, setFreeAnalysesUsed] = useState(0);
   const [hydrated, setHydrated] = useState(false);
   const recordsRef = useRef<JumpRecord[]>([]);
+  const freeAnalysesUsedRef = useRef(0);
   const processingIdsRef = useRef<Set<string>>(new Set());
   const retryProbeActiveRef = useRef(false);
 
@@ -101,9 +124,10 @@ export function useRiderLensMvp(): RiderLensStore {
       AsyncStorage.getItem(STORAGE_KEY).catch(() => null),
       // v1 held sessions + garage; carry the garage over once.
       AsyncStorage.getItem("riderlens:mvp-state:v1").catch(() => null),
-      loadRecords()
+      loadRecords(),
+      loadFreeAnalysesUsed()
     ])
-      .then(([raw, legacyRaw, storedRecords]) => {
+      .then(([raw, legacyRaw, storedRecords, storedFreeAnalysesUsed]) => {
         if (raw) {
           const parsed = JSON.parse(raw) as PersistedState;
           if (parsed.garage) setGarage(parsed.garage);
@@ -113,6 +137,8 @@ export function useRiderLensMvp(): RiderLensStore {
           if (legacy.garage) setGarage(legacy.garage);
         }
         setRecords(storedRecords);
+        freeAnalysesUsedRef.current = storedFreeAnalysesUsed;
+        setFreeAnalysesUsed(storedFreeAnalysesUsed);
       })
       .catch(() => undefined)
       .finally(() => setHydrated(true));
@@ -154,7 +180,7 @@ export function useRiderLensMvp(): RiderLensStore {
 
   const startCaptureFromUri = useCallback((uri: string, durationSeconds = 6) => {
     const safeDuration = Math.max(1, durationSeconds);
-    const initialWindow = fitAnalysisWindow(0, safeDuration, safeDuration);
+    const initialWindow = createInitialAnalysisWindow(safeDuration);
     setPendingCapture({
       uri,
       durationSeconds: safeDuration,
@@ -212,6 +238,27 @@ export function useRiderLensMvp(): RiderLensStore {
     });
   }, []);
 
+  const authorizeNewAnalysis = useCallback(async (): Promise<"pro" | "free" | undefined> => {
+    if (!hydrated) return undefined;
+
+    let entitled = pro.isPro;
+    if (pro.available && !pro.ready) {
+      entitled = await pro.refresh();
+    }
+    if (entitled) return "pro";
+    if (getFreeAnalysesRemaining(freeAnalysesUsedRef.current) > 0) return "free";
+
+    if (!pro.available) {
+      Alert.alert(
+        "RiderLens Pro unavailable",
+        "This build cannot open subscriptions. Install the latest RiderLens test or store build and try again."
+      );
+      return undefined;
+    }
+
+    return (await pro.upgrade()) ? "pro" : undefined;
+  }, [hydrated, pro.available, pro.isPro, pro.ready, pro.refresh, pro.upgrade]);
+
   const runRecordProcessing = useCallback(
     (record: JumpRecord, uploadId?: string) => {
       if (processingIdsRef.current.has(record.id)) return;
@@ -256,7 +303,7 @@ export function useRiderLensMvp(): RiderLensStore {
   );
 
   const confirmPendingCapture = useCallback(async () => {
-    if (!pendingCapture) return;
+    if (!pendingCapture) return false;
 
     if (pendingCapture.reprocessRecordId) {
       const existing = records.find((item) => item.id === pendingCapture.reprocessRecordId);
@@ -278,16 +325,19 @@ export function useRiderLensMvp(): RiderLensStore {
         setPendingCapture(undefined);
         setRecords((current) => current.map((item) => (item.id === updated.id ? updated : item)));
         runRecordProcessing(updated);
-        return;
+        return true;
       }
     }
+
+    const access = await authorizeNewAnalysis();
+    if (!access) return false;
 
     let storedUri: string;
     try {
       storedUri = await persistVideoToLibrary(pendingCapture.uri);
     } catch {
       Alert.alert("Could not save video", "RiderLens could not copy this clip into the app library. Try again.");
-      return;
+      return false;
     }
 
     const record: JumpRecord = {
@@ -305,8 +355,15 @@ export function useRiderLensMvp(): RiderLensStore {
 
     setPendingCapture(undefined);
     setRecords((current) => [record, ...current]);
+    if (access === "free") {
+      const nextUsed = freeAnalysesUsedRef.current + 1;
+      freeAnalysesUsedRef.current = nextUsed;
+      setFreeAnalysesUsed(nextUsed);
+      await saveFreeAnalysesUsed(nextUsed).catch(() => undefined);
+    }
     runRecordProcessing(record);
-  }, [pendingCapture, records, runRecordProcessing, selectedSkill]);
+    return true;
+  }, [authorizeNewAnalysis, pendingCapture, records, runRecordProcessing, selectedSkill]);
 
   const rotatePendingCapture = useCallback(() => {
     setPendingCapture((current) =>
@@ -431,38 +488,6 @@ export function useRiderLensMvp(): RiderLensStore {
   // The native system camera (via the image picker) beats any embedded
   // viewfinder: full-screen preview, zoom, exposure, flash — and it hands back
   // a file exactly like the library path.
-  const recordVideoWithCamera = useCallback(async () => {
-    if (!Device.isDevice) {
-      Alert.alert(
-        "No camera on the simulator",
-        "Recording needs a real phone. Use Pick from library to test the flow here."
-      );
-      return;
-    }
-    const permission = await ImagePicker.requestCameraPermissionsAsync();
-    if (!permission.granted) {
-      Alert.alert(
-        "Camera access needed",
-        "Enable camera access in Settings to record clips, or pick a video from your library instead."
-      );
-      return;
-    }
-
-    const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ["videos"],
-      videoMaxDuration: 30,
-      // Caps camera output around 1080p on iOS — pose never needs 4K, and
-      // uploads shrink 3-4x. The worker normalizes whatever gets through.
-      videoQuality: ImagePicker.UIImagePickerControllerQualityType.High
-    });
-
-    if (result.canceled) return;
-    const asset = result.assets[0];
-    const rawDuration = asset.duration ?? 6000;
-    const durationSeconds = rawDuration > 1000 ? rawDuration / 1000 : rawDuration;
-    startCaptureFromUri(asset.uri, durationSeconds);
-  }, [startCaptureFromUri]);
-
   const uploadVideoFromLibrary = useCallback(async () => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
@@ -557,6 +582,20 @@ export function useRiderLensMvp(): RiderLensStore {
     []
   );
 
+  const analysisAccess = useMemo<AnalysisAccess>(
+    () => ({
+      available: pro.available,
+      ready: hydrated && (!pro.available || pro.ready),
+      isPro: pro.isPro,
+      freeLimit: FREE_ANALYSIS_LIMIT,
+      freeUsed: freeAnalysesUsed,
+      freeRemaining: getFreeAnalysesRemaining(freeAnalysesUsed),
+      upgrade: pro.upgrade,
+      restore: pro.restore
+    }),
+    [freeAnalysesUsed, hydrated, pro.available, pro.isPro, pro.ready, pro.restore, pro.upgrade]
+  );
+
   return {
     records,
     pendingCapture,
@@ -579,7 +618,7 @@ export function useRiderLensMvp(): RiderLensStore {
     saveProfile,
     shareRecordClip,
     uploadVideoFromLibrary,
-    recordVideoWithCamera,
+    analysisAccess,
     garage,
     shareSetupSheet,
     saveSetupNote,

@@ -133,13 +133,13 @@ def test_filmstrip_quality_uses_more_of_landscape_pixel_budget():
     landscape_width, landscape_quality = main.filmstrip_encode_settings(250, 1024, 576)
     portrait_width, portrait_quality = main.filmstrip_encode_settings(250, 1080, 1920)
 
-    assert (landscape_width, landscape_quality) == (768, 78)
-    assert (portrait_width, portrait_quality) == (640, 78)
+    assert (landscape_width, landscape_quality) == (461, 60)
+    assert (portrait_width, portrait_quality) == (384, 60)
 
 
 def test_filmstrip_quality_respects_explicit_width_and_source_size():
-    assert main.filmstrip_encode_settings(450, 1024, 576, 480) == (480, 74)
-    assert main.filmstrip_encode_settings(80, 640, 360) == (640, 88)
+    assert main.filmstrip_encode_settings(450, 1024, 576, 480) == (480, 58)
+    assert main.filmstrip_encode_settings(80, 640, 360) == (640, 80)
 
 
 def test_measure_window_renders_shareable_overlay_clip():

@@ -24,6 +24,8 @@ type CaptureSheetProps = {
 /** Native camera/picker first, then this focused editor chooses one jump. */
 export function CaptureSheet({ store, visible, onClose }: CaptureSheetProps) {
   const reprocessing = Boolean(store.pendingCapture?.reprocessRecordId);
+  const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
 
   function close() {
     store.cancelPendingCapture();
@@ -31,8 +33,16 @@ export function CaptureSheet({ store, visible, onClose }: CaptureSheetProps) {
   }
 
   async function confirmCapture() {
-    await store.confirmPendingCapture();
-    onClose();
+    if (submittingRef.current) return;
+    submittingRef.current = true;
+    setSubmitting(true);
+    try {
+      const committed = await store.confirmPendingCapture();
+      if (committed) onClose();
+    } finally {
+      submittingRef.current = false;
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -43,8 +53,8 @@ export function CaptureSheet({ store, visible, onClose }: CaptureSheetProps) {
             <DisplayText size={24}>{reprocessing ? "REPROCESS JUMP" : "SELECT THE JUMP"}</DisplayText>
             <AppText color={tokens.textMuted} size={12}>
               {reprocessing
-                ? "Adjust the section or orientation, then rebuild the analysis."
-                : "Choose one jump from approach through landing."}
+                ? "Adjust up to 6 seconds or correct the orientation, then rebuild the analysis."
+                : "Select up to 6 seconds, from approach through landing."}
             </AppText>
           </View>
           <Pressable accessibilityRole="button" accessibilityLabel="Close capture" onPress={close} style={styles.sheetClose}>
@@ -59,6 +69,7 @@ export function CaptureSheet({ store, visible, onClose }: CaptureSheetProps) {
               capture={store.pendingCapture}
               onConfirm={confirmCapture}
               onCancel={close}
+              submitting={submitting}
             />
           ) : null}
 
@@ -91,12 +102,14 @@ function WindowStep({
   store,
   capture,
   onConfirm,
-  onCancel
+  onCancel,
+  submitting
 }: {
   store: RiderLensStore;
   capture: PendingCapture;
-  onConfirm: () => void;
+  onConfirm: () => Promise<void>;
   onCancel: () => void;
+  submitting: boolean;
 }) {
   const [thumbnails, setThumbnails] = useState<Array<{ t: number; uri: string; aspectRatio: number }>>([]);
   const [previewSize, setPreviewSize] = useState({ width: 0, height: PREVIEW_HEIGHT });
@@ -105,6 +118,10 @@ function WindowStep({
   const playbackActiveRef = useRef(false);
   const windowSeconds = Math.max(0, capture.trimEndSeconds - capture.trimStartSeconds);
   const quarterTurn = capture.rotateDegrees % 180 !== 0;
+  const reprocessing = Boolean(capture.reprocessRecordId);
+  const { analysisAccess } = store;
+  const needsPro = !reprocessing && !analysisAccess.isPro && analysisAccess.freeRemaining === 0;
+  const accessReady = reprocessing || analysisAccess.ready;
 
   const player = useVideoPlayer(capture.uri, (instance) => {
     instance.loop = false;
@@ -326,9 +343,38 @@ function WindowStep({
         onPreview={seekAndPause}
       />
 
+      {!reprocessing ? (
+        <View style={styles.allowanceRow}>
+          {analysisAccess.isPro ? (
+            <Chip tone="green">RiderLens Pro</Chip>
+          ) : (
+            <>
+              <NumberText weight="bold" size={13} color={needsPro ? tokens.amber : tokens.green}>
+                {analysisAccess.freeRemaining}
+              </NumberText>
+              <AppText size={12} weight="semi" color={tokens.textMuted}>
+                {analysisAccess.freeRemaining === 1 ? "free analysis remaining" : "free analyses remaining"}
+              </AppText>
+            </>
+          )}
+        </View>
+      ) : null}
+
       <View style={styles.actionGrid}>
-        <Button onPress={onConfirm} style={styles.actionButton}>
-          {capture.reprocessRecordId ? "Rebuild analysis" : "Analyze jump"}
+        <Button
+          disabled={submitting || !accessReady}
+          onPress={() => void onConfirm()}
+          style={styles.actionButton}
+        >
+          {submitting
+            ? needsPro
+              ? "Opening RiderLens Pro"
+              : "Saving jump"
+            : reprocessing
+              ? "Rebuild analysis"
+              : needsPro
+                ? "Unlock RiderLens Pro"
+                : "Analyze jump"}
         </Button>
         <Button variant="secondary" onPress={onCancel} style={styles.actionButton}>
           Cancel
@@ -582,6 +628,12 @@ const styles = StyleSheet.create({
   actionGrid: {
     flexDirection: "row",
     gap: spacing.md
+  },
+  allowanceRow: {
+    minHeight: 28,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs
   },
   actionButton: {
     flex: 1

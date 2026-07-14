@@ -12,6 +12,8 @@ const FLY_COLD_START_HEALTH_TIMEOUT_MS = 30_000;
 // bounded. Cloud processing of 4K phone footage can legitimately take minutes.
 const RECORD_TIMEOUT_MS = 300_000;
 
+class WorkerResponseError extends Error {}
+
 export type RecordPayload = {
   clip: string; // data URL, video/mp4 base64
   skeletonClip: string | null; // skeleton-burned, watermarked share version
@@ -119,19 +121,39 @@ export async function processRecord(input: ProcessRecordInput): Promise<RecordPa
     formData.append("video", videoFormPart(input.videoUri));
   }
 
-  let response: Response;
+  const controller = new AbortController();
+  let timedOut = false;
+  const timeout = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, RECORD_TIMEOUT_MS);
   try {
-    response = await fetchWithTimeout(`${workerUrl}/capture/record`, { method: "POST", body: formData }, RECORD_TIMEOUT_MS);
-  } catch {
-    throw new Error("Could not reach the worker. The record is saved and will be retried.");
-  }
+    const response = await fetch(`${workerUrl}/capture/record`, {
+      method: "POST",
+      body: formData,
+      signal: controller.signal
+    });
 
-  // The server-side upload expired; retry immediately with the full video.
-  if (response.status === 410 && input.uploadId) {
-    return processRecord({ ...input, uploadId: undefined });
+    // The server-side upload expired; retry immediately with the full video.
+    if (response.status === 410 && input.uploadId) {
+      return processRecord({ ...input, uploadId: undefined });
+    }
+    if (!response.ok) {
+      throw new WorkerResponseError(await readDetail(response));
+    }
+
+    // Keep the timeout alive through body transfer and JSON parsing. React
+    // Native fetch can resolve after headers while a large body is still being
+    // received; clearing it there left records in "processing" forever.
+    return (await response.json()) as RecordPayload;
+  } catch (error) {
+    if (error instanceof WorkerResponseError) throw error;
+    throw new Error(
+      timedOut
+        ? "The worker finished too slowly. The record is saved and will retry."
+        : "Could not reach the worker. The record is saved and will be retried."
+    );
+  } finally {
+    clearTimeout(timeout);
   }
-  if (!response.ok) {
-    throw new Error(await readDetail(response));
-  }
-  return (await response.json()) as RecordPayload;
 }

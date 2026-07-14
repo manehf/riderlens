@@ -13,7 +13,7 @@ import {
 import { Plus } from "lucide-react-native";
 import * as ScreenOrientation from "expo-screen-orientation";
 import { useEffect, useState } from "react";
-import { ActionSheetIOS, Alert, Platform, Pressable, StyleSheet, View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 
@@ -37,37 +37,14 @@ export default function App() {
   const [captureIntent, setCaptureIntent] = useState<"camera" | undefined>();
   const store = useRiderLensMvp();
 
-  // (+) shows the native action sheet; the capture sheet only appears when
-  // there is real content to show (the camera, or the trim step after picking).
+  // (+) goes straight to the photo picker. Filming happens in the phone's own
+  // camera app so the original always stays safe in Photos/Gallery — an
+  // in-app camera would trap footage inside RiderLens (delete record = lose it).
   function onCapturePress() {
     // Prewarm: a scale-to-zero worker takes ~14s to cold start — pinging now
-    // means it's awake by the time the rider has picked or filmed a clip.
+    // means it's awake by the time the rider has picked a clip.
     void isAnalysisWorkerReachable();
-    // Both choices open native UIs (system camera / photo picker); the capture
-    // sheet appears afterwards, directly on the trim step.
-    if (Platform.OS === "ios") {
-      ActionSheetIOS.showActionSheetWithOptions(
-        {
-          message: "Tip: film from the side with the whole rider in frame.",
-          options: ["Record video", "Pick from library", "Cancel"],
-          cancelButtonIndex: 2
-        },
-        (index) => {
-          if (index === 0) {
-            void store.recordVideoWithCamera();
-          } else if (index === 1) {
-            void store.uploadVideoFromLibrary();
-          }
-        }
-      );
-    } else {
-      // Android: native dialog with the same choices.
-      Alert.alert("Capture a moment", "Tip: film from the side with the whole rider in frame.", [
-        { text: "Record video", onPress: () => void store.recordVideoWithCamera() },
-        { text: "Pick from library", onPress: () => void store.uploadVideoFromLibrary() },
-        { text: "Cancel", style: "cancel" }
-      ]);
-    }
+    void store.uploadVideoFromLibrary();
   }
 
   // Picking from the library happens over the home screen; once a clip is

@@ -10,7 +10,7 @@ Implemented:
 
 - Receive uploaded regular-jump video files from the mobile app.
 - Canonicalize phone orientation metadata into upright H.264 pixels exactly once.
-- Respect the rider-selected trim window (0.5–8 seconds).
+- Respect the rider-selected trim window (0.5–6 seconds).
 - Sample frames with OpenCV.
 - Run MediaPipe Pose on sampled frames.
 - Pick approach, compression, takeoff, air, and landing frames.
@@ -197,8 +197,11 @@ These are reserved for the later Storage/job flow:
 
 ```bash
 SUPABASE_URL=
-SUPABASE_SERVICE_ROLE_KEY=
+SUPABASE_SECRET_KEY=
 ```
+
+The worker also accepts the legacy `SUPABASE_SERVICE_ROLE_KEY` during migration,
+but new deployments should use a scoped `sb_secret_...` key.
 
 ## Deploy (Fly.io)
 

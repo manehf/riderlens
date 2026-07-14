@@ -14,16 +14,39 @@ import {
 export function useProStatus() {
   const available = isRevenueCatAvailable();
   const [isPro, setIsPro] = useState(false);
+  const [ready, setReady] = useState(!available);
+
+  const refresh = useCallback(async () => {
+    if (!available) {
+      setReady(true);
+      return false;
+    }
+    configureRevenueCat();
+    const pro = await isProUser();
+    setIsPro(pro);
+    setReady(true);
+    return pro;
+  }, [available]);
 
   useEffect(() => {
-    if (!available) return;
+    if (!available) {
+      setReady(true);
+      return;
+    }
     configureRevenueCat();
     let active = true;
-    void isProUser().then((pro) => {
-      if (active) setIsPro(pro);
-    });
+    void isProUser()
+      .then((pro) => {
+        if (active) setIsPro(pro);
+      })
+      .finally(() => {
+        if (active) setReady(true);
+      });
     const unsubscribe = onProStatusChange((pro) => {
-      if (active) setIsPro(pro);
+      if (active) {
+        setIsPro(pro);
+        setReady(true);
+      }
     });
     return () => {
       active = false;
@@ -32,14 +55,20 @@ export function useProStatus() {
   }, [available]);
 
   const upgrade = useCallback(async () => {
-    setIsPro(await presentProPaywall());
-  }, []);
-
-  const restore = useCallback(async () => {
-    const pro = await restorePurchases();
+    configureRevenueCat();
+    const pro = await presentProPaywall();
     setIsPro(pro);
+    setReady(true);
     return pro;
   }, []);
 
-  return { available, isPro, upgrade, restore };
+  const restore = useCallback(async () => {
+    configureRevenueCat();
+    const pro = await restorePurchases();
+    setIsPro(pro);
+    setReady(true);
+    return pro;
+  }, []);
+
+  return { available, ready, isPro, refresh, upgrade, restore };
 }

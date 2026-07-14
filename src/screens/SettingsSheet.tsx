@@ -8,7 +8,6 @@ import { Alert, Image, Modal, Pressable, ScrollView, StyleSheet, TextInput, View
 import { AppText, Card, DisplayText, NumberText } from "../components/ui";
 import type { RiderLensStore } from "../hooks/useRiderLensMvp";
 import { useKeyboardNudge } from "../hooks/useKeyboardNudge";
-import { useProStatus } from "../hooks/useProStatus";
 import { radius, spacing, tokens } from "../theme/tokens";
 import type { UnitSystem } from "../types/domain";
 
@@ -73,7 +72,7 @@ export function SettingsSheet({ store, visible, onClose }: SettingsSheetProps) {
   const [nameDraft, setNameDraft] = useState(profile.name ?? "");
   const scrollRef = useRef<ScrollView>(null);
   const keyboardNudge = useKeyboardNudge(scrollRef);
-  const pro = useProStatus();
+  const pro = store.analysisAccess;
 
   async function handleRestore() {
     const restored = await pro.restore();
@@ -249,15 +248,25 @@ export function SettingsSheet({ store, visible, onClose }: SettingsSheetProps) {
                 <AppText weight="bold">RiderLens Pro</AppText>
                 <View style={styles.proSpacer} />
                 <AppText weight="bold" size={12} color={pro.isPro ? tokens.green : tokens.textMuted}>
-                  {pro.isPro ? "Active" : "Free plan"}
+                  {!pro.ready ? "Checking" : pro.isPro ? "Active" : "Free plan"}
                 </AppText>
               </View>
               {!pro.isPro ? (
-                <Pressable accessibilityRole="button" onPress={() => void pro.upgrade()} style={styles.upgradeButton}>
-                  <AppText weight="bold" size={14} color={tokens.graphite}>
-                    Upgrade
-                  </AppText>
-                </Pressable>
+                <>
+                  <View style={styles.proAllowance}>
+                    <NumberText weight="bold" size={16} color={tokens.green}>
+                      {pro.freeRemaining}
+                    </NumberText>
+                    <AppText size={12} weight="semi" color={tokens.textMuted}>
+                      {pro.freeRemaining === 1 ? "free analysis remaining" : "free analyses remaining"}
+                    </AppText>
+                  </View>
+                  <Pressable accessibilityRole="button" onPress={() => void pro.upgrade()} style={styles.upgradeButton}>
+                    <AppText weight="bold" size={14} color={tokens.graphite}>
+                      Upgrade
+                    </AppText>
+                  </Pressable>
+                </>
               ) : null}
               <Pressable accessibilityRole="button" onPress={() => void handleRestore()}>
                 <AppText size={12} weight="semi" color={tokens.textMuted}>
@@ -481,6 +490,11 @@ const styles = StyleSheet.create({
   },
   proSpacer: {
     flex: 1
+  },
+  proAllowance: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs
   },
   upgradeButton: {
     minHeight: 44,
