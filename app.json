@@ -53,7 +53,7 @@
           "image": "./assets/splash-lockup.png",
           "imageWidth": 240,
           "resizeMode": "contain",
-          "backgroundColor": "#ffffff"
+          "backgroundColor": "#bcfa18"
         }
       ]
     ],
