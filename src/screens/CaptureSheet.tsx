@@ -266,7 +266,7 @@ function WindowStep({
         <View style={styles.previewControls}>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={playing ? "Pause selected jump" : "Play selected jump"}
+            accessibilityLabel={playing ? "Pause selected moment" : "Play selected moment"}
             onPress={togglePlayback}
             style={styles.playButton}
           >
@@ -369,12 +369,12 @@ function WindowStep({
           {submitting
             ? needsPro
               ? "Opening RiderLens Pro"
-              : "Saving jump"
+              : "Saving"
             : reprocessing
               ? "Rebuild analysis"
               : needsPro
                 ? "Unlock RiderLens Pro"
-                : "Analyze jump"}
+                : "Analyze"}
         </Button>
         <Button variant="secondary" onPress={onCancel} style={styles.actionButton}>
           Cancel
@@ -448,6 +448,9 @@ function WindowControl({
   );
 }
 
+const HOLD_DELAY_MS = 320;
+const HOLD_REPEAT_MS = 70;
+
 function WindowStepButton({
   direction,
   label,
@@ -460,15 +463,58 @@ function WindowStepButton({
   onPress: () => void;
 }) {
   const Icon = direction === "earlier" ? Minus : Plus;
+  // Hold to scrub continuously; a plain tap still moves one step. Refs keep
+  // the repeating timer reading the latest value across re-renders.
+  const onPressRef = useRef(onPress);
+  onPressRef.current = onPress;
+  const delayRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const repeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const heldRef = useRef(false);
+
+  const stopHolding = useCallback(() => {
+    if (delayRef.current) {
+      clearTimeout(delayRef.current);
+      delayRef.current = null;
+    }
+    if (repeatRef.current) {
+      clearInterval(repeatRef.current);
+      repeatRef.current = null;
+    }
+  }, []);
+  useEffect(() => stopHolding, [stopHolding]);
+  useEffect(() => {
+    if (disabled) stopHolding();
+  }, [disabled, stopHolding]);
+
+  const handlePressIn = useCallback(() => {
+    heldRef.current = false;
+    stopHolding();
+    delayRef.current = setTimeout(() => {
+      delayRef.current = null;
+      heldRef.current = true;
+      onPressRef.current();
+      repeatRef.current = setInterval(() => onPressRef.current(), HOLD_REPEAT_MS);
+    }, HOLD_DELAY_MS);
+  }, [stopHolding]);
+
+  const handlePress = useCallback(() => {
+    if (heldRef.current) return;
+    stopHolding();
+    onPressRef.current();
+  }, [stopHolding]);
+
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={`Move ${label.toLowerCase()} ${direction}`}
-      accessibilityHint="Adjusts the selected frame by one tenth of a second"
+      accessibilityHint="Adjusts by a tenth of a second; hold to move continuously"
       accessibilityState={{ disabled }}
       disabled={disabled}
+      onPressIn={handlePressIn}
+      onPressOut={stopHolding}
+      cancelable={false}
       hitSlop={4}
-      onPress={onPress}
+      onPress={handlePress}
       style={({ pressed }) => [
         styles.windowStepButton,
         pressed && !disabled && styles.windowStepButtonPressed,

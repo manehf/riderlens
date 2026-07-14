@@ -142,7 +142,9 @@ const styles = StyleSheet.create({
     position: "absolute",
     left: 0,
     right: 0,
-    bottom: spacing.xl,
+    // SafeAreaView already clears the home indicator; this keeps the button
+    // from crowding it visually.
+    bottom: spacing.xl + 8,
     alignItems: "center"
   },
   fab: {

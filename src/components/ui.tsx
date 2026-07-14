@@ -339,7 +339,10 @@ const styles = StyleSheet.create({
   },
   screen: {
     flex: 1,
-    backgroundColor: tokens.background
+    backgroundColor: tokens.background,
+    // Breathing room under the status bar: the safe-area inset alone leaves
+    // the header touching it in native builds.
+    paddingTop: 6
   },
   button: {
     minHeight: 48,
