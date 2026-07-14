@@ -368,12 +368,12 @@ function WindowStep({
         >
           {submitting
             ? needsPro
-              ? "Opening RiderLens Pro"
+              ? "Opening Pro"
               : "Saving"
             : reprocessing
               ? "Rebuild analysis"
               : needsPro
-                ? "Unlock RiderLens Pro"
+                ? "Upgrade to Pro"
                 : "Analyze"}
         </Button>
         <Button variant="secondary" onPress={onCancel} style={styles.actionButton}>
