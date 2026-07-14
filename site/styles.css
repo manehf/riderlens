@@ -1240,9 +1240,7 @@ h3,
 /* Hero: electric light source bleeding in from the top right, over grit. */
 .hero {
   background-color: var(--page);
-  background-image:
-    radial-gradient(ellipse 90% 70% at 82% 8%, rgba(182, 255, 46, 0.4), transparent 62%),
-    radial-gradient(ellipse 60% 50% at 8% 96%, rgba(46, 125, 50, 0.14), transparent 70%);
+  background-image: radial-gradient(ellipse 90% 70% at 82% 8%, rgba(182, 255, 46, 0.4), transparent 62%);
 }
 
 /* Proof strip becomes a tire track: angled knob marks rolling across. */
@@ -1255,11 +1253,6 @@ h3,
 /* Editorial band: grit under the promise, soft green light from the left. */
 .editorial-band {
   background-image: radial-gradient(ellipse 70% 90% at 0% 30%, rgba(182, 255, 46, 0.16), transparent 60%);
-}
-
-/* Featured plan: standing in its own headlight. */
-.plans-section {
-  background-image: radial-gradient(ellipse 46% 52% at 68% 44%, rgba(182, 255, 46, 0.2), transparent 68%);
 }
 
 /* Download band: night section - deep vignette, electric dawn, light grit,
