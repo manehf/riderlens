@@ -76,7 +76,7 @@ export function SessionsScreen({ store }: SessionsScreenProps) {
             onPress={() => setSettingsOpen(true)}
             style={styles.settingsButton}
           >
-            <Settings color={tokens.electric} size={20} strokeWidth={2.2} />
+            <Settings color={tokens.text} size={20} strokeWidth={2.2} />
           </Pressable>
         }
       />
@@ -258,8 +258,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     borderRadius: radius.pill,
-    // Graphite pill + electric gear: the brand's dark chip treatment.
-    backgroundColor: tokens.graphite
+    backgroundColor: tokens.surfaceMuted
   },
   content: {
     gap: spacing.md,
