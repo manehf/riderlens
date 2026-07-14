@@ -68,6 +68,7 @@ export function SessionsScreen({ store }: SessionsScreenProps) {
   return (
     <View style={styles.root}>
       <BrandHeader
+        subtitle="See your riding, frame by frame."
         action={
           <Pressable
             accessibilityRole="button"
