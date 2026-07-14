@@ -1327,3 +1327,18 @@ h3,
     transform: none;
   }
 }
+
+/* Hero headline as a two-tier lockup: the name huge on its swash, the
+   tagline beneath at ~55% - same voice, clearer hierarchy. */
+.hero-copy h1 span {
+  display: inline-block;
+  margin-bottom: 0.14em;
+}
+
+.hero-copy h1 .hero-sub {
+  display: block;
+  font-size: 0.55em;
+  font-weight: 400;
+  letter-spacing: 0.5px;
+  line-height: 1.04;
+}
