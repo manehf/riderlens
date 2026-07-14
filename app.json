@@ -35,7 +35,14 @@
     "plugins": [
       "expo-font",
       "expo-image-picker",
-      "expo-video"
+      "expo-video",
+      [
+        "@sentry/react-native/expo",
+        {
+          "organization": "antonio-fernandes",
+          "project": "riderlens-app"
+        }
+      ]
     ],
     "extra": {
       "analysisWorkerUrl": "",

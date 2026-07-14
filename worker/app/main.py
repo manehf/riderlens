@@ -53,6 +53,20 @@ except Exception:  # pragma: no cover - optional until Supabase is configured
     create_client = None
 
 
+# Crash visibility: errors during processing must outlive the machine (logs
+# die with scale-to-zero). DSN-gated so local dev and tests stay untouched.
+# No PII: stack traces and request routes only, never rider media.
+_sentry_dsn = os.getenv("SENTRY_DSN", "").strip()
+if _sentry_dsn:
+    import sentry_sdk
+
+    sentry_sdk.init(
+        dsn=_sentry_dsn,
+        send_default_pii=False,
+        traces_sample_rate=0,
+        environment=os.getenv("FLY_APP_NAME", "local"),
+    )
+
 app = FastAPI(title="RiderLens Analysis Worker", version="0.2.0")
 logger = logging.getLogger("uvicorn.error")
 CAPTURE_JOB_LOCK = threading.Lock()

@@ -10,3 +10,4 @@ mediapipe==0.10.21
 certifi>=2024.0.0
 anthropic>=0.92.0
 segno==1.6.6
+sentry-sdk[fastapi]==2.65.0

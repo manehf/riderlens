@@ -10,6 +10,7 @@ import {
   IBMPlexSans_700Bold,
   useFonts as useSansFonts
 } from "@expo-google-fonts/ibm-plex-sans";
+import * as Sentry from "@sentry/react-native";
 import { Plus } from "lucide-react-native";
 import * as ScreenOrientation from "expo-screen-orientation";
 import { useEffect, useState } from "react";
@@ -24,9 +25,22 @@ import { CaptureSheet } from "./src/screens/CaptureSheet";
 import { SessionsScreen } from "./src/screens/SessionsScreen";
 import { radius, shadows, spacing, tokens } from "./src/theme/tokens";
 
+// Crash visibility: testers' crashes are invisible without this. DSN-gated so
+// Expo Go / keyless dev sessions run without Sentry. No PII, no media — stack
+// traces and device model only (the privacy page discloses exactly this).
+const sentryDsn = process.env.EXPO_PUBLIC_SENTRY_DSN;
+if (sentryDsn) {
+  Sentry.init({
+    dsn: sentryDsn,
+    sendDefaultPii: false,
+    tracesSampleRate: 0,
+    maxBreadcrumbs: 50
+  });
+}
+
 // One home (the library), one action (capture). The Garage and Tools screens
 // still exist in src/screens but are unrouted until the video loop is done.
-export default function App() {
+function App() {
   const [captureOpen, setCaptureOpen] = useState(false);
 
   // The app lives in portrait; fullscreen video unlocks rotation temporarily.
@@ -144,3 +158,5 @@ const styles = StyleSheet.create({
     transform: [{ scale: 0.95 }]
   }
 });
+
+export default sentryDsn ? Sentry.wrap(App) : App;
