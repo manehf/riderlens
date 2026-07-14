@@ -676,7 +676,7 @@ def measure_window(
 
     pose = mp.solutions.pose.Pose(
         static_image_mode=False,
-        model_complexity=1,
+        model_complexity=2,
         enable_segmentation=False,
         min_detection_confidence=0.3,
         min_tracking_confidence=0.3,
@@ -1207,7 +1207,7 @@ def extract_pose_frames(video_path: str, trim_start_seconds: float, trim_end_sec
 
     pose = mp.solutions.pose.Pose(
         static_image_mode=False,
-        model_complexity=1,
+        model_complexity=2,
         enable_segmentation=False,
         min_detection_confidence=0.45,
         min_tracking_confidence=0.45,

@@ -14,6 +14,10 @@ WORKDIR /app
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Heavy pose model baked in: MediaPipe otherwise downloads it on first use,
+# which would ride on every cold start of a scale-to-zero machine.
+RUN python -c "import mediapipe, os, urllib.request; d = os.path.join(os.path.dirname(mediapipe.__file__), 'modules/pose_landmark'); urllib.request.urlretrieve('https://storage.googleapis.com/mediapipe-assets/pose_landmark_heavy.tflite', os.path.join(d, 'pose_landmark_heavy.tflite'))"
+
 # App code, the bike-detector model (baked in — avoids a cold-start download),
 # and the coaching knowledge base.
 COPY app ./app
