@@ -50,21 +50,9 @@ h2,
 }
 
 /* --- Contrast correction -----------------------------------------------
-   Electric green fails as *text* on light backgrounds (the app never uses
-   it that way either). Accent-colored type on light surfaces uses the
-   readable brand green; fills, buttons, and dark-band accents stay electric. */
+   Electric green fails as *text* on light backgrounds. styles.css paints
+   accent-colored type/outlines with --accent-text (readable brand green);
+   fills, buttons, and dark-band accents keep --accent. */
 :root {
   --accent-text: #2e7d32;
-}
-
-.eyebrow,
-.feature-label,
-.plan-topline span,
-.plan-card li::before,
-.benefit-list li::before,
-.rail-btn:hover:not(:disabled),
-.faq-intro a,
-.legal-section a,
-.updated {
-  color: var(--accent-text);
 }

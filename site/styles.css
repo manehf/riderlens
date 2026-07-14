@@ -97,7 +97,7 @@ li {
 }
 
 :focus-visible {
-  outline: 3px solid var(--accent);
+  outline: 3px solid var(--accent-text);
   outline-offset: 3px;
 }
 
@@ -117,7 +117,7 @@ li {
 }
 
 .eyebrow {
-  color: var(--accent);
+  color: var(--accent-text);
   font-size: 13px;
   font-weight: 650;
   letter-spacing: 0.08em;
@@ -365,7 +365,7 @@ li {
 }
 
 .feature-label {
-  color: var(--accent);
+  color: var(--accent-text);
   font-size: 12px;
   font-weight: 650;
   letter-spacing: 0.08em;
@@ -426,8 +426,8 @@ li {
 }
 
 .rail-btn:hover:not(:disabled) {
-  border-color: var(--accent);
-  color: var(--accent);
+  border-color: var(--accent-text);
+  color: var(--accent-text);
 }
 
 .rail-btn:disabled {
@@ -543,7 +543,7 @@ li {
 }
 
 .benefit-list li::before {
-  color: var(--accent);
+  color: var(--accent-text);
   content: "✓";
   font-weight: 800;
   left: 1px;
@@ -609,8 +609,8 @@ li {
 }
 
 .plan-featured {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 1px var(--accent);
+  border-color: var(--accent-text);
+  box-shadow: 0 0 0 1px var(--accent-text);
 }
 
 .plan-topline {
@@ -626,7 +626,7 @@ li {
 .plan-topline span {
   background: var(--accent-soft);
   border-radius: 999px;
-  color: var(--accent);
+  color: var(--accent-text);
   font-size: 12px;
   font-weight: 650;
   padding: 5px 11px;
@@ -666,7 +666,7 @@ li {
 }
 
 .plan-card li::before {
-  color: var(--accent);
+  color: var(--accent-text);
   content: "✓";
   font-weight: 800;
   left: 0;
@@ -709,7 +709,7 @@ li {
 }
 
 .faq-intro a {
-  color: var(--accent);
+  color: var(--accent-text);
   font-weight: 600;
 }
 
@@ -896,7 +896,7 @@ details[open] .faq-icon::after {
 }
 
 .updated {
-  color: var(--accent);
+  color: var(--accent-text);
   font-size: 12px;
   font-weight: 650;
   letter-spacing: 0.06em;
@@ -926,7 +926,7 @@ details[open] .faq-icon::after {
 }
 
 .legal-section a {
-  color: var(--accent);
+  color: var(--accent-text);
   font-weight: 600;
 }
 
