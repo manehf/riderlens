@@ -1232,3 +1232,81 @@ h3,
 .support-action {
   padding: 14px 26px;
 }
+
+/* --- Trail pass: light, dirt, and rubber -----------------------------------
+   Radial glows = late light through the trees. Dirt speckle = trail grit
+   (tileable, generated). Tread bands = tire tracks, pure CSS. */
+
+/* Hero: electric light source bleeding in from the top right, over grit. */
+.hero {
+  background-color: var(--page);
+  background-image:
+    radial-gradient(ellipse 90% 70% at 82% 8%, rgba(182, 255, 46, 0.4), transparent 62%),
+    radial-gradient(ellipse 60% 50% at 8% 96%, rgba(46, 125, 50, 0.14), transparent 70%),
+    url("/assets/texture-dirt.png");
+  background-size: auto, auto, 420px 420px;
+}
+
+/* Proof strip becomes a tire track: angled knob marks rolling across. */
+.proof-strip {
+  background-color: var(--surface);
+  background-image: repeating-linear-gradient(
+    -55deg,
+    transparent 0 26px,
+    rgba(17, 22, 19, 0.06) 26px 34px
+  );
+  border-bottom: 2px solid var(--ink);
+  border-top: 2px solid var(--ink);
+}
+
+/* Editorial band: grit under the promise, soft green light from the left. */
+.editorial-band {
+  background-image:
+    radial-gradient(ellipse 70% 90% at 0% 30%, rgba(182, 255, 46, 0.16), transparent 60%),
+    url("/assets/texture-dirt.png");
+  background-size: auto, 420px 420px;
+}
+
+/* Featured plan: standing in its own headlight. */
+.plans-section {
+  background-image: radial-gradient(ellipse 46% 52% at 68% 44%, rgba(182, 255, 46, 0.2), transparent 68%);
+}
+
+/* Download band: night section - deep vignette, electric dawn, light grit,
+   and a tread line across the top edge. */
+.download-band {
+  background-color: var(--band);
+  background-image:
+    radial-gradient(ellipse 80% 90% at 85% 15%, rgba(182, 255, 46, 0.2), transparent 58%),
+    radial-gradient(ellipse 120% 100% at 50% 120%, rgba(0, 0, 0, 0.55), transparent 70%),
+    url("/assets/texture-dirt-light.png");
+  background-size: auto, auto, 420px 420px;
+  border-top: none;
+  position: relative;
+}
+
+.download-band::before {
+  background: repeating-linear-gradient(
+    -55deg,
+    var(--accent) 0 14px,
+    transparent 14px 30px
+  );
+  content: "";
+  display: block;
+  height: 8px;
+  left: 0;
+  position: absolute;
+  right: 0;
+  top: 0;
+}
+
+/* Phones catch the light. */
+.phone-hero {
+  filter: drop-shadow(0 34px 70px rgba(46, 125, 50, 0.35));
+}
+
+/* FAQ + footer keep a whisper of grit so the world doesn't end mid-page. */
+.site-footer {
+  background-image: url("/assets/texture-dirt.png");
+  background-size: 420px 420px;
+}
