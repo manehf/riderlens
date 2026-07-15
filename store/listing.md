@@ -148,7 +148,7 @@ Sizes: iOS 6.9" (1320×2868) and 6.5" (1284×2778); Play phone screenshots
 |---|---|
 | Subscription group (iOS) | RiderLens Pro |
 | Display name | RiderLens Pro |
-| Products | Monthly + Annual (IDs already in RevenueCat: `com.riderlens.app.pro.monthly` / `.annual`, Play: `riderlens_pro_v1` monthly/annual base plans) |
+| Products | Monthly + Annual (IDs already in RevenueCat: `riderlens.pro.monthly` / `riderlens.pro.annual`, Play: `riderlens_pro_v1` monthly/annual base plans) |
 | Benefit copy | Unlimited analyses. All playback and sharing features stay free. |
 
 Apple requires the paywall to show: price, period, and functional links to

@@ -10,7 +10,7 @@ Deep background: `riderlens-mvp-plan.md` (product), `riderlens-architecture-infr
 Builds exist (iOS submitted to TestFlight, Android AAB ready). Remaining, in order:
 
 ### Antonio (dashboards)
-- [ ] **Subscriptions in App Store Connect** — new RiderLens app → Monetization → group `RiderLens Pro` → `com.riderlens.app.pro.monthly` + `.annual` (same IDs = RevenueCat needs no changes). Attach to the version for review.
+- [ ] **Subscriptions in App Store Connect** — new RiderLens app → Monetization → group `RiderLens Pro` → `riderlens.pro.monthly` + `riderlens.pro.annual` (fresh IDs - Apple permanently burns subscription product IDs account-wide, even deleted ones; RC entitlement + offering repointed). Attach to the version for review.
 - [ ] Verify **Paid Apps agreement** Active + banking/tax (both stores).
 - [ ] **Deploy `site/` to Cloudflare Pages** — store listings link to /privacy and /support; must be live before review.
 - [ ] **Answer: Play developer account type?** Organization (like Apple MOPIU LDA) → straight to production. Personal (recent) → Google forces 12 testers × 14 days closed testing first.
