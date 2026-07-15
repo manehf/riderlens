@@ -12,7 +12,7 @@ Play Console / RevenueCat, not here.
 |---|---|
 | App name (both stores) | RiderLens: MTB Skills Analysis |
 | iOS subtitle (max 30 chars) | See your riding frame by frame |
-| Play short description (max 80 chars) | Film a jump. See your body position on every frame. Built for MTB riders. |
+| Play short description (max 80 chars) | Film your riding. See your body position on every frame. Built for MTB. |
 | Category | Sports (iOS secondary: Photo & Video) |
 | Support URL | https://riderlens.app |
 | Marketing URL | https://riderlens.app |
@@ -23,16 +23,16 @@ Play Console / RevenueCat, not here.
 ## iOS promotional text (max 170 chars)
 
 > See exactly what happened at takeoff. RiderLens draws your body position on
-> every frame of your jump — step through it, slow it down, share the send.
+> every frame of your ride — step through it, slow it down, share the send.
 
 ## Description (both stores)
 
 > **See your riding, frame by frame.**
 >
-> Film a jump with your phone's camera, pick the clip in RiderLens, and get
-> back a record you can study: your body position drawn on every frame,
-> airtime and height estimates, and playback built for analysis — frame
-> stepping, slow motion, fullscreen.
+> Film your riding with your phone's camera, pick the clip in RiderLens, and
+> get back a record you can study: your body position drawn on every frame,
+> airtime and height estimates on jumps, and playback built for analysis —
+> frame stepping, slow motion, fullscreen.
 >
 > **How it works**
 > 1. Film with your camera app — from the side, whole rider in frame
@@ -42,8 +42,8 @@ Play Console / RevenueCat, not here.
 >
 > **Built for gravity riding**
 > • Skeleton overlay on every frame — see hips, knees, and arms through
->   takeoff, air, and landing
-> • Airtime and jump height estimates
+>   every move, from takeoff to landing
+> • Airtime and height estimates for jumps
 > • Frame-by-frame stepping and ¼-speed slow motion
 > • Your library of moments — tagged, searchable, on your phone
 > • Share clips with the skeleton burned in
@@ -56,8 +56,8 @@ Play Console / RevenueCat, not here.
 > Analyze 3 clips every month for free. RiderLens Pro unlocks unlimited
 > analyses.
 >
-> Ride within your limits. RiderLens shows what happened — it doesn't make a
-> jump safe.
+> Ride within your limits. RiderLens shows what happened — it doesn't make
+> the send safe.
 
 ## iOS keywords (max 100 chars)
 
@@ -115,7 +115,7 @@ identity, no media attached).
 >
 > **To test:** film any person riding a bicycle (or any short video with one
 > visible person on a bike — a few seconds is enough), then in RiderLens tap
-> (+), pick the clip, select the moment, and tap Create record. Processing
+> (+), pick the clip, select the moment, and tap Analyze. Processing
 > runs on our server and takes roughly 20–60 seconds; the very first request
 > after idle may add ~20 seconds while the server wakes.
 >
