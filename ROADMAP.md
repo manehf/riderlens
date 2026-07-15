@@ -62,7 +62,7 @@ Builds exist (iOS submitted to TestFlight, Android AAB ready). Remaining, in ord
 
 - Free = 3 analyses **per month** (device-local reset; server-enforced in Phase 2). Deleting records does **not** refund analyses.
 - Camera stays out of the app: film native, pick from library (originals always safe in Photos).
-- Analysis window ≤ 6s; sources ≤ 30s until on-device export exists.
+- Analysis window ≤ 8s (raised from 6s on July 15 device feedback); sources ≤ 30s until on-device export exists.
 - Two-line brand: "See your riding, frame by frame." (identity) + "Film it. Frame it. Understand it." (action).
 - Electric green is never text on light backgrounds — deep green `#2e7d32` is.
 - One identity everywhere: `com.riderlens.app`.

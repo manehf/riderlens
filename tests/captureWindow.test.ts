@@ -26,7 +26,7 @@ describe("fitAnalysisWindow", () => {
   });
 
   it("centers the maximum window inside a long initial selection", () => {
-    expect(fitAnalysisWindow(0, 30, 30)).toEqual({ start: 12, end: 18 });
+    expect(fitAnalysisWindow(0, 30, 30)).toEqual({ start: 11, end: 19 });
   });
 
   it("never returns more than the worker limit", () => {
@@ -37,12 +37,12 @@ describe("fitAnalysisWindow", () => {
 });
 
 describe("updateAnalysisWindow", () => {
-  it("keeps the end fixed when the start reaches the six-second limit", () => {
-    expect(updateAnalysisWindow({ start: 12, end: 18 }, { start: 5 }, 30)).toEqual({ start: 12, end: 18 });
+  it("keeps the end fixed when the start reaches the eight-second limit", () => {
+    expect(updateAnalysisWindow({ start: 12, end: 18 }, { start: 5 }, 30)).toEqual({ start: 10, end: 18 });
   });
 
-  it("keeps the start fixed when the end reaches the six-second limit", () => {
-    expect(updateAnalysisWindow({ start: 12, end: 18 }, { end: 25 }, 30)).toEqual({ start: 12, end: 18 });
+  it("keeps the start fixed when the end reaches the eight-second limit", () => {
+    expect(updateAnalysisWindow({ start: 12, end: 18 }, { end: 25 }, 30)).toEqual({ start: 12, end: 20 });
   });
 
   it("allows either edge to shorten the selection", () => {

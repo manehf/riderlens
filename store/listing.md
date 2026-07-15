@@ -36,7 +36,7 @@ Play Console / RevenueCat, not here.
 >
 > **How it works**
 > 1. Film with your camera app — from the side, whole rider in frame
-> 2. Pick the clip and select the moment (up to 6 seconds)
+> 2. Pick the clip and select the moment (up to 8 seconds)
 > 3. RiderLens analyzes every frame and draws your body position
 > 4. Study it, compare attempts, share the send
 >

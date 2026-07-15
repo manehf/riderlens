@@ -616,7 +616,7 @@ def filmstrip_encode_settings(
     """Keep every frame while bounding the response a phone must parse.
 
     The record also carries two base64 videos, so a filmstrip much above 12 MB
-    can turn an ordinary 6-second clip into a large JSON document. These
+    can turn an ordinary 8-second clip into a large JSON document. These
     tiers retain source-frame density and spend resolution on shorter clips,
     where fewer images share the same mobile payload budget.
     """
@@ -653,7 +653,7 @@ def measure_window(
 ) -> tuple[list[dict], list[dict], list[dict], bytes | None]:
     """Dense per-frame measurement between the anchored window bounds.
 
-    Pose runs at the source frame rate up to 60fps (capped at 450 frames) and the
+    Pose runs at the source frame rate up to 60fps (capped at 480 frames) and the
     full-body skeleton is burned into every filmstrip thumbnail. The bike detector only runs when
     include_bike is set — the capture path skips it (pose-only records).
     Returns (series, air_frames, filmstrip, overlay_clip): air_frames are bounded,
@@ -673,8 +673,8 @@ def measure_window(
     # pathologically long windows — a 15s window at 30fps still gets every frame.
     step = 1.0 / min(fps, 60.0)
     count = int(span / step) + 1
-    if count > 450:
-        count = 450
+    if count > 480:
+        count = 480
         step = span / (count - 1)
 
     pose = mp.solutions.pose.Pose(
@@ -1685,7 +1685,7 @@ def clamp(value: float, minimum: float, maximum: float) -> float:
 
 CAPTURE_DIR = FilePath(tempfile.gettempdir()) / "riderlens-captures"
 CAPTURE_TTL_SECONDS = 45 * 60
-CAPTURE_MAX_WINDOW_SECONDS = 6.0
+CAPTURE_MAX_WINDOW_SECONDS = 8.0
 UPLOAD_ID_PATTERN = re.compile(r"^[0-9a-f]{32}$")
 
 

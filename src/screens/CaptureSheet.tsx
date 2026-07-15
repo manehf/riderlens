@@ -53,8 +53,8 @@ export function CaptureSheet({ store, visible, onClose }: CaptureSheetProps) {
             <DisplayText size={24}>{reprocessing ? "REPROCESS JUMP" : "SELECT THE JUMP"}</DisplayText>
             <AppText color={tokens.textMuted} size={12}>
               {reprocessing
-                ? "Adjust up to 6 seconds or correct the orientation, then rebuild the analysis."
-                : "Select up to 6 seconds, from approach through landing."}
+                ? "Adjust up to 8 seconds or correct the orientation, then rebuild the analysis."
+                : "Select up to 8 seconds, from approach through landing."}
             </AppText>
           </View>
           <Pressable accessibilityRole="button" accessibilityLabel="Close capture" onPress={close} style={styles.sheetClose}>

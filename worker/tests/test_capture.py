@@ -82,7 +82,7 @@ def test_capture_record_rejects_oversized_analysis_window():
             data={"start_seconds": "0", "end_seconds": str(main.CAPTURE_MAX_WINDOW_SECONDS + 1)},
         )
     assert response.status_code == 422
-    assert response.json()["detail"] == "Select an analysis window of 6 seconds or less."
+    assert response.json()["detail"] == "Select an analysis window of 8 seconds or less."
 
 
 def test_capture_record_rejects_overlapping_job():
