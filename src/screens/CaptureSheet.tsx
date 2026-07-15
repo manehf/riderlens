@@ -5,6 +5,7 @@ import * as VideoThumbnails from "expo-video-thumbnails";
 import { AlertTriangle, Minus, Pause, Play, Plus, RotateCw, Scissors, X } from "lucide-react-native";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Image, Modal, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 import { AppText, Button, Card, Chip, DisplayText, NumberText } from "../components/ui";
 import type { PendingCapture, RiderLensStore } from "../hooks/useRiderLensMvp";
@@ -47,14 +48,14 @@ export function CaptureSheet({ store, visible, onClose }: CaptureSheetProps) {
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={close}>
-      <View style={styles.sheetRoot}>
+      <SafeAreaView style={styles.sheetRoot} edges={["top", "bottom"]}>
         <View style={styles.sheetHeader}>
           <View style={styles.sheetHeaderText}>
-            <DisplayText size={24}>{reprocessing ? "REPROCESS JUMP" : "SELECT THE JUMP"}</DisplayText>
+            <DisplayText size={24}>{reprocessing ? "RESELECT THE MOMENT" : "SELECT THE MOMENT"}</DisplayText>
             <AppText color={tokens.textMuted} size={12}>
               {reprocessing
                 ? "Adjust up to 8 seconds or correct the orientation, then rebuild the analysis."
-                : "Select up to 8 seconds, from approach through landing."}
+                : "Select up to 8 seconds around the action."}
             </AppText>
           </View>
           <Pressable accessibilityRole="button" accessibilityLabel="Close capture" onPress={close} style={styles.sheetClose}>
@@ -86,7 +87,7 @@ export function CaptureSheet({ store, visible, onClose }: CaptureSheetProps) {
             </AppText>
           </Card>
         </ScrollView>
-      </View>
+      </SafeAreaView>
     </Modal>
   );
 }
@@ -227,7 +228,7 @@ function WindowStep({
     <Card style={styles.windowCard}>
       <View style={styles.splitRow}>
         <Chip tone="electric" icon={Scissors}>
-          Jump section
+          Clip section
         </Chip>
         <View style={styles.splitRowRight}>
           <NumberText color={tokens.textMuted} size={12} weight="bold">

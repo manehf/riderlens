@@ -4,6 +4,7 @@ import * as ImagePicker from "expo-image-picker";
 import { Bike, Ruler, Sparkles, User, X } from "lucide-react-native";
 import { useEffect, useRef, useState } from "react";
 import { Alert, Image, Modal, Pressable, ScrollView, StyleSheet, TextInput, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 import { AppText, Card, DisplayText, NumberText } from "../components/ui";
 import type { RiderLensStore } from "../hooks/useRiderLensMvp";
@@ -90,7 +91,7 @@ export function SettingsSheet({ store, visible, onClose }: SettingsSheetProps) {
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
-      <View style={styles.sheetRoot}>
+      <SafeAreaView style={styles.sheetRoot} edges={["top", "bottom"]}>
         <View style={styles.sheetHeader}>
           <DisplayText size={24}>SETTINGS</DisplayText>
           <Pressable accessibilityRole="button" accessibilityLabel="Close settings" onPress={onClose} style={styles.sheetClose}>
@@ -287,7 +288,7 @@ export function SettingsSheet({ store, visible, onClose }: SettingsSheetProps) {
             </View>
           </Card>
         </ScrollView>
-      </View>
+      </SafeAreaView>
     </Modal>
   );
 }

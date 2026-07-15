@@ -1,6 +1,7 @@
 import { FileVideo, Settings, X } from "lucide-react-native";
 import { useMemo, useRef, useState } from "react";
 import { FlatList, Image, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 import { RecordCard } from "../components/RecordCard";
 import { SettingsSheet } from "./SettingsSheet";
@@ -136,7 +137,7 @@ export function SessionsScreen({ store }: SessionsScreenProps) {
         onRequestClose={() => setOpenRecordId(undefined)}
       >
         {openRecord ? (
-          <View style={styles.sheetRoot}>
+          <SafeAreaView style={styles.sheetRoot} edges={["top", "bottom"]}>
             <View style={styles.sheetHeader}>
               <View style={styles.sheetHeaderText}>
                 <AppText weight="bold" size={17}>
@@ -184,7 +185,7 @@ export function SessionsScreen({ store }: SessionsScreenProps) {
                 tagSuggestions={store.knownTags}
               />
             </ScrollView>
-          </View>
+          </SafeAreaView>
         ) : null}
       </Modal>
 

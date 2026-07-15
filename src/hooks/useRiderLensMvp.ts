@@ -520,7 +520,7 @@ export function useRiderLensMvp(): RiderLensStore {
     if (durationSeconds > LIBRARY_MAX_SECONDS) {
       Alert.alert(
         "Long video",
-        "Choose a clip under 30 seconds, then select the jump inside RiderLens.",
+        "Choose a clip under 30 seconds, then select the moment inside RiderLens.",
         [{ text: "OK" }]
       );
       return;
