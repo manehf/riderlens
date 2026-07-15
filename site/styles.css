@@ -1405,3 +1405,50 @@ h3,
 .plan-featured .plan-annual strong {
   color: var(--accent);
 }
+
+/* Billing toggle above the plan grid; the grid's data-billing picks the price. */
+.billing-toggle {
+  display: flex;
+  justify-content: center;
+  gap: 4px;
+  width: max-content;
+  margin: 0 auto 36px;
+  padding: 4px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+}
+
+.billing-toggle button {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+  padding: 9px 20px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.billing-toggle button.is-active {
+  background: var(--ink);
+  color: #fff;
+}
+
+.billing-toggle button em {
+  font-style: normal;
+  color: var(--accent-text);
+  margin-left: 6px;
+}
+
+.billing-toggle button.is-active em {
+  color: var(--accent);
+}
+
+.plan-grid[data-billing="yearly"] [data-plan="monthly"],
+.plan-grid[data-billing="monthly"] [data-plan="yearly"] {
+  display: none;
+}

@@ -215,7 +215,12 @@
     <p>Playback, your library, and sharing are never limited — the plans only change how many new analyses you can run.</p>
   </div>
 
-  <div class="plan-grid">
+  <div class="billing-toggle" role="group" aria-label="Billing period">
+    <button type="button" class="is-active" data-billing-option="yearly" aria-pressed="true">Yearly <em>&minus;50%</em></button>
+    <button type="button" data-billing-option="monthly" aria-pressed="false">Monthly</button>
+  </div>
+
+  <div class="plan-grid" data-billing="yearly">
     <article class="plan-card ">
       <div class="plan-topline">
         <h3>Free</h3>
@@ -232,8 +237,10 @@
         <h3>Pro</h3>
         <span>For frequent senders</span>
       </div>
-      <p class="plan-price">€4.99 <span>per month</span></p>
-      <p class="plan-annual">or €29.99/year — <strong>save 50%</strong></p>
+      <p class="plan-price" data-plan="yearly">€29.99 <span>per year</span></p>
+      <p class="plan-annual" data-plan="yearly">that&rsquo;s €2.50 a month — <strong>save 50%</strong></p>
+      <p class="plan-price" data-plan="monthly">€4.99 <span>per month</span></p>
+      <p class="plan-annual" data-plan="monthly">or €29.99/year — <strong>save 50%</strong></p>
       <p class="plan-description">Unlimited analyses, so every attempt becomes a record.</p>
       <ul>
         <li>Unlimited analyses</li><li>Everything in Free</li><li>Monthly or yearly — cancel anytime</li>
@@ -356,6 +363,22 @@
     rail.addEventListener("scroll", update, { passive: true });
     window.addEventListener("resize", update);
     update();
+  })();
+
+  (function () {
+    var grid = document.querySelector(".plan-grid");
+    var toggle = document.querySelector(".billing-toggle");
+    if (!grid || !toggle) return;
+    toggle.addEventListener("click", function (event) {
+      var btn = event.target.closest("[data-billing-option]");
+      if (!btn) return;
+      grid.setAttribute("data-billing", btn.getAttribute("data-billing-option"));
+      toggle.querySelectorAll("[data-billing-option]").forEach(function (b) {
+        var active = b === btn;
+        b.classList.toggle("is-active", active);
+        b.setAttribute("aria-pressed", String(active));
+      });
+    });
   })();
 </script>
 
