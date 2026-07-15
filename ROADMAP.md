@@ -23,6 +23,7 @@ Builds exist (iOS submitted to TestFlight, Android AAB ready). Remaining, in ord
 - [ ] **Flip worker enforcement**: `fly secrets set RIDERLENS_CLIENT_KEY=<value in eas.json>` once store builds are the ones in use.
 - [ ] Re-invite testers to the new TestFlight app; retire "RiderLens [MVP]".
 - [ ] Submit both stores.
+- [ ] **While the app sits in review: build #9 (detector-guided pose crop).** Worker-side only — deploys to Fly independent of store review, no app update needed; every user (and possibly the review tester) gets it transparently. Decision: don't block submission on pose quality; don't wait for launch to fix it either.
 
 ---
 
@@ -65,3 +66,4 @@ Builds exist (iOS submitted to TestFlight, Android AAB ready). Remaining, in ord
 - Two-line brand: "See your riding, frame by frame." (identity) + "Film it. Frame it. Understand it." (action).
 - Electric green is never text on light backgrounds — deep green `#2e7d32` is.
 - One identity everywhere: `com.riderlens.app`.
+- **No skeleton beats a wrong skeleton**: when the detector finds no rider in a frame, draw nothing (ships with #9). Hallucinated lines on beams read as "broken"; a briefly-absent skeleton reads as honest.
