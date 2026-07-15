@@ -10,8 +10,8 @@ Play Console / RevenueCat, not here.
 
 | Field | Value |
 |---|---|
-| App name (both stores) | RiderLens |
-| iOS subtitle (max 30 chars) | MTB analysis, frame by frame |
+| App name (both stores) | RiderLens: MTB Skills Analysis |
+| iOS subtitle (max 30 chars) | See your riding frame by frame |
 | Play short description (max 80 chars) | Film a jump. See your body position on every frame. Built for MTB riders. |
 | Category | Sports (iOS secondary: Photo & Video) |
 | Support URL | https://riderlens.app |
@@ -62,9 +62,9 @@ Play Console / RevenueCat, not here.
 ## iOS keywords (max 100 chars)
 
 ```
-mtb,mountain bike,jump,video analysis,slow motion,airtime,downhill,enduro,dirt jump,bike,skeleton
+mountain bike,video analysis,slow motion,airtime,downhill,enduro,dirt jump,bike,skeleton,whip,drop
 ```
-(98 chars)
+(98 chars — `mtb`/`jump` live in the app name; `dirt jump` keeps the jump token)
 
 ---
 
