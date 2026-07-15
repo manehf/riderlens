@@ -1390,3 +1390,18 @@ h3,
     width: 100%;
   }
 }
+
+/* Annual saving line under the Pro price. */
+.plan-annual {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  margin: -6px 0 10px;
+}
+
+.plan-featured .plan-annual {
+  color: var(--band-muted);
+}
+
+.plan-featured .plan-annual strong {
+  color: var(--accent);
+}
