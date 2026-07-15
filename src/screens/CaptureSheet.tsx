@@ -371,7 +371,7 @@ function WindowStep({
               ? "Opening Pro"
               : "Saving"
             : reprocessing
-              ? "Rebuild analysis"
+              ? "Rebuild"
               : needsPro
                 ? "Upgrade"
                 : "Analyze"}
