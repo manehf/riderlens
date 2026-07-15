@@ -1452,3 +1452,13 @@ h3,
 .plan-grid[data-billing="monthly"] [data-plan="yearly"] {
   display: none;
 }
+
+/* Local-currency fine print under the plan grid. */
+.plans-note {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: var(--muted);
+  text-align: center;
+  margin: 22px auto 0;
+  max-width: 52ch;
+}
