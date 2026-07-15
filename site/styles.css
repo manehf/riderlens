@@ -1346,8 +1346,8 @@ h3,
 /* Hero photo: the product in the real world - no CSS phone frame needed,
    the photo brings its own. */
 .hero-photo {
-  border-radius: var(--radius-lg);
-  box-shadow: 0 30px 70px rgba(17, 22, 19, 0.35);
+  /* Transparent cutout: the shadow follows the hand/phone silhouette. */
+  filter: drop-shadow(0 26px 44px rgba(17, 22, 19, 0.38));
   height: auto;
   max-width: 100%;
   width: 100%;
