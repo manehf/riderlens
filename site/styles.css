@@ -1462,3 +1462,12 @@ h3,
   margin: 40px auto 0;
   max-width: 52ch;
 }
+
+/* Editorial concept art replaces the framed screenshot: the artwork brings its
+   own phone and backdrop, so it renders as a rounded card, not inside .phone. */
+.editorial-concept {
+  border-radius: var(--radius-lg);
+  box-shadow: 0 30px 60px -30px rgba(16, 20, 17, 0.45);
+  display: block;
+  width: min(420px, 100%);
+}
