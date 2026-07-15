@@ -1352,3 +1352,41 @@ h3,
   max-width: 100%;
   width: 100%;
 }
+
+/* Hero cutout, unframed: no panel, no shadow - the hand rises straight out
+   of the hero's bottom edge, oversized. */
+.hero {
+  overflow: hidden;
+}
+
+.hero-inner {
+  align-items: end;
+}
+
+.hero-copy {
+  align-self: center;
+}
+
+.hero-product {
+  align-self: end;
+  background: none;
+  border-radius: 0;
+  overflow: visible;
+  padding: 0;
+}
+
+.hero-photo {
+  display: block;
+  filter: none;
+  margin-bottom: calc(-1 * clamp(44px, 7vw, 92px));
+  max-width: none;
+  width: 115%;
+}
+
+@media (max-width: 920px) {
+  .hero-photo {
+    margin-left: auto;
+    margin-right: auto;
+    width: 100%;
+  }
+}
