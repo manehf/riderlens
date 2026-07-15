@@ -563,7 +563,7 @@ class OverlayClipWriter:
                             "-f", "rawvideo", "-pix_fmt", "bgr24",
                             "-s", f"{width}x{height}", "-r", f"{self.fps:.3f}",
                             "-i", "-",
-                            "-c:v", "libx264", "-preset", "veryfast", "-crf", "22",
+                            "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
                             "-pix_fmt", "yuv420p", "-movflags", "+faststart",
                             self.output_path,
                         ],
@@ -620,14 +620,17 @@ def filmstrip_encode_settings(
     tiers retain source-frame density and spend resolution on shorter clips,
     where fewer images share the same mobile payload budget.
     """
+    # The viewer paints these at up to ~1100 device px: widths below ~700
+    # upscale visibly, and quality under ~75 reads as noise on foliage. The
+    # frames are the product - spend the payload here first.
     if frame_count <= 96:
-        base_width, quality = 640, 80
+        base_width, quality = 960, 85
     elif frame_count <= 200:
-        base_width, quality = 480, 66
+        base_width, quality = 800, 80
     elif frame_count <= 300:
-        base_width, quality = 384, 60
+        base_width, quality = 704, 76
     else:
-        base_width, quality = 320, 58
+        base_width, quality = 640, 73
 
     if override_width is not None:
         return min(frame_width, max(1, override_width)), quality
@@ -1761,7 +1764,7 @@ def _normalize_upload(path: FilePath) -> None:
         [
             "ffmpeg", "-y", "-i", str(path),
             "-vf", scale,
-            "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+            "-c:v", "libx264", "-preset", "fast", "-crf", "20",
             "-pix_fmt", "yuv420p",
             "-c:a", "aac", "-b:a", "96k",
             "-map_metadata", "-1",
@@ -1826,7 +1829,7 @@ def _rotated_source(video_path: str, degrees: int) -> str:
         [
             "ffmpeg", "-y", "-i", str(source),
             "-vf", ROTATE_FILTERS[degrees],
-            "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+            "-c:v", "libx264", "-preset", "fast", "-crf", "20",
             "-pix_fmt", "yuv420p",
             "-c:a", "copy",
             "-map_metadata", "-1",

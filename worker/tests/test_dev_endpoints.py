@@ -133,13 +133,14 @@ def test_filmstrip_quality_uses_more_of_landscape_pixel_budget():
     landscape_width, landscape_quality = main.filmstrip_encode_settings(250, 1024, 576)
     portrait_width, portrait_quality = main.filmstrip_encode_settings(250, 1080, 1920)
 
-    assert (landscape_width, landscape_quality) == (461, 60)
-    assert (portrait_width, portrait_quality) == (384, 60)
+    # Landscape gets the 1.2x width bonus (845), clamped to the 1024 source.
+    assert (landscape_width, landscape_quality) == (845, 76)
+    assert (portrait_width, portrait_quality) == (704, 76)
 
 
 def test_filmstrip_quality_respects_explicit_width_and_source_size():
-    assert main.filmstrip_encode_settings(450, 1024, 576, 480) == (480, 58)
-    assert main.filmstrip_encode_settings(80, 640, 360) == (640, 80)
+    assert main.filmstrip_encode_settings(450, 1024, 576, 480) == (480, 73)
+    assert main.filmstrip_encode_settings(80, 640, 360) == (640, 85)
 
 
 def test_measure_window_renders_shareable_overlay_clip():
