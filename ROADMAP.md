@@ -13,7 +13,7 @@ Builds exist (iOS submitted to TestFlight, Android AAB ready). Remaining, in ord
 - [ ] **Subscriptions in App Store Connect** — new RiderLens app → Monetization → group `RiderLens Pro` → `riderlens.pro.monthly` + `riderlens.pro.annual` (fresh IDs - Apple permanently burns subscription product IDs account-wide, even deleted ones; RC entitlement + offering repointed). Attach to the version for review.
 - [ ] Verify **Paid Apps agreement** Active + banking/tax (both stores).
 - [ ] **Deploy `site/` to Cloudflare Pages** — store listings link to /privacy and /support; must be live before review.
-- [ ] **Answer: Play developer account type?** Organization (like Apple MOPIU LDA) → straight to production. Personal (recent) → Google forces 12 testers × 14 days closed testing first.
+- [x] **Play developer account type: Organisation (MOPIU, LDA)** — no closed-testing requirement; straight to production once review passes.
 - [ ] **TestFlight dress rehearsal** on a real phone: install, film, analyze, check splash/icon/paywall.
 - [ ] Screenshots (6 shots, shot list in `store/listing.md`) — navigate, Claude frames/finalizes.
 
