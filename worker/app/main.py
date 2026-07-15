@@ -480,7 +480,7 @@ def draw_skeleton(frame, landmarks, visibility_threshold: float = 0.5) -> None:
 
 # The share destination burned into every skeleton clip: watermark + end-card QR.
 SHARE_URL = os.getenv("RIDERLENS_SHARE_URL", "https://riderlens.app")
-ENDCARD_SECONDS = 1.4
+ENDCARD_SECONDS = 2.8
 
 WATERMARK_TEXT = "riderlens.app"
 # Electric green + graphite outline, BGR (matches the skeleton palette).
