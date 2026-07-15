@@ -1469,5 +1469,5 @@ h3,
   border-radius: var(--radius-lg);
   box-shadow: 0 30px 60px -30px rgba(16, 20, 17, 0.45);
   display: block;
-  width: min(420px, 100%);
+  width: min(560px, 100%);
 }
