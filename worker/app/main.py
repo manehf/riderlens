@@ -8,6 +8,7 @@ from collections import deque
 import math
 import os
 import re
+import secrets
 import shutil
 import subprocess
 import tempfile
@@ -244,6 +245,10 @@ DEV_UI_ENABLED = os.getenv("RIDERLENS_DEV_UI", "1") != "0"
 REPO_ROOT = FilePath(__file__).resolve().parents[2]
 CLIPS_DIR = REPO_ROOT / "clips"
 DEV_HTML_PATH = FilePath(__file__).resolve().parent / "dev.html"
+SHARE_HTML_PATH = FilePath(__file__).resolve().parent / "share.html"
+SHARE_BUCKET = "shares"
+SHARE_BASE_URL = os.getenv("SHARE_BASE_URL", "https://s.riderlens.app").rstrip("/")
+SHARE_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{8,20}$")
 
 
 def require_dev_ui() -> None:
@@ -2162,3 +2167,129 @@ def capture_record(
         current_rss_mb(),
     )
     return response
+
+
+# --- Share pages ---------------------------------------------------------------
+# The growth loop: an explicitly shared record becomes a public page under an
+# unguessable ID. Storage-only design (clip + poster + meta.json in a public
+# Supabase bucket) - no schema, easy deletion, nothing enumerable.
+
+
+def _share_public_url(share_id: str, name: str) -> str:
+    base = (os.getenv("SUPABASE_URL") or "").rstrip("/")
+    return f"{base}/storage/v1/object/public/{SHARE_BUCKET}/{share_id}/{name}"
+
+
+def _share_storage():
+    supabase = get_supabase()
+    if supabase is None:
+        raise HTTPException(status_code=503, detail="Share storage is not configured.")
+    storage = supabase.storage
+    try:
+        storage.create_bucket(SHARE_BUCKET, options={"public": True})
+    except Exception:
+        pass  # already exists
+    return storage.from_(SHARE_BUCKET)
+
+
+@app.post("/share", dependencies=PROTECTED)
+def create_share(
+    video: UploadFile = File(...),
+    airtime_seconds: float | None = Form(None),
+    height_meters: float | None = Form(None),
+):
+    bucket = _share_storage()
+    upload_id = _save_capture_upload(video)
+    video_path = str(_capture_path(upload_id))
+    share_id = secrets.token_urlsafe(8).replace("=", "")
+    poster_path = None
+    try:
+        duration = video_duration_seconds(video_path)
+        # Poster from a third of the way in: past the approach, before the
+        # endcard - the frame WhatsApp/iMessage previews lead with.
+        poster_path = video_path + ".poster.jpg"
+        subprocess.run(
+            [
+                "ffmpeg", "-y", "-loglevel", "error",
+                "-ss", f"{max(0.0, duration * 0.35):.2f}",
+                "-i", video_path,
+                "-frames:v", "1",
+                "-vf", "scale='min(1280,iw)':-2",
+                "-q:v", "3",
+                poster_path,
+            ],
+            check=True,
+            timeout=60,
+        )
+        meta = {
+            "createdAt": datetime.now(timezone.utc).isoformat(),
+            "durationSeconds": round(duration, 2),
+            "airtimeSeconds": airtime_seconds,
+            "heightMeters": height_meters,
+        }
+        with open(video_path, "rb") as handle:
+            bucket.upload(f"{share_id}/clip.mp4", handle.read(), {"content-type": "video/mp4"})
+        with open(poster_path, "rb") as handle:
+            bucket.upload(f"{share_id}/poster.jpg", handle.read(), {"content-type": "image/jpeg"})
+        bucket.upload(
+            f"{share_id}/meta.json",
+            json.dumps(meta).encode("utf-8"),
+            {"content-type": "application/json"},
+        )
+    finally:
+        FilePath(video_path).unlink(missing_ok=True)
+        if poster_path:
+            FilePath(poster_path).unlink(missing_ok=True)
+    return {"id": share_id, "shareUrl": f"{SHARE_BASE_URL}/{share_id}"}
+
+
+def _render_share_page(share_id: str) -> HTMLResponse:
+    if not SHARE_ID_PATTERN.match(share_id):
+        raise HTTPException(status_code=404, detail="Not found.")
+    bucket = _share_storage()
+    try:
+        meta = json.loads(bucket.download(f"{share_id}/meta.json").decode("utf-8"))
+    except Exception:
+        raise HTTPException(status_code=404, detail="This shared clip is gone.")
+
+    chips: list[str] = []
+    airtime = meta.get("airtimeSeconds")
+    height = meta.get("heightMeters")
+    if airtime:
+        chips.append(f'<span class="chip">airtime <b>{float(airtime):.2f}s</b></span>')
+    if height:
+        chips.append(f'<span class="chip">height <b>{float(height):.1f}m</b></span>')
+    chips.append('<span class="chip">every frame analyzed</span>')
+
+    description = "Watch it frame by frame with the skeleton overlay - shared from RiderLens."
+    if airtime:
+        description = f"{float(airtime):.2f}s of airtime - " + description
+
+    html = SHARE_HTML_PATH.read_text(encoding="utf-8")
+    replacements = {
+        "{{TITLE}}": "You have to see this send",
+        "{{OG_TITLE}}": "You have to see this send \U0001F440",
+        "{{OG_DESCRIPTION}}": description,
+        "{{PAGE_URL}}": f"{SHARE_BASE_URL}/{share_id}",
+        "{{POSTER_URL}}": _share_public_url(share_id, "poster.jpg"),
+        "{{POSTER_WIDTH}}": "1280",
+        "{{POSTER_HEIGHT}}": "720",
+        "{{CLIP_URL}}": _share_public_url(share_id, "clip.mp4"),
+        "{{CHIPS}}": "".join(chips),
+        "{{SHARE_ID}}": share_id,
+    }
+    for token, value in replacements.items():
+        html = html.replace(token, value)
+    return HTMLResponse(html, headers={"Cache-Control": "public, max-age=300"})
+
+
+@app.get("/s/{share_id}", response_class=HTMLResponse)
+def share_page(share_id: str):
+    return _render_share_page(share_id)
+
+
+@app.get("/{share_id}", response_class=HTMLResponse)
+def share_page_short(share_id: str):
+    """Short form used by s.riderlens.app/{id}. Registered last so every fixed
+    route wins first; anything non-share-shaped 404s inside the renderer."""
+    return _render_share_page(share_id)

@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{{TITLE}} · RiderLens</title>
+  <meta name="robots" content="noindex" />
+
+  <meta property="og:type" content="video.other" />
+  <meta property="og:site_name" content="RiderLens" />
+  <meta property="og:title" content="{{OG_TITLE}}" />
+  <meta property="og:description" content="{{OG_DESCRIPTION}}" />
+  <meta property="og:url" content="{{PAGE_URL}}" />
+  <meta property="og:image" content="{{POSTER_URL}}" />
+  <meta property="og:image:width" content="{{POSTER_WIDTH}}" />
+  <meta property="og:image:height" content="{{POSTER_HEIGHT}}" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="{{OG_TITLE}}" />
+  <meta name="twitter:description" content="{{OG_DESCRIPTION}}" />
+  <meta name="twitter:image" content="{{POSTER_URL}}" />
+
+  <style>
+    :root {
+      --page: #101411; --surface: #181d18; --ink: #f0f4ec; --muted: #8d978b;
+      --accent: #b6ff2e; --line: #2a2f2a;
+      --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+    }
+    * { box-sizing: border-box; margin: 0; }
+    body { background: var(--page); color: var(--ink); font-family: var(--sans); min-height: 100vh;
+           display: flex; flex-direction: column; align-items: center; padding: 20px 16px 40px; }
+    .brand { display: flex; align-items: center; gap: 10px; margin: 6px 0 18px; text-decoration: none; color: var(--ink); }
+    .brand span { font-weight: 800; letter-spacing: 2px; font-size: 20px; }
+    .brand small { color: var(--muted); font-size: 11px; letter-spacing: 1px; text-transform: uppercase; }
+    h1 { font-size: clamp(26px, 6vw, 40px); letter-spacing: 0.5px; text-transform: uppercase;
+         text-align: center; line-height: 1.05; margin-bottom: 16px; }
+    h1 em { font-style: normal; color: var(--accent); }
+    .player { width: min(720px, 100%); background: var(--surface); border: 1px solid var(--line);
+              border-radius: 16px; overflow: hidden; }
+    video { width: 100%; display: block; background: #000; }
+    .meta { display: flex; gap: 10px; flex-wrap: wrap; padding: 14px; font-family: var(--mono); font-size: 13px; }
+    .chip { background: #232c22; border: 1px solid var(--line); color: var(--ink);
+            border-radius: 999px; padding: 6px 14px; }
+    .chip b { color: var(--accent); }
+    .controls { display: flex; gap: 8px; padding: 0 14px 14px; }
+    .controls button { flex: 1; background: #232c22; color: var(--ink); border: 1px solid var(--line);
+                       border-radius: 10px; padding: 10px 0; font-family: var(--mono); font-size: 13px; cursor: pointer; }
+    .controls button.primary { background: var(--accent); color: #101411; border: 0; font-weight: 700; }
+    .cta { margin-top: 26px; text-align: center; }
+    .cta a { display: inline-block; background: var(--accent); color: #101411; font-weight: 800;
+             text-decoration: none; padding: 15px 34px; border-radius: 999px; font-size: 17px; }
+    .cta p { color: var(--muted); font-size: 14px; margin-top: 10px; }
+    footer { margin-top: 34px; color: var(--muted); font-size: 12px; text-align: center; line-height: 1.7; }
+    footer a { color: var(--muted); }
+  </style>
+</head>
+<body>
+  <a class="brand" href="https://riderlens.app?utm_source=share_page&utm_medium=header">
+    <span>RIDERLENS</span><small>See your riding, frame by frame</small>
+  </a>
+
+  <h1>You have to see <em>this send</em></h1>
+
+  <div class="player">
+    <video id="clip" src="{{CLIP_URL}}" poster="{{POSTER_URL}}" controls playsinline loop preload="metadata"></video>
+    <div class="meta">{{CHIPS}}</div>
+    <div class="controls">
+      <button onclick="step(-1)">− frame</button>
+      <button class="primary" onclick="toggle()" id="playBtn">Play</button>
+      <button onclick="step(1)">+ frame</button>
+      <button onclick="slow()" id="slowBtn">¼ speed</button>
+    </div>
+  </div>
+
+  <div class="cta">
+    <a href="https://riderlens.app?utm_source=share_page&utm_medium=cta">Get RiderLens</a>
+    <p>Film your riding. See your body position on every frame.</p>
+  </div>
+
+  <footer>
+    Shared with RiderLens — analysis drawn on every frame.<br />
+    Your clip? <a href="mailto:hello@riderlens.app?subject=Remove%20shared%20clip%20{{SHARE_ID}}">Ask us to remove it</a> ·
+    <a href="https://riderlens.app/privacy">Privacy</a>
+  </footer>
+
+  <script>
+    var video = document.getElementById("clip");
+    var FRAME = 1 / 30;
+    function toggle() {
+      if (video.paused) { video.play(); } else { video.pause(); }
+    }
+    video.addEventListener("play", function () { document.getElementById("playBtn").textContent = "Pause"; });
+    video.addEventListener("pause", function () { document.getElementById("playBtn").textContent = "Play"; });
+    function step(direction) {
+      video.pause();
+      video.currentTime = Math.max(0, video.currentTime + direction * FRAME);
+    }
+    function slow() {
+      var slowed = video.playbackRate !== 1;
+      video.playbackRate = slowed ? 1 : 0.25;
+      document.getElementById("slowBtn").textContent = slowed ? "¼ speed" : "1× speed";
+    }
+  </script>
+</body>
+</html>
