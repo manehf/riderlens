@@ -27,3 +27,6 @@ supabase/.temp/
 # Local test clips for the simulator importer (folder kept, contents not)
 simulator-media/*
 !simulator-media/.gitkeep
+
+# Local scratch (image generation experiments etc.)
+/tmp/

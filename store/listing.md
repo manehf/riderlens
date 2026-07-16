@@ -8,17 +8,17 @@ Play Console / RevenueCat, not here.
 
 ## Identity
 
-| Field | Value |
-|---|---|
-| App name (both stores) | RiderLens: MTB Skills Analysis |
-| iOS subtitle (max 30 chars) | See your riding frame by frame |
+| Field                                 | Value                                                                   |
+| ------------------------------------- | ----------------------------------------------------------------------- |
+| App name (both stores)                | RiderLens: MTB Skills Analysis                                          |
+| iOS subtitle (max 30 chars)           | See your riding frame by frame                                          |
 | Play short description (max 80 chars) | Film your riding. See your body position on every frame. Built for MTB. |
-| Category | Sports (iOS secondary: Photo & Video) |
-| Support URL | https://riderlens.app |
-| Marketing URL | https://riderlens.app |
-| Privacy policy URL | https://riderlens.app/privacy |
-| Terms of use URL | https://riderlens.app/terms |
-| Support email | hello@riderlens.app |
+| Category                              | Sports (iOS secondary: Photo & Video)                                   |
+| Support URL                           | https://riderlens.app                                                   |
+| Marketing URL                         | https://riderlens.app                                                   |
+| Privacy policy URL                    | https://riderlens.app/privacy                                           |
+| Terms of use URL                      | https://riderlens.app/terms                                             |
+| Support email                         | hello@riderlens.app                                                     |
 
 ## iOS promotional text (max 170 chars)
 
@@ -35,6 +35,7 @@ Play Console / RevenueCat, not here.
 > frame stepping, slow motion, fullscreen.
 >
 > **How it works**
+>
 > 1. Film with your camera app — from the side, whole rider in frame
 > 2. Pick the clip and select the moment (up to 8 seconds)
 > 3. RiderLens analyzes every frame and draws your body position
@@ -42,7 +43,7 @@ Play Console / RevenueCat, not here.
 >
 > **Built for gravity riding**
 > • Skeleton overlay on every frame — see hips, knees, and arms through
->   every move, from takeoff to landing
+> every move, from takeoff to landing
 > • Airtime and height estimates for jumps
 > • Frame-by-frame stepping and ¼-speed slow motion
 > • Your library of moments — tagged, searchable, on your phone
@@ -64,6 +65,7 @@ Play Console / RevenueCat, not here.
 ```
 mountain bike,video analysis,slow motion,airtime,downhill,enduro,dirt jump,bike,skeleton,whip,drop
 ```
+
 (98 chars — `mtb`/`jump` live in the app name; `dirt jump` keeps the jump token)
 
 ---
@@ -82,9 +84,9 @@ mountain bike,video analysis,slow motion,airtime,downhill,enduro,dirt jump,bike,
 
 Declare **only**:
 
-| Data type | Linked to identity? | Used for tracking? | Purpose |
-|---|---|---|---|
-| Diagnostics → Crash Data | No | No | App functionality |
+| Data type                | Linked to identity? | Used for tracking? | Purpose           |
+| ------------------------ | ------------------- | ------------------ | ----------------- |
+| Diagnostics → Crash Data | No                  | No                 | App functionality |
 
 Reasoning (keep for review responses): videos are transmitted for processing
 but deleted within ~45 minutes and never linked to an identity — under
@@ -98,7 +100,7 @@ identity, no media attached).
 - **Data collected:** App info and performance → Crash logs, Diagnostics.
   Collection is optional? No (automatic). Encrypted in transit: Yes. Users
   can request deletion: Yes (via hello@riderlens.app).
-- **Video processing:** declare as *processed ephemerally* (uploaded for
+- **Video processing:** declare as _processed ephemerally_ (uploaded for
   analysis, deleted shortly after, never stored server-side) — the form has
   an explicit ephemeral-processing concept that fits exactly.
 - **Data shared with third parties:** none. (Sentry acts as a service
@@ -144,12 +146,12 @@ Sizes: iOS 6.9" (1320×2868) and 6.5" (1284×2778); Play phone screenshots
 
 ## Subscription metadata (App Store Connect / Play Console)
 
-| Field | Value |
-|---|---|
-| Subscription group (iOS) | RiderLens Pro |
-| Display name | RiderLens Pro |
-| Products | Monthly + Annual (IDs already in RevenueCat: `riderlens.pro.monthly` / `riderlens.pro.annual`, Play: `riderlens_pro_v1` monthly/annual base plans) |
-| Benefit copy | Unlimited analyses. All playback and sharing features stay free. |
+| Field                    | Value                                                                                                                                              |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Subscription group (iOS) | RiderLens Pro                                                                                                                                      |
+| Display name             | RiderLens Pro                                                                                                                                      |
+| Products                 | Monthly + Annual (IDs already in RevenueCat: `riderlens.pro.monthly` / `riderlens.pro.annual`, Play: `riderlens_pro_v1` monthly/annual base plans) |
+| Benefit copy             | Unlimited analyses. All playback and sharing features stay free.                                                                                   |
 
 Apple requires the paywall to show: price, period, and functional links to
 the privacy policy and terms — the RevenueCat paywall template handles this;
