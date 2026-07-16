@@ -42,7 +42,9 @@ Builds exist (iOS submitted to TestFlight, Android AAB ready). Remaining, in ord
 
 5. **On-device trim/export** *(unlocks GoPro)*: native module (AVFoundation / Media3) exports the selected ≤6s clip on-device; only that uploads. Then raise library picks 30s → 5 min. Architecture review §14–15 has the full spec.
 
-6. **Phase 2 backend** *(when paying users justify it)*: Supabase Auth (Sign in with Apple + magic link), server-side free-quota + entitlement checks, durable async jobs (schema already provisioned), outputs as objects instead of base64 JSON. Then: record backup/restore for Pro. Privacy policy rewrite **before** any of it goes live.
+6. **Someday: on-device analysis** — the same RTMPose exists compiled for phone NPUs (Qualcomm AI Hub "RTMPose_Body2d" for Snapdragon; CoreML route for iPhone). Would eliminate upload latency and per-analysis server cost at the price of two native inference stacks and losing server-deploy upgradability. Revisit if server costs or offline demand ever justify it.
+
+7. **Phase 2 backend** *(when paying users justify it)*: Supabase Auth (Sign in with Apple + magic link), server-side free-quota + entitlement checks, durable async jobs (schema already provisioned), outputs as objects instead of base64 JSON. Then: record backup/restore for Pro. Privacy policy rewrite **before** any of it goes live.
 
 ---
 
