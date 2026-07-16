@@ -61,6 +61,47 @@ MP_FROM_HALPE = {
 MP_DERIVED = {1: 2, 3: 2, 4: 5, 6: 5, 9: 0, 10: 0, 17: 15, 19: 15, 21: 15, 18: 16, 20: 16, 22: 16}
 
 
+# --- Temporal stabilization ---------------------------------------------------
+# Streaming constraint: frames arrive one at a time, so "interpolation" means
+# holding the last confident pose briefly (flicker kill) and vetoing joints
+# that move impossibly far in one frame (teleport kill). Both decay
+# visibility so held data fades out of drawing and metrics naturally.
+
+HOLD_DECAY = 0.7
+TELEPORT_FLOOR = 0.06  # normalized units: generous for real rider motion
+
+
+def fade_landmarks(previous: list[Landmark]) -> list[Landmark]:
+    """A briefly-missed detection re-emits the last pose at decayed
+    visibility; two misses in a row fall below drawing thresholds."""
+    return [Landmark(lm.x, lm.y, lm.z, lm.visibility * HOLD_DECAY) for lm in previous]
+
+
+def suppress_teleports(previous: list[Landmark], current: list[Landmark]) -> list[Landmark]:
+    """Joints moving far beyond the body's own frame-to-frame motion get the
+    previous position at half visibility instead of the outlier."""
+    displacements: list[float] = []
+    per_joint: dict[int, float] = {}
+    for index in MP_FROM_HALPE:
+        before, after = previous[index], current[index]
+        if before.visibility < 0.3 or after.visibility < 0.3:
+            continue
+        distance = ((after.x - before.x) ** 2 + (after.y - before.y) ** 2) ** 0.5
+        per_joint[index] = distance
+        displacements.append(distance)
+    if len(displacements) < 6:
+        return current
+    displacements.sort()
+    median = displacements[len(displacements) // 2]
+    allowed = max(TELEPORT_FLOOR, median * 3 + 0.02)
+    adjusted = list(current)
+    for index, distance in per_joint.items():
+        if distance > allowed:
+            held = previous[index]
+            adjusted[index] = Landmark(held.x, held.y, held.z, held.visibility * 0.5)
+    return adjusted
+
+
 class MediaPipeEngine:
     def __init__(self, min_detection_confidence: float = 0.3, min_tracking_confidence: float = 0.3):
         import mediapipe as mp
@@ -95,7 +136,9 @@ class RTMPoseEngine:
     bootstraps tracking (pose-only tracking measured useless on this footage);
     periodic re-detection recovers from drift."""
 
-    def __init__(self, det_stride: int = 5, min_score: float = 0.3, mode: str | None = None):
+    def __init__(
+        self, det_stride: int = 5, min_score: float = 0.3, mode: str | None = None, hold_frames: int = 2
+    ):
         from rtmlib import BodyWithFeet
 
         solution = BodyWithFeet(
@@ -109,6 +152,9 @@ class RTMPoseEngine:
         self._min_score = min_score
         self._frame_index = 0
         self._tracked_box: list[float] | None = None
+        self._hold_frames = max(0, hold_frames)
+        self._last_landmarks: list[Landmark] | None = None
+        self._missed_frames = 0
 
     def process(self, frame_bgr) -> list[Landmark] | None:
         import numpy as np
@@ -124,19 +170,19 @@ class RTMPoseEngine:
                 boxes = detected
         if boxes is None:
             if self._tracked_box is None:
-                return None
+                return self._miss()
             boxes = np.asarray([self._tracked_box])
 
         keypoints, scores = self._pose(frame_bgr, bboxes=boxes)
         if len(scores) == 0:
             self._tracked_box = None
-            return None
+            return self._miss()
 
         best = int(np.argmax(np.median(scores, axis=1)))
         points, confidences = keypoints[best], scores[best]
         if float(np.median(confidences)) < self._min_score:
             self._tracked_box = None
-            return None
+            return self._miss()
 
         confident = points[confidences > self._min_score]
         if len(confident) >= 4:
@@ -161,7 +207,19 @@ class RTMPoseEngine:
         for mp_index, source_index in MP_DERIVED.items():
             source = landmarks[source_index]
             landmarks[mp_index] = Landmark(source.x, source.y, 0.0, 0.0)
+        if self._last_landmarks is not None and self._missed_frames == 0:
+            landmarks = suppress_teleports(self._last_landmarks, landmarks)
+        self._last_landmarks = landmarks
+        self._missed_frames = 0
         return landmarks
+
+    def _miss(self) -> list[Landmark] | None:
+        if self._last_landmarks is not None and self._missed_frames < self._hold_frames:
+            self._missed_frames += 1
+            self._last_landmarks = fade_landmarks(self._last_landmarks)
+            return self._last_landmarks
+        self._last_landmarks = None
+        return None
 
     def close(self) -> None:
         pass
