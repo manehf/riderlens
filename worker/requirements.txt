@@ -7,6 +7,8 @@ supabase==2.17.0
 numpy==1.26.4
 opencv-python-headless==4.10.0.84
 mediapipe==0.10.21
+rtmlib==0.0.15
+onnxruntime==1.27.0
 certifi>=2024.0.0
 anthropic>=0.92.0
 segno==1.6.6

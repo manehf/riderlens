@@ -38,6 +38,8 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
+from .pose_engine import create_pose_engine
+
 try:
     import cv2
     import mediapipe as mp
@@ -821,13 +823,7 @@ def measure_window(
         count = 480
         step = span / (count - 1)
 
-    pose = mp.solutions.pose.Pose(
-        static_image_mode=False,
-        model_complexity=2,
-        enable_segmentation=False,
-        min_detection_confidence=0.3,
-        min_tracking_confidence=0.3,
-    )
+    pose = create_pose_engine(min_detection_confidence=0.3, min_tracking_confidence=0.3)
     series: list[dict] = []
     air_frames: list[dict] = []
     filmstrip: list[dict] = []
@@ -872,9 +868,9 @@ def measure_window(
                 "confidence": 0.0,
             }
 
-            result = pose.process(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
-            if result.pose_landmarks:
-                landmarks = result.pose_landmarks.landmark
+            pose_landmarks = pose.process(frame)
+            if pose_landmarks:
+                landmarks = pose_landmarks
                 side = get_visible_side(landmarks)
                 shoulder = landmark_point(landmarks, 11 if side == "left" else 12)
                 hip = landmark_point(landmarks, 23 if side == "left" else 24)
@@ -909,8 +905,8 @@ def measure_window(
                     if share_width < width
                     else frame.copy()
                 )
-                if result.pose_landmarks:
-                    draw_skeleton(share, result.pose_landmarks.landmark)
+                if pose_landmarks:
+                    draw_skeleton(share, pose_landmarks)
                 draw_watermark(share)
                 overlay.add(share)
 
@@ -944,8 +940,8 @@ def measure_window(
                 if target_width < width
                 else frame.copy()
             )
-            if result.pose_landmarks:
-                draw_skeleton(small, result.pose_landmarks.landmark)
+            if pose_landmarks:
+                draw_skeleton(small, pose_landmarks)
             image = encode_frame_jpeg(small, quality=strip_quality)
             if image:
                 filmstrip.append({"t": round(time_seconds, 2), "image": image})
@@ -1352,10 +1348,7 @@ def extract_pose_frames(video_path: str, trim_start_seconds: float, trim_end_sec
     max_samples = 120
     pose_frames: list[PoseFrame] = []
 
-    pose = mp.solutions.pose.Pose(
-        static_image_mode=False,
-        model_complexity=2,
-        enable_segmentation=False,
+    pose = create_pose_engine(
         min_detection_confidence=0.45,
         min_tracking_confidence=0.45,
     )
@@ -1370,10 +1363,8 @@ def extract_pose_frames(video_path: str, trim_start_seconds: float, trim_end_sec
                 break
 
             if (frame_index - start_frame) % sample_step == 0:
-                rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                result = pose.process(rgb_frame)
-                if result.pose_landmarks:
-                    landmarks = result.pose_landmarks.landmark
+                landmarks = pose.process(frame)
+                if landmarks:
                     side = get_visible_side(landmarks)
                     confidence = get_pose_confidence(landmarks, side)
                     if confidence >= 0.35:
