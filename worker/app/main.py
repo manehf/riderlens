@@ -339,25 +339,55 @@ def _rtmpose():
     return _rtmpose_engine
 
 
+@app.post("/dev/pose-compare-upload")
+def dev_pose_compare_upload(
+    video: UploadFile = File(...),
+    trim_start_seconds: float = Form(0),
+    trim_end_seconds: float | None = Form(None),
+    max_frames: int = Form(48),
+):
+    """Pose engine comparison on an uploaded clip instead of a library one."""
+    require_dev_ui()
+    suffix = FilePath(video.filename or "upload.mp4").suffix or ".mp4"
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as handle:
+        shutil.copyfileobj(video.file, handle)
+        temp_path = handle.name
+    try:
+        return _pose_compare_frames(temp_path, trim_start_seconds, trim_end_seconds, max_frames)
+    finally:
+        os.unlink(temp_path)
+
+
 @app.post("/dev/pose-compare")
 def dev_pose_compare(request: DevPoseCompareRequest):
     """Same frames through both pose engines, returned as side-by-side JPEGs:
     MediaPipe heavy (what production runs) on the left, RTMPose (candidate
     replacement, halpe26 body+feet) on the right."""
     require_dev_ui()
+    clip_path = resolve_clip_path(request.file)
+    return _pose_compare_frames(
+        str(clip_path), request.trim_start_seconds, request.trim_end_seconds, request.max_frames
+    )
+
+
+def _pose_compare_frames(
+    video_path: str,
+    trim_start_seconds: float,
+    trim_end_seconds: float | None,
+    max_frames: int,
+) -> dict:
     from rtmlib import draw_skeleton
 
-    clip_path = resolve_clip_path(request.file)
-    capture = cv2.VideoCapture(str(clip_path))
+    capture = cv2.VideoCapture(video_path)
     if not capture.isOpened():
         raise HTTPException(status_code=422, detail="Could not open video.")
     fps = capture.get(cv2.CAP_PROP_FPS) or 30
     total_frames = int(capture.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
     duration = total_frames / fps if fps else 0.0
-    start = max(0.0, min(request.trim_start_seconds, max(duration - 0.1, 0.0)))
-    end = duration if request.trim_end_seconds is None else min(request.trim_end_seconds, duration)
+    start = max(0.0, min(trim_start_seconds, max(duration - 0.1, 0.0)))
+    end = duration if trim_end_seconds is None else min(trim_end_seconds, duration)
     end = max(end, start + 0.1)
-    stride = max(1, math.ceil((end - start) * fps / request.max_frames))
+    stride = max(1, math.ceil((end - start) * fps / max_frames))
 
     pose = mp.solutions.pose.Pose(
         static_image_mode=False,
@@ -1689,7 +1719,7 @@ def detect_floor_line(frame, wheel_bottom_y: float, bike_x_range: tuple[float, f
 
     best = None
     best_score = -float("inf")
-    for line in lines[:, 0]:
+    for line in np.asarray(lines).reshape(-1, 4):
         x1, y1, x2, y2 = [int(value) for value in line]
         angle = math.degrees(math.atan2(y2 - y1, x2 - x1))
         midpoint_y = (y1 + y2) / 2

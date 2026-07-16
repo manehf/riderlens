@@ -934,20 +934,33 @@ loadClips();
 // --- Pose engine comparison -------------------------------------------------
 let compareFrames = [];
 document.getElementById("compareBtn").onclick = async () => {
-  if (selectedClip == null) { alert("Select a clip from the library first."); return; }
+  const uploadPicked = document.getElementById("upload").files.length > 0;
+  if (selectedClip == null && !uploadPicked) { alert("Select a clip or choose a file to upload first."); return; }
   const btn = document.getElementById("compareBtn");
   const status = document.getElementById("compareStatus");
   btn.disabled = true;
   status.textContent = "Running both engines… first run loads the RTMPose models (~30s).";
   try {
-    const body = { file: selectedClip, trim_start_seconds: Number(document.getElementById("trimStart").value || 0) };
-    const trimEndValue = document.getElementById("trimEnd").value;
-    if (trimEndValue) body.trim_end_seconds = Number(trimEndValue);
-    const response = await fetch("/dev/pose-compare", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
+    const uploadInput = document.getElementById("upload");
+    const uploadFile = uploadInput && uploadInput.files && uploadInput.files[0];
+    let response;
+    if (uploadFile) {
+      const form = new FormData();
+      form.append("video", uploadFile);
+      form.append("trim_start_seconds", document.getElementById("trimStart").value || "0");
+      const trimEndValue = document.getElementById("trimEnd").value;
+      if (trimEndValue) form.append("trim_end_seconds", trimEndValue);
+      response = await fetch("/dev/pose-compare-upload", { method: "POST", body: form });
+    } else {
+      const body = { file: selectedClip, trim_start_seconds: Number(document.getElementById("trimStart").value || 0) };
+      const trimEndValue = document.getElementById("trimEnd").value;
+      if (trimEndValue) body.trim_end_seconds = Number(trimEndValue);
+      response = await fetch("/dev/pose-compare", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    }
     if (!response.ok) throw new Error(await response.text());
     const data = await response.json();
     compareFrames = data.frames;
