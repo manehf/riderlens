@@ -19,7 +19,7 @@ Builds exist (iOS submitted to TestFlight, Android AAB ready). Remaining, in ord
 
 ### Claude (when the above land)
 - [x] **Apple submitted July 16** — version 1.0.0 (build 3, 8s window, iPhone-only) + both subscriptions, manual release. Play forms in progress.
-- [x] **Play submitted July 16** — vc6, managed publishing on (go-live is a manual click after approval).
+- [x] **Play submitted July 16** — vc7 (health permissions BODY_SENSORS/ACTIVITY_RECOGNITION stripped — they triggered Play's health-apps policy gate; READ_MEDIA_VIDEO declared as core-feature use; advertising ID declared unused). Managed publishing on — go-live is a manual click after approval.
 - [x] **Worker enforcement live (July 16)** — anonymous requests get 401; production builds carry the key.
 - [ ] Re-invite testers to the new TestFlight app; retire "RiderLens [MVP]".
 - [x] Both stores submitted July 16. Remaining: on approval, release Apple (manual) + publish Play (managed) together; retire "RiderLens [MVP]" TestFlight app.
