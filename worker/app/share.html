@@ -68,6 +68,12 @@
     .band-art { flex: 0 1 380px; min-width: 260px; }
     .band-art img { width: 100%; display: block; }
 
+    @media (max-width: 720px) {
+      .band-inner { flex-direction: column; text-align: center; }
+      .band-copy { min-width: 0; }
+      .stores { justify-content: center; }
+    }
+
     footer { background: var(--card); color: #8d978b; font-size: 13px; text-align: center;
              line-height: 1.8; padding: 18px 16px; }
     footer a { color: #8d978b; }
