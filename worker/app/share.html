@@ -52,7 +52,11 @@
                        border-radius: 10px; padding: 11px 0; font-family: var(--mono); font-size: 13px; cursor: pointer; }
     .controls button.primary { background: var(--accent); color: #101411; border: 0; font-weight: 700; }
 
-    .band { background: #B7FF2D; padding: 44px 20px;
+    .band { background:
+        radial-gradient(640px 420px at 12% 18%, #EBF93A 0%, rgba(235, 249, 58, 0) 62%),
+        radial-gradient(760px 520px at 88% 85%, #D3F01B 0%, rgba(211, 240, 27, 0) 66%),
+        #B7FF2D;
+      padding: 44px 20px;
             display: flex; justify-content: center; }
     .band-inner { width: min(960px, 100%); display: flex; align-items: center; gap: 30px; flex-wrap: wrap; justify-content: center; }
     .band-copy { flex: 1 1 300px; min-width: 280px; }
