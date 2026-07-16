@@ -328,19 +328,6 @@ class DevPoseCompareRequest(BaseModel):
     max_frames: int = Field(default=48, ge=4, le=120)
 
 
-_rtmpose_engine = None
-
-
-def _rtmpose():
-    """Lazy: rtmlib is a dev-only dependency; production code paths never import it."""
-    global _rtmpose_engine
-    if _rtmpose_engine is None:
-        from rtmlib import BodyWithFeet
-
-        _rtmpose_engine = BodyWithFeet(mode="balanced", backend="onnxruntime", device="cpu")
-    return _rtmpose_engine
-
-
 @app.post("/dev/pose-compare-upload")
 def dev_pose_compare_upload(
     video: UploadFile = File(...),
@@ -348,38 +335,35 @@ def dev_pose_compare_upload(
     trim_end_seconds: float | None = Form(None),
     max_frames: int = Form(48),
 ):
-    """Pose engine comparison on an uploaded clip instead of a library one."""
+    """RTMPose skeleton preview on an uploaded clip instead of a library one."""
     require_dev_ui()
     suffix = FilePath(video.filename or "upload.mp4").suffix or ".mp4"
     with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as handle:
         shutil.copyfileobj(video.file, handle)
         temp_path = handle.name
     try:
-        return _pose_compare_frames(temp_path, trim_start_seconds, trim_end_seconds, max_frames)
+        return _pose_preview_frames(temp_path, trim_start_seconds, trim_end_seconds, max_frames)
     finally:
         os.unlink(temp_path)
 
 
 @app.post("/dev/pose-compare")
 def dev_pose_compare(request: DevPoseCompareRequest):
-    """Same frames through both pose engines, returned as side-by-side JPEGs:
-    MediaPipe heavy (what production runs) on the left, RTMPose (candidate
-    replacement, halpe26 body+feet) on the right."""
+    """RTMPose skeleton preview: sampled frames rendered by the production
+    engine and renderer, without running a full analysis."""
     require_dev_ui()
     clip_path = resolve_clip_path(request.file)
-    return _pose_compare_frames(
+    return _pose_preview_frames(
         str(clip_path), request.trim_start_seconds, request.trim_end_seconds, request.max_frames
     )
 
 
-def _pose_compare_frames(
+def _pose_preview_frames(
     video_path: str,
     trim_start_seconds: float,
     trim_end_seconds: float | None,
     max_frames: int,
 ) -> dict:
-    from rtmlib import draw_skeleton
-
     capture = cv2.VideoCapture(video_path)
     if not capture.isOpened():
         raise HTTPException(status_code=422, detail="Could not open video.")
@@ -391,20 +375,11 @@ def _pose_compare_frames(
     end = max(end, start + 0.1)
     stride = max(1, math.ceil((end - start) * fps / max_frames))
 
-    pose = mp.solutions.pose.Pose(
-        static_image_mode=False,
-        model_complexity=2,
-        enable_segmentation=False,
-        min_detection_confidence=0.3,
-        min_tracking_confidence=0.3,
-    )
-    rtm = _rtmpose()
-    drawer = mp.solutions.drawing_utils
-
+    engine = create_pose_engine()
     capture.set(cv2.CAP_PROP_POS_MSEC, start * 1000.0)
     frames: list[dict] = []
-    mp_hits = rtm_hits = 0
-    mp_seconds = rtm_seconds = 0.0
+    hits = 0
+    engine_seconds = 0.0
     index = 0
     while True:
         ok, frame = capture.read()
@@ -418,49 +393,35 @@ def _pose_compare_frames(
         if not keep:
             continue
 
-        scale = 640 / frame.shape[1]
-        small = cv2.resize(frame, (640, int(frame.shape[0] * scale)))
+        scale = 720 / frame.shape[1]
+        small = cv2.resize(frame, (720, int(frame.shape[0] * scale)))
 
-        left = small.copy()
         tick = time.perf_counter()
-        result = pose.process(cv2.cvtColor(small, cv2.COLOR_BGR2RGB))
-        mp_seconds += time.perf_counter() - tick
-        mp_found = result.pose_landmarks is not None
-        if mp_found:
-            mp_hits += 1
-            drawer.draw_landmarks(left, result.pose_landmarks, mp.solutions.pose.POSE_CONNECTIONS)
+        landmarks = engine.process(small)
+        engine_seconds += time.perf_counter() - tick
+        if landmarks:
+            hits += 1
+            draw_skeleton(small, landmarks)
 
-        right = small.copy()
-        tick = time.perf_counter()
-        keypoints, scores = rtm(small)
-        rtm_seconds += time.perf_counter() - tick
-        rtm_found = len(scores) > 0 and float(np.median(scores[0])) > 0.3
-        if rtm_found:
-            rtm_hits += 1
-            right = draw_skeleton(right, keypoints, scores, kpt_thr=0.3)
-
-        encoded_ok, jpg = cv2.imencode(".jpg", np.hstack([left, right]), [cv2.IMWRITE_JPEG_QUALITY, 78])
+        encoded_ok, jpg = cv2.imencode(".jpg", small, [cv2.IMWRITE_JPEG_QUALITY, 80])
         if encoded_ok:
             frames.append(
                 {
                     "time": round(stamp, 2),
                     "image": base64.b64encode(jpg.tobytes()).decode("ascii"),
-                    "mediapipe": mp_found,
-                    "rtmpose": rtm_found,
+                    "pose": landmarks is not None,
                 }
             )
     capture.release()
-    pose.close()
+    engine.close()
 
     sampled = max(len(frames), 1)
     return {
         "frames": frames,
         "summary": {
             "sampled": len(frames),
-            "mediapipe_hits": mp_hits,
-            "rtmpose_hits": rtm_hits,
-            "mediapipe_ms": round(mp_seconds / sampled * 1000),
-            "rtmpose_ms": round(rtm_seconds / sampled * 1000),
+            "hits": hits,
+            "engine_ms": round(engine_seconds / sampled * 1000),
         },
     }
 
