@@ -10,15 +10,15 @@ Deep background: `riderlens-mvp-plan.md` (product), `riderlens-architecture-infr
 Builds exist (iOS submitted to TestFlight, Android AAB ready). Remaining, in order:
 
 ### Antonio (dashboards)
-- [ ] **Subscriptions in App Store Connect** — new RiderLens app → Monetization → group `RiderLens Pro` → `riderlens.pro.monthly` + `riderlens.pro.annual` (fresh IDs - Apple permanently burns subscription product IDs account-wide, even deleted ones; RC entitlement + offering repointed). Attach to the version for review.
+- [x] **Subscriptions in App Store Connect** — new RiderLens app → Monetization → group `RiderLens Pro` → `riderlens.pro.monthly` + `riderlens.pro.annual` (fresh IDs - Apple permanently burns subscription product IDs account-wide, even deleted ones; RC entitlement + offering repointed). Attach to the version for review.
 - [ ] Verify **Paid Apps agreement** Active + banking/tax (both stores).
-- [ ] **Deploy `site/` to Cloudflare Pages** — store listings link to /privacy and /support; must be live before review.
+- [x] **Deploy `site/` to Cloudflare Pages** — live at riderlens.app. — store listings link to /privacy and /support; must be live before review.
 - [x] **Play developer account type: Organisation (MOPIU, LDA)** — no closed-testing requirement; straight to production once review passes.
-- [ ] **TestFlight dress rehearsal** on a real phone: install, film, analyze, check splash/icon/paywall.
-- [ ] Screenshots (6 shots, shot list in `store/listing.md`) — navigate, Claude frames/finalizes.
+- [x] Dress rehearsal (Android internal testing; iOS via simulator + Test Store) on a real phone: install, film, analyze, check splash/icon/paywall.
+- [x] Screenshots — Antonio's designed set in `store/screenshots-2/` (+ Play derivatives, feature graphic).
 
 ### Claude (when the above land)
-- [ ] Fill store forms from `store/listing.md` (all copy + privacy/data-safety answers pre-written).
+- [x] **Apple submitted July 16** — version 1.0.0 (build 3, 8s window, iPhone-only) + both subscriptions, manual release. Play forms in progress.
 - [ ] Play Console app + `riderlens_pro_v1` subscription + feature graphic.
 - [ ] **Flip worker enforcement**: `fly secrets set RIDERLENS_CLIENT_KEY=<value in eas.json>` once store builds are the ones in use.
 - [ ] Re-invite testers to the new TestFlight app; retire "RiderLens [MVP]".
