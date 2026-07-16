@@ -19,10 +19,10 @@ Builds exist (iOS submitted to TestFlight, Android AAB ready). Remaining, in ord
 
 ### Claude (when the above land)
 - [x] **Apple submitted July 16** — version 1.0.0 (build 3, 8s window, iPhone-only) + both subscriptions, manual release. Play forms in progress.
-- [ ] Play Console app + `riderlens_pro_v1` subscription + feature graphic.
-- [ ] **Flip worker enforcement**: `fly secrets set RIDERLENS_CLIENT_KEY=<value in eas.json>` once store builds are the ones in use.
+- [x] **Play submitted July 16** — vc6, managed publishing on (go-live is a manual click after approval).
+- [x] **Worker enforcement live (July 16)** — anonymous requests get 401; production builds carry the key.
 - [ ] Re-invite testers to the new TestFlight app; retire "RiderLens [MVP]".
-- [ ] Submit both stores.
+- [x] Both stores submitted July 16. Remaining: on approval, release Apple (manual) + publish Play (managed) together; retire "RiderLens [MVP]" TestFlight app.
 - [ ] **While the app sits in review: build #9 (detector-guided pose crop).** Worker-side only — deploys to Fly independent of store review, no app update needed; every user (and possibly the review tester) gets it transparently. Decision: don't block submission on pose quality; don't wait for launch to fix it either.
 
 ---
