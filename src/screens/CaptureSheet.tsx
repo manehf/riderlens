@@ -117,6 +117,9 @@ function WindowStep({
   const [playing, setPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(capture.trimStartSeconds);
   const playbackActiveRef = useRef(false);
+  const suppressSyncUntilRef = useRef(0);
+  const seekTargetRef = useRef<number | null>(null);
+  const seekRetryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const windowSeconds = Math.max(0, capture.trimEndSeconds - capture.trimStartSeconds);
   const quarterTurn = capture.rotateDegrees % 180 !== 0;
   const reprocessing = Boolean(capture.reprocessRecordId);
@@ -141,6 +144,7 @@ function WindowStep({
   });
 
   useEventListener(player, "timeUpdate", ({ currentTime: nextTime }) => {
+    if (Date.now() < suppressSyncUntilRef.current) return;
     if (shouldLoopSelection(playbackActiveRef.current, nextTime, capture.trimEndSeconds)) {
       player.currentTime = capture.trimStartSeconds;
       setCurrentTime(capture.trimStartSeconds);
@@ -154,6 +158,13 @@ function WindowStep({
     player.currentTime = capture.trimStartSeconds;
     setCurrentTime(capture.trimStartSeconds);
   }, [capture.uri, player]);
+
+  useEffect(
+    () => () => {
+      if (seekRetryRef.current) clearTimeout(seekRetryRef.current);
+    },
+    []
+  );
 
   useEffect(() => {
     let active = true;
@@ -186,12 +197,28 @@ function WindowStep({
 
   const seekAndPause = useCallback(
     (time: number) => {
-      const bounded = Math.max(0, Math.min(time, capture.durationSeconds));
+      // Never park exactly on the container's end: some encoders render black there.
+      const bounded = Math.max(0, Math.min(time, Math.max(0, capture.durationSeconds - 0.03)));
       playbackActiveRef.current = false;
+      suppressSyncUntilRef.current = Date.now() + 350;
       player.pause();
       setPlaying(false);
+      seekTargetRef.current = bounded;
       player.currentTime = bounded;
       setCurrentTime(bounded);
+      if (seekRetryRef.current) clearTimeout(seekRetryRef.current);
+      // AVFoundation drops seeks issued while a previous one is in flight
+      // (rapid taps, hold-to-repeat). One trailing re-apply guarantees the
+      // last requested frame is the one on screen.
+      seekRetryRef.current = setTimeout(() => {
+        const target = seekTargetRef.current;
+        if (target == null || playbackActiveRef.current) return;
+        if (Math.abs(player.currentTime - target) > 0.05) {
+          suppressSyncUntilRef.current = Date.now() + 350;
+          player.currentTime = target;
+          setCurrentTime(target);
+        }
+      }, 180);
     },
     [capture.durationSeconds, player]
   );
@@ -206,6 +233,8 @@ function WindowStep({
       player.currentTime = capture.trimStartSeconds;
       setCurrentTime(capture.trimStartSeconds);
     }
+    seekTargetRef.current = null;
+    if (seekRetryRef.current) clearTimeout(seekRetryRef.current);
     playbackActiveRef.current = true;
     player.play();
   }, [capture.trimEndSeconds, capture.trimStartSeconds, player, playing]);
