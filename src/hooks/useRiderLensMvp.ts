@@ -23,6 +23,7 @@ import {
   MIN_ANALYSIS_WINDOW_SECONDS,
   updateAnalysisWindow
 } from "../services/captureWindow";
+import { isLikelyFragmentedMp4 } from "../services/videoFormat";
 import {
   backfillPoster,
   deleteRecordFiles,
@@ -515,6 +516,16 @@ export function useRiderLensMvp(): RiderLensStore {
 
     if (result.canceled) return;
     const asset = result.assets[0];
+    // Streaming containers (fragmented MP4) scrub unreliably in the trim
+    // preview even though analysis normalizes them fine — warn, don't block.
+    void isLikelyFragmentedMp4(asset.uri).then((fragmented) => {
+      if (fragmented) {
+        Alert.alert(
+          "Streaming-format video",
+          "This clip uses a streaming container, so the preview may not scrub smoothly. The analysis itself will still work."
+        );
+      }
+    });
     const rawDuration = asset.duration ?? 6000;
     const durationSeconds = rawDuration > 1000 ? rawDuration / 1000 : rawDuration;
     if (durationSeconds > LIBRARY_MAX_SECONDS) {

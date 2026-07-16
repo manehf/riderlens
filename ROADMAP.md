@@ -57,6 +57,7 @@ Builds exist (iOS submitted to TestFlight, Android AAB ready). Remaining, in ord
 - README.md materially stale (documents legacy endpoints, nonexistent screens).
 - No CI — add GitHub Actions running tsc + vitest + worker pytest.
 - Worker model file (`efficientdet_lite2.tflite`) gitignored but Dockerfile depends on it — fresh clone can't build; commit via LFS or fetch in Dockerfile.
+- Fragmented MP4s (streaming containers) scrub unreliably in the trim preview — cameras never produce them; the picker warns since v1.0.1 (`videoFormat.ts`); a real fix needs precise-timing asset flags in expo-video (upstream).
 
 ## Standing decisions (so they don't get relitigated)
 
