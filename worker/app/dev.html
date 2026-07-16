@@ -118,6 +118,21 @@
       </div>
       <div id="filmstrip" style="display:flex;gap:6px;overflow-x:auto;padding:10px 0 6px"></div>
     </div>
+    <div class="panel" style="margin-top:16px" id="comparePanel">
+      <h2>Pose engines — MediaPipe (ships today) vs RTMPose (candidate)</h2>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <button id="compareBtn" style="max-width:300px">Compare engines on selected clip</button>
+        <span id="compareStatus" style="color:var(--muted)"></span>
+      </div>
+      <div id="compareSummary" style="margin:10px 0 6px"></div>
+      <div id="compareViewer" class="hidden">
+        <img id="compareFrame" style="width:100%;border-radius:8px;display:block" />
+        <div style="display:flex;gap:10px;align-items:center;margin-top:8px">
+          <input type="range" id="compareSlider" min="0" value="0" step="1" style="flex:1;accent-color:var(--accent)" />
+          <span id="compareTime" class="num" style="color:var(--muted);font-size:12px;min-width:52px;text-align:right"></span>
+        </div>
+      </div>
+    </div>
     <div class="panel hidden" style="margin-top:16px" id="timelinePanel">
       <h2>Timeline — jump window</h2>
       <div class="legend">
@@ -915,6 +930,49 @@ document.getElementById("upload").onchange = () => {
   document.querySelectorAll(".clip").forEach((node) => node.classList.remove("selected"));
 };
 loadClips();
+
+// --- Pose engine comparison -------------------------------------------------
+let compareFrames = [];
+document.getElementById("compareBtn").onclick = async () => {
+  if (selectedClip == null) { alert("Select a clip from the library first."); return; }
+  const btn = document.getElementById("compareBtn");
+  const status = document.getElementById("compareStatus");
+  btn.disabled = true;
+  status.textContent = "Running both engines… first run loads the RTMPose models (~30s).";
+  try {
+    const body = { file: selectedClip, trim_start_seconds: Number(document.getElementById("trimStart").value || 0) };
+    const trimEndValue = document.getElementById("trimEnd").value;
+    if (trimEndValue) body.trim_end_seconds = Number(trimEndValue);
+    const response = await fetch("/dev/pose-compare", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) throw new Error(await response.text());
+    const data = await response.json();
+    compareFrames = data.frames;
+    const s = data.summary;
+    document.getElementById("compareSummary").innerHTML =
+      `MediaPipe heavy: <b>${s.mediapipe_hits}/${s.sampled}</b> frames with pose · ${s.mediapipe_ms}ms/frame` +
+      ` &nbsp;—&nbsp; RTMPose: <b>${s.rtmpose_hits}/${s.sampled}</b> frames with pose · ${s.rtmpose_ms}ms/frame`;
+    const slider = document.getElementById("compareSlider");
+    slider.max = String(Math.max(compareFrames.length - 1, 0));
+    slider.value = "0";
+    const show = (i) => {
+      if (!compareFrames[i]) return;
+      document.getElementById("compareFrame").src = "data:image/jpeg;base64," + compareFrames[i].image;
+      document.getElementById("compareTime").textContent = compareFrames[i].time.toFixed(2) + "s";
+    };
+    slider.oninput = () => show(Number(slider.value));
+    document.getElementById("compareViewer").classList.remove("hidden");
+    show(0);
+    status.textContent = "";
+  } catch (error) {
+    status.textContent = "Failed: " + error.message;
+  } finally {
+    btn.disabled = false;
+  }
+};
 </script>
 </body>
 </html>

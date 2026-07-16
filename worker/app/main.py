@@ -319,6 +319,120 @@ def dev_analyze_clip(request: DevAnalyzeRequest):
     )
 
 
+class DevPoseCompareRequest(BaseModel):
+    file: str
+    trim_start_seconds: float = Field(default=0, ge=0)
+    trim_end_seconds: float | None = Field(default=None, ge=0)
+    max_frames: int = Field(default=48, ge=4, le=120)
+
+
+_rtmpose_engine = None
+
+
+def _rtmpose():
+    """Lazy: rtmlib is a dev-only dependency; production code paths never import it."""
+    global _rtmpose_engine
+    if _rtmpose_engine is None:
+        from rtmlib import BodyWithFeet
+
+        _rtmpose_engine = BodyWithFeet(mode="balanced", backend="onnxruntime", device="cpu")
+    return _rtmpose_engine
+
+
+@app.post("/dev/pose-compare")
+def dev_pose_compare(request: DevPoseCompareRequest):
+    """Same frames through both pose engines, returned as side-by-side JPEGs:
+    MediaPipe heavy (what production runs) on the left, RTMPose (candidate
+    replacement, halpe26 body+feet) on the right."""
+    require_dev_ui()
+    from rtmlib import draw_skeleton
+
+    clip_path = resolve_clip_path(request.file)
+    capture = cv2.VideoCapture(str(clip_path))
+    if not capture.isOpened():
+        raise HTTPException(status_code=422, detail="Could not open video.")
+    fps = capture.get(cv2.CAP_PROP_FPS) or 30
+    total_frames = int(capture.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+    duration = total_frames / fps if fps else 0.0
+    start = max(0.0, min(request.trim_start_seconds, max(duration - 0.1, 0.0)))
+    end = duration if request.trim_end_seconds is None else min(request.trim_end_seconds, duration)
+    end = max(end, start + 0.1)
+    stride = max(1, math.ceil((end - start) * fps / request.max_frames))
+
+    pose = mp.solutions.pose.Pose(
+        static_image_mode=False,
+        model_complexity=2,
+        enable_segmentation=False,
+        min_detection_confidence=0.3,
+        min_tracking_confidence=0.3,
+    )
+    rtm = _rtmpose()
+    drawer = mp.solutions.drawing_utils
+
+    capture.set(cv2.CAP_PROP_POS_MSEC, start * 1000.0)
+    frames: list[dict] = []
+    mp_hits = rtm_hits = 0
+    mp_seconds = rtm_seconds = 0.0
+    index = 0
+    while True:
+        ok, frame = capture.read()
+        if not ok:
+            break
+        stamp = start + index / fps
+        if stamp > end + 1e-6:
+            break
+        keep = index % stride == 0
+        index += 1
+        if not keep:
+            continue
+
+        scale = 640 / frame.shape[1]
+        small = cv2.resize(frame, (640, int(frame.shape[0] * scale)))
+
+        left = small.copy()
+        tick = time.perf_counter()
+        result = pose.process(cv2.cvtColor(small, cv2.COLOR_BGR2RGB))
+        mp_seconds += time.perf_counter() - tick
+        mp_found = result.pose_landmarks is not None
+        if mp_found:
+            mp_hits += 1
+            drawer.draw_landmarks(left, result.pose_landmarks, mp.solutions.pose.POSE_CONNECTIONS)
+
+        right = small.copy()
+        tick = time.perf_counter()
+        keypoints, scores = rtm(small)
+        rtm_seconds += time.perf_counter() - tick
+        rtm_found = len(scores) > 0 and float(np.median(scores[0])) > 0.3
+        if rtm_found:
+            rtm_hits += 1
+            right = draw_skeleton(right, keypoints, scores, kpt_thr=0.3)
+
+        encoded_ok, jpg = cv2.imencode(".jpg", np.hstack([left, right]), [cv2.IMWRITE_JPEG_QUALITY, 78])
+        if encoded_ok:
+            frames.append(
+                {
+                    "time": round(stamp, 2),
+                    "image": base64.b64encode(jpg.tobytes()).decode("ascii"),
+                    "mediapipe": mp_found,
+                    "rtmpose": rtm_found,
+                }
+            )
+    capture.release()
+    pose.close()
+
+    sampled = max(len(frames), 1)
+    return {
+        "frames": frames,
+        "summary": {
+            "sampled": len(frames),
+            "mediapipe_hits": mp_hits,
+            "rtmpose_hits": rtm_hits,
+            "mediapipe_ms": round(mp_seconds / sampled * 1000),
+            "rtmpose_ms": round(rtm_seconds / sampled * 1000),
+        },
+    }
+
+
 # --- AI keyframe search (search first, measure second) ------------------------
 
 EVENT_PHASE: dict[str, Phase] = {
