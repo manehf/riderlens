@@ -104,7 +104,11 @@ export type ProcessRecordInput = {
 };
 
 /** Publish an explicitly shared clip and return its public page URL. */
-export async function createShareLink(videoUri: string, airtimeSeconds?: number): Promise<string> {
+export async function createShareLink(
+  videoUri: string,
+  airtimeSeconds?: number,
+  riderName?: string
+): Promise<string> {
   const workerUrl = await resolveWorkerUrl();
   if (!workerUrl) {
     throw new Error("Could not reach the share service. Check your connection and retry.");
@@ -113,6 +117,9 @@ export async function createShareLink(videoUri: string, airtimeSeconds?: number)
   formData.append("video", videoFormPart(videoUri));
   if (airtimeSeconds) {
     formData.append("airtime_seconds", String(airtimeSeconds));
+  }
+  if (riderName?.trim()) {
+    formData.append("rider_name", riderName.trim());
   }
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 120000);

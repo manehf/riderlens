@@ -2197,6 +2197,7 @@ def create_share(
     video: UploadFile = File(...),
     airtime_seconds: float | None = Form(None),
     height_meters: float | None = Form(None),
+    rider_name: str | None = Form(None),
 ):
     bucket = _share_storage()
     upload_id = _save_capture_upload(video)
@@ -2226,6 +2227,7 @@ def create_share(
             "durationSeconds": round(duration, 2),
             "airtimeSeconds": airtime_seconds,
             "heightMeters": height_meters,
+            "riderName": (rider_name or "").strip()[:40] or None,
         }
         with open(video_path, "rb") as handle:
             bucket.upload(f"{share_id}/clip.mp4", handle.read(), {"content-type": "video/mp4"})
@@ -2265,10 +2267,21 @@ def _render_share_page(share_id: str) -> HTMLResponse:
     if airtime:
         description = f"{float(airtime):.2f}s of airtime - " + description
 
+    from html import escape
+
+    rider_name = (meta.get("riderName") or "").strip()
+    if rider_name:
+        headline = f"{escape(rider_name)} shared <em>this send</em>"
+        og_title = f"{rider_name} shared a send with you \U0001F440"
+    else:
+        headline = "You have to see <em>this send</em>"
+        og_title = "You have to see this send \U0001F440"
+
     html = SHARE_HTML_PATH.read_text(encoding="utf-8")
     replacements = {
         "{{TITLE}}": "You have to see this send",
-        "{{OG_TITLE}}": "You have to see this send \U0001F440",
+        "{{HEADLINE}}": headline,
+        "{{OG_TITLE}}": og_title,
         "{{OG_DESCRIPTION}}": description,
         "{{PAGE_URL}}": f"{SHARE_BASE_URL}/{share_id}",
         "{{POSTER_URL}}": _share_public_url(share_id, "poster.jpg"),

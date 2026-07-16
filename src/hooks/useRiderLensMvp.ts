@@ -504,7 +504,7 @@ export function useRiderLensMvp(): RiderLensStore {
             Alert.alert("Nothing to share yet", "This record has no processed clip.");
             return;
           }
-          url = await createShareLink(uri, record.flight?.airtimeSeconds);
+          url = await createShareLink(uri, record.flight?.airtimeSeconds, profile.name);
           const shareUrl = url;
           updateRecord(record.id, (current) => ({ ...current, shareUrl }));
         }
@@ -516,7 +516,7 @@ export function useRiderLensMvp(): RiderLensStore {
         );
       }
     },
-    [updateRecord]
+    [profile.name, updateRecord]
   );
 
   // The native system camera (via the image picker) beats any embedded
