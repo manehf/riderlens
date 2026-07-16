@@ -103,6 +103,39 @@ export type ProcessRecordInput = {
   rotateDegrees?: number;
 };
 
+/** Publish an explicitly shared clip and return its public page URL. */
+export async function createShareLink(videoUri: string, airtimeSeconds?: number): Promise<string> {
+  const workerUrl = await resolveWorkerUrl();
+  if (!workerUrl) {
+    throw new Error("Could not reach the share service. Check your connection and retry.");
+  }
+  const formData = new FormData();
+  formData.append("video", videoFormPart(videoUri));
+  if (airtimeSeconds) {
+    formData.append("airtime_seconds", String(airtimeSeconds));
+  }
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 120000);
+  try {
+    const response = await fetch(`${workerUrl}/share`, {
+      method: "POST",
+      headers: workerHeaders(),
+      body: formData,
+      signal: controller.signal
+    });
+    if (!response.ok) {
+      throw new WorkerResponseError(await readDetail(response));
+    }
+    const payload = (await response.json()) as { shareUrl?: string };
+    if (!payload.shareUrl) {
+      throw new Error("The share service returned no link.");
+    }
+    return payload.shareUrl;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 /** Turn a confirmed window into the record. Throws with a readable message on failure
  * so the record can be kept as pending and retried later. */
 export async function processRecord(input: ProcessRecordInput): Promise<RecordPayload> {

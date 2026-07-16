@@ -168,6 +168,8 @@ export type JumpRecord = {
   tags?: string[];
   /** Present when the AI events describe a takeoff→landing flight. */
   flight?: FlightEstimate;
+  /** Public share-page URL, set the first time the rider shares a link. */
+  shareUrl?: string;
   error?: string;
 };
 

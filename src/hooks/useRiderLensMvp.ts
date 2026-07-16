@@ -16,7 +16,7 @@ import {
   usedThisMonth,
   type FreeAllowance
 } from "../services/analysisAllowance";
-import { isAnalysisWorkerReachable, processRecord } from "../services/capture";
+import { createShareLink, isAnalysisWorkerReachable, processRecord } from "../services/capture";
 import {
   createInitialAnalysisWindow,
   fitAnalysisWindow,
@@ -96,6 +96,7 @@ export type RiderLensStore = {
   profile: RiderProfile;
   saveProfile: (updates: Partial<RiderProfile>) => void;
   shareRecordClip: (record: JumpRecord, preferSkeleton?: boolean) => Promise<void>;
+  shareRecordLink: (record: JumpRecord) => Promise<void>;
   uploadVideoFromLibrary: () => Promise<void>;
   analysisAccess: AnalysisAccess;
   garage: GarageState;
@@ -493,6 +494,31 @@ export function useRiderLensMvp(): RiderLensStore {
     });
   }, []);
 
+  const shareRecordLink = useCallback(
+    async (record: JumpRecord) => {
+      try {
+        let url = record.shareUrl;
+        if (!url) {
+          const uri = record.skeletonClipUri ?? record.clipUri;
+          if (!uri) {
+            Alert.alert("Nothing to share yet", "This record has no processed clip.");
+            return;
+          }
+          url = await createShareLink(uri, record.flight?.airtimeSeconds);
+          const shareUrl = url;
+          updateRecord(record.id, (current) => ({ ...current, shareUrl }));
+        }
+        await Share.share({ message: `You have to see this send \u{1F440} ${url}` });
+      } catch (error) {
+        Alert.alert(
+          "Couldn't create the link",
+          error instanceof Error ? error.message : "Check your connection and retry."
+        );
+      }
+    },
+    [updateRecord]
+  );
+
   // The native system camera (via the image picker) beats any embedded
   // viewfinder: full-screen preview, zoom, exposure, flash — and it hands back
   // a file exactly like the library path.
@@ -635,6 +661,7 @@ export function useRiderLensMvp(): RiderLensStore {
     profile,
     saveProfile,
     shareRecordClip,
+    shareRecordLink,
     uploadVideoFromLibrary,
     analysisAccess,
     garage,

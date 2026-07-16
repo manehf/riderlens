@@ -171,6 +171,7 @@ export function SessionsScreen({ store }: SessionsScreenProps) {
                 record={openRecord}
                 showTitle={false}
                 onShare={store.shareRecordClip}
+                onShareLink={store.shareRecordLink}
                 onRetry={(record) => store.retryRecord(record.id)}
                 onReprocess={(record) => {
                   setOpenRecordId(undefined);

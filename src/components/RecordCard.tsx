@@ -20,6 +20,7 @@ import {
 } from "lucide-react-native";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  Alert,
   Image,
   Modal,
   Pressable,
@@ -42,6 +43,7 @@ import { AppText, Button, Card, Chip, NumberText } from "./ui";
 type RecordCardProps = {
   record: JumpRecord;
   onShare?: (record: JumpRecord, preferSkeleton?: boolean) => void;
+  onShareLink?: (record: JumpRecord) => void;
   onRetry?: (record: JumpRecord) => void;
   /** Reopen the trim step to fix rotation or the window and rebuild the record. */
   onReprocess?: (record: JumpRecord) => void;
@@ -812,7 +814,7 @@ function TagSection({ record, suggestions, onAdd, onRemove }: TagSectionProps) {
   );
 }
 
-export function RecordCard({ record, onShare, onRetry, onDelete, onReprocess, onAddTag, onRemoveTag, tagSuggestions, showTitle = true }: RecordCardProps) {
+export function RecordCard({ record, onShare, onShareLink, onRetry, onDelete, onReprocess, onAddTag, onRemoveTag, tagSuggestions, showTitle = true }: RecordCardProps) {
   const [detail, setDetail] = useState<JumpRecordDetail | undefined>();
   const [zoomed, setZoomed] = useState<FilmstripFrame | undefined>();
   const [mode, setMode] = useState<ViewerMode>("skeleton");
@@ -970,7 +972,18 @@ export function RecordCard({ record, onShare, onRetry, onDelete, onReprocess, on
             icon={Share2}
             variant="secondary"
             size="sm"
-            onPress={() => onShare(record, mode === "skeleton" && Boolean(record.skeletonClipUri))}
+            onPress={() => {
+              const preferSkeleton = mode === "skeleton" && Boolean(record.skeletonClipUri);
+              if (!onShareLink) {
+                onShare(record, preferSkeleton);
+                return;
+              }
+              Alert.alert("Share the send", "A link opens in any browser with frame stepping; the video file plays anywhere.", [
+                { text: "Share link", onPress: () => onShareLink(record) },
+                { text: "Share video", onPress: () => onShare(record, preferSkeleton) },
+                { text: "Cancel", style: "cancel" }
+              ]);
+            }}
             style={styles.actionButton}
           >
             Share
