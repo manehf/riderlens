@@ -7,8 +7,9 @@ person detector (YOLOX, re-run every ``det_stride`` frames, pose-tracked
 between) and RTMPose-halpe26 on the detected crop, then remaps its 26
 keypoints into the same 33-slot layout.
 
-Selection: ``POSE_ENGINE=rtmpose|mediapipe`` (default mediapipe, so a bad
-deploy can be reverted by unsetting one env var).
+Selection: ``POSE_ENGINE=rtmpose|mediapipe``. RTMPose is the default since
+it shipped to production (July 2026); set ``POSE_ENGINE=mediapipe`` to
+revert to the legacy engine.
 
 The honesty gate lives here: when no rider clears the confidence floor the
 engine returns ``None`` and the caller draws nothing — a missing skeleton
@@ -172,6 +173,6 @@ def create_pose_engine(
 ):
     """Factory honoring POSE_ENGINE; per-call confidences apply to MediaPipe,
     RTMPose uses its own score floor."""
-    if os.getenv("POSE_ENGINE", "mediapipe").strip().lower() == "rtmpose":
+    if os.getenv("POSE_ENGINE", "rtmpose").strip().lower() == "rtmpose":
         return RTMPoseEngine()
     return MediaPipeEngine(min_detection_confidence, min_tracking_confidence)
