@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>{{TITLE}} · RiderLens</title>
   <meta name="robots" content="noindex" />
+  <meta name="apple-itunes-app" content="app-id=6790874129" />
 
   <meta property="og:type" content="video.other" />
   <meta property="og:site_name" content="RiderLens" />
@@ -51,6 +52,10 @@
     .controls button { flex: 1; background: #232c22; color: var(--card-ink); border: 1px solid var(--card-line);
                        border-radius: 10px; padding: 11px 0; font-family: var(--mono); font-size: 13px; cursor: pointer; }
     .controls button.primary { background: var(--accent); color: #101411; border: 0; font-weight: 700; }
+    .download-row { display: flex; justify-content: center; padding: 0 14px 16px; }
+    .download-link { color: var(--accent); font-size: 14px; font-weight: 700; text-decoration: none;
+                     border-bottom: 1px solid rgba(182, 255, 46, 0.55); padding: 3px 1px; }
+    .download-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
 
     .band { background:
         radial-gradient(640px 420px at 12% 18%, #EBF93A 0%, rgba(235, 249, 58, 0) 62%),
@@ -96,6 +101,9 @@
         <button onclick="step(1)">+ frame</button>
         <button onclick="slow()" id="slowBtn">¼ speed</button>
       </div>
+      <div class="download-row">
+        <a class="download-link" href="{{DOWNLOAD_URL}}">Download video</a>
+      </div>
     </div>
   </div>
 
@@ -105,7 +113,7 @@
         <h2>Download now</h2>
         <p>See your riding,<br />frame by frame.</p>
         <div class="stores">
-          <a href="https://apps.apple.com/app/id6790874129" target="_blank" rel="noopener noreferrer" aria-label="Download on the App Store"><img src="https://riderlens.app/assets/apple-store.svg" alt="Download on the App Store" /></a>
+          <a href="https://apps.apple.com/us/app/riderlens-mtb-skills-analysis/id6790874129" target="_blank" rel="noopener noreferrer" aria-label="Download on the App Store"><img src="https://riderlens.app/assets/apple-store.svg" alt="Download on the App Store" /></a>
           <a href="https://play.google.com/store/apps/details?id=com.riderlens.app" target="_blank" rel="noopener noreferrer" aria-label="Get it on Google Play"><img src="https://riderlens.app/assets/google-play.svg" alt="Get it on Google Play" /></a>
         </div>
       </div>

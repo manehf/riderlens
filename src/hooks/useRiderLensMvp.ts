@@ -23,7 +23,7 @@ import {
   MIN_ANALYSIS_WINDOW_SECONDS,
   updateAnalysisWindow
 } from "../services/captureWindow";
-import { isLikelyFragmentedMp4 } from "../services/videoFormat";
+import { isInterruptedVideoImport, isLikelyFragmentedMp4 } from "../services/videoFormat";
 import {
   backfillPoster,
   deleteRecordFiles,
@@ -95,7 +95,7 @@ export type RiderLensStore = {
   knownTags: string[];
   profile: RiderProfile;
   saveProfile: (updates: Partial<RiderProfile>) => void;
-  shareRecordClip: (record: JumpRecord, preferSkeleton?: boolean) => Promise<void>;
+  exportRecordVideo: (record: JumpRecord, preferSkeleton?: boolean) => Promise<void>;
   shareRecordLink: (record: JumpRecord) => Promise<void>;
   uploadVideoFromLibrary: () => Promise<void>;
   analysisAccess: AnalysisAccess;
@@ -471,9 +471,9 @@ export function useRiderLensMvp(): RiderLensStore {
     return [...seen.values()];
   }, [records]);
 
-  // Share whichever lens is active: the skeleton version carries the watermark
-  // and QR end-card (the growth loop), the clean clip is just the footage.
-  const shareRecordClip = useCallback(async (record: JumpRecord, preferSkeleton = false) => {
+  // Export whichever lens is active. Distribution uses the hosted share page;
+  // this remains a secondary utility for social posts and offline file use.
+  const exportRecordVideo = useCallback(async (record: JumpRecord, preferSkeleton = false) => {
     const uri = preferSkeleton && record.skeletonClipUri ? record.skeletonClipUri : record.clipUri;
     if (uri) {
       if (Platform.OS === "ios") {
@@ -523,46 +523,63 @@ export function useRiderLensMvp(): RiderLensStore {
   // viewfinder: full-screen preview, zoom, exposure, flash — and it hands back
   // a file exactly like the library path.
   const uploadVideoFromLibrary = useCallback(async () => {
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) {
-      Alert.alert("Photo access needed", "Allow video library access to pick a riding clip.");
-      return;
-    }
-
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ["videos"],
-      quality: 1,
-      // RiderLens owns the single trim step after picking; opening the iOS
-      // editor here created two competing selection experiences.
-      allowsEditing: false,
-      // iOS transcodes the picked video to 1080p H.264 on-device before we
-      // ever see it; Android ignores this and relies on worker normalization.
-      videoExportPreset: ImagePicker.VideoExportPreset.H264_1920x1080
-    });
-
-    if (result.canceled) return;
-    const asset = result.assets[0];
-    // Streaming containers (fragmented MP4) scrub unreliably in the trim
-    // preview even though analysis normalizes them fine — warn, don't block.
-    void isLikelyFragmentedMp4(asset.uri).then((fragmented) => {
-      if (fragmented) {
-        Alert.alert(
-          "Streaming-format video",
-          "This clip uses a streaming container, so the preview may not scrub smoothly. The analysis itself will still work."
-        );
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert("Photo access needed", "Allow video library access to pick a riding clip.");
+        return;
       }
-    });
-    const rawDuration = asset.duration ?? 6000;
-    const durationSeconds = rawDuration > 1000 ? rawDuration / 1000 : rawDuration;
-    if (durationSeconds > LIBRARY_MAX_SECONDS) {
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ["videos"],
+        quality: 1,
+        // RiderLens owns the single trim step after picking; opening the iOS
+        // editor here created two competing selection experiences.
+        allowsEditing: false,
+        // Keep the original representation. The worker already normalizes
+        // orientation, dimensions, and codec, so an extra iOS export only adds
+        // latency, temporary storage pressure, and another failure point.
+        videoExportPreset: ImagePicker.VideoExportPreset.Passthrough,
+        preferredAssetRepresentationMode: ImagePicker.UIImagePickerPreferredAssetRepresentationMode.Current
+      });
+
+      if (result.canceled) return;
+      const asset = result.assets[0];
+      if (!asset) {
+        Alert.alert("Couldn't open video", "No video was returned. Choose the clip again.");
+        return;
+      }
+
+      // Streaming containers (fragmented MP4) scrub unreliably in the trim
+      // preview even though analysis normalizes them fine — warn, don't block.
+      void isLikelyFragmentedMp4(asset.uri).then((fragmented) => {
+        if (fragmented) {
+          Alert.alert(
+            "Streaming-format video",
+            "This clip uses a streaming container, so the preview may not scrub smoothly. The analysis itself will still work."
+          );
+        }
+      });
+      const rawDuration = asset.duration ?? 6000;
+      const durationSeconds = rawDuration > 1000 ? rawDuration / 1000 : rawDuration;
+      if (durationSeconds > LIBRARY_MAX_SECONDS) {
+        Alert.alert(
+          "Long video",
+          "Choose a clip under 30 seconds, then select the moment inside RiderLens.",
+          [{ text: "OK" }]
+        );
+        return;
+      }
+      startCaptureFromUri(asset.uri, durationSeconds);
+    } catch (error) {
+      const interrupted = isInterruptedVideoImport(error);
       Alert.alert(
-        "Long video",
-        "Choose a clip under 30 seconds, then select the moment inside RiderLens.",
-        [{ text: "OK" }]
+        interrupted ? "Video import interrupted" : "Couldn't open video",
+        interrupted
+          ? "iOS stopped preparing this video. Keep RiderLens open and try again. If it is stored in iCloud, open it in Photos first so it finishes downloading."
+          : "RiderLens couldn't read this video. Try another clip or export a copy from Photos."
       );
-      return;
     }
-    startCaptureFromUri(asset.uri, durationSeconds);
   }, [startCaptureFromUri]);
 
   const saveProfile = useCallback((updates: Partial<RiderProfile>) => {
@@ -660,7 +677,7 @@ export function useRiderLensMvp(): RiderLensStore {
     knownTags,
     profile,
     saveProfile,
-    shareRecordClip,
+    exportRecordVideo,
     shareRecordLink,
     uploadVideoFromLibrary,
     analysisAccess,

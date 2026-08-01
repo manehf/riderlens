@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import hmac
 import logging
@@ -36,10 +37,19 @@ except ImportError:  # pragma: no cover - dotenv ships with pydantic-settings
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import HTMLResponse
-from pydantic import BaseModel, Field
+from fastapi.responses import HTMLResponse, RedirectResponse
+from pydantic import BaseModel, Field, TypeAdapter, ValidationError
 
 from .pose_engine import create_pose_engine
+from .share_manifest import (
+    ShareAssetsV1,
+    ShareControlV1,
+    ShareDetailV1,
+    ShareEventV1,
+    ShareFlightV1,
+    ShareManifestV1,
+    ShareSkillType,
+)
 
 try:
     import cv2
@@ -248,7 +258,9 @@ DEV_HTML_PATH = FilePath(__file__).resolve().parent / "dev.html"
 SHARE_HTML_PATH = FilePath(__file__).resolve().parent / "share.html"
 SHARE_BUCKET = "shares"
 SHARE_BASE_URL = os.getenv("SHARE_BASE_URL", "https://s.riderlens.app").rstrip("/")
-SHARE_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{8,20}$")
+SHARE_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{8,32}$")
+SHARE_ASSET_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+SHARE_EVENTS_ADAPTER = TypeAdapter(list[ShareEventV1])
 
 
 def require_dev_ui() -> None:
@@ -2171,8 +2183,8 @@ def capture_record(
 
 # --- Share pages ---------------------------------------------------------------
 # The growth loop: an explicitly shared record becomes a public page under an
-# unguessable ID. Storage-only design (clip + poster + meta.json in a public
-# Supabase bucket) - no schema, easy deletion, nothing enumerable.
+# unguessable ID. Storage-only design (media + versioned manifest in a public
+# Supabase bucket) keeps the share package portable and non-enumerable.
 
 
 def _share_public_url(share_id: str, name: str) -> str:
@@ -2192,60 +2204,284 @@ def _share_storage():
     return storage.from_(SHARE_BUCKET)
 
 
-@app.post("/share", dependencies=PROTECTED)
-def create_share(
-    video: UploadFile = File(...),
-    airtime_seconds: float | None = Form(None),
-    height_meters: float | None = Form(None),
-    rider_name: str | None = Form(None),
-):
-    bucket = _share_storage()
-    upload_id = _save_capture_upload(video)
-    video_path = str(_capture_path(upload_id))
-    share_id = secrets.token_urlsafe(8).replace("=", "")
-    poster_path = None
+def _save_share_upload(upload: UploadFile, destination: FilePath, max_bytes: int, label: str) -> None:
+    """Stream one share asset to temporary storage without buffering the request."""
+    written = 0
     try:
-        duration = video_duration_seconds(video_path)
-        # Poster from a third of the way in: past the approach, before the
-        # endcard - the frame WhatsApp/iMessage previews lead with.
-        poster_path = video_path + ".poster.jpg"
+        with destination.open("wb") as output:
+            while chunk := upload.file.read(1024 * 1024):
+                written += len(chunk)
+                if written > max_bytes:
+                    raise HTTPException(
+                        status_code=413,
+                        detail=f"{label} is too large (over {max_bytes // (1024 * 1024)} MB).",
+                    )
+                output.write(chunk)
+        if written == 0:
+            raise HTTPException(status_code=422, detail=f"{label} is empty.")
+    except Exception:
+        destination.unlink(missing_ok=True)
+        raise
+
+
+def _validate_share_video(video_path: FilePath, label: str) -> float:
+    duration = video_duration_seconds(str(video_path))
+    if duration <= 0:
+        raise HTTPException(status_code=422, detail=f"Could not read the {label.lower()} duration.")
+    max_duration = float(os.getenv("RIDERLENS_MAX_SHARE_DURATION_SECONDS", "15"))
+    if duration > max_duration:
+        raise HTTPException(
+            status_code=422,
+            detail=f"{label} must be {max_duration:g} seconds or shorter.",
+        )
+    return duration
+
+
+def _extract_share_poster(video_path: FilePath, poster_path: FilePath, duration: float) -> None:
+    """Create the social preview frame after the approach and before any endcard."""
+    try:
         subprocess.run(
             [
                 "ffmpeg", "-y", "-loglevel", "error",
                 "-ss", f"{max(0.0, duration * 0.35):.2f}",
-                "-i", video_path,
+                "-i", str(video_path),
                 "-frames:v", "1",
                 "-vf", "scale='min(1280,iw)':-2",
                 "-q:v", "3",
-                poster_path,
+                str(poster_path),
             ],
             check=True,
             timeout=60,
         )
-        meta = {
-            "createdAt": datetime.now(timezone.utc).isoformat(),
-            "durationSeconds": round(duration, 2),
-            "airtimeSeconds": airtime_seconds,
-            "heightMeters": height_meters,
-            "riderName": (rider_name or "").strip()[:40] or None,
-        }
-        with open(video_path, "rb") as handle:
-            bucket.upload(f"{share_id}/clip.mp4", handle.read(), {"content-type": "video/mp4"})
-        with open(poster_path, "rb") as handle:
-            bucket.upload(f"{share_id}/poster.jpg", handle.read(), {"content-type": "image/jpeg"})
-        bucket.upload(
-            f"{share_id}/meta.json",
-            json.dumps(meta).encode("utf-8"),
-            {"content-type": "application/json"},
+    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as error:
+        logger.warning("share poster extraction failed: %s", error)
+        raise HTTPException(status_code=500, detail="Could not create the shared clip preview.")
+
+
+def _validate_share_poster(poster_path: FilePath) -> None:
+    if not poster_path.exists() or poster_path.stat().st_size == 0:
+        raise HTTPException(status_code=422, detail="Poster image is empty.")
+    if cv2 is not None and cv2.imread(str(poster_path)) is None:
+        raise HTTPException(status_code=422, detail="Poster must be a valid image.")
+
+
+def _parse_share_flight(flight_json: str | None) -> ShareFlightV1 | None:
+    if not flight_json:
+        return None
+    try:
+        return ShareFlightV1.model_validate_json(flight_json)
+    except (ValidationError, ValueError):
+        raise HTTPException(status_code=422, detail="flight_json is not a valid flight estimate.")
+
+
+def _parse_share_events(events_json: str | None) -> list[ShareEventV1]:
+    if not events_json:
+        return []
+    try:
+        return SHARE_EVENTS_ADAPTER.validate_json(events_json)
+    except (ValidationError, ValueError):
+        raise HTTPException(status_code=422, detail="events_json must be a valid event list.")
+
+
+def _read_valid_share_detail(detail_path: FilePath) -> bytes:
+    payload = detail_path.read_bytes()
+    try:
+        ShareDetailV1.model_validate_json(payload)
+    except (ValidationError, ValueError):
+        raise HTTPException(
+            status_code=422,
+            detail="detail must be JSON with series and filmstrip arrays.",
         )
-    finally:
-        FilePath(video_path).unlink(missing_ok=True)
-        if poster_path:
-            FilePath(poster_path).unlink(missing_ok=True)
-    return {"id": share_id, "shareUrl": f"{SHARE_BASE_URL}/{share_id}"}
+    return payload
 
 
-def _render_share_page(share_id: str) -> HTMLResponse:
+def _upload_share_object(bucket, uploaded: list[str], path: str, payload: bytes, content_type: str) -> None:
+    bucket.upload(path, payload, {"content-type": content_type})
+    uploaded.append(path)
+
+
+def _remove_share_objects(bucket, paths: list[str]) -> None:
+    if not paths:
+        return
+    try:
+        bucket.remove(paths)
+    except Exception as error:  # pragma: no cover - best-effort rollback after storage failure
+        logger.warning("share rollback failed paths=%s error=%s", paths, error)
+
+
+@app.post("/share", dependencies=PROTECTED)
+def create_share(
+    video: UploadFile | None = File(None),
+    clean_video: UploadFile | None = File(None),
+    skeleton_video: UploadFile | None = File(None),
+    poster: UploadFile | None = File(None),
+    detail: UploadFile | None = File(None),
+    skill_type: ShareSkillType = Form("regular_jump"),
+    flight_json: str | None = Form(None),
+    events_json: str | None = Form(None),
+    shared_by_name: str | None = Form(None),
+    airtime_seconds: float | None = Form(None),
+    height_meters: float | None = Form(None),
+    rider_name: str | None = Form(None),
+):
+    enriched = clean_video is not None
+    if video is not None and enriched:
+        raise HTTPException(status_code=422, detail="Send either video or clean_video, not both.")
+    if video is None and not enriched:
+        raise HTTPException(status_code=422, detail="A video or clean_video file is required.")
+    if not enriched and any(asset is not None for asset in (skeleton_video, poster, detail)):
+        raise HTTPException(status_code=422, detail="Enriched share assets require clean_video.")
+    if enriched and detail is None:
+        raise HTTPException(status_code=422, detail="Enriched shares require a detail file.")
+    if airtime_seconds is not None and airtime_seconds < 0:
+        raise HTTPException(status_code=422, detail="airtime_seconds cannot be negative.")
+    if height_meters is not None and height_meters < 0:
+        raise HTTPException(status_code=422, detail="height_meters cannot be negative.")
+
+    flight = _parse_share_flight(flight_json)
+    events = _parse_share_events(events_json)
+    shared_name = (shared_by_name if shared_by_name is not None else rider_name or "").strip()[:40] or None
+    share_id = secrets.token_urlsafe(16)
+    delete_token = secrets.token_urlsafe(16)
+    created_at = datetime.now(timezone.utc).isoformat()
+    max_video_bytes = int(os.getenv("RIDERLENS_MAX_SHARE_VIDEO_BYTES", str(128 * 1024 * 1024)))
+    max_poster_bytes = int(os.getenv("RIDERLENS_MAX_SHARE_POSTER_BYTES", str(10 * 1024 * 1024)))
+    max_detail_bytes = int(os.getenv("RIDERLENS_MAX_SHARE_DETAIL_BYTES", str(32 * 1024 * 1024)))
+
+    with tempfile.TemporaryDirectory(prefix="riderlens-share-") as temporary:
+        temp_dir = FilePath(temporary)
+        if enriched:
+            clean_path = temp_dir / "clean.mp4"
+            _save_share_upload(clean_video, clean_path, max_video_bytes, "Clean video")
+            duration = _validate_share_video(clean_path, "Clean video")
+
+            skeleton_path = None
+            skeleton_duration = None
+            if skeleton_video is not None:
+                skeleton_path = temp_dir / "skeleton.mp4"
+                _save_share_upload(skeleton_video, skeleton_path, max_video_bytes, "Skeleton video")
+                skeleton_duration = _validate_share_video(skeleton_path, "Skeleton video")
+
+            detail_path = temp_dir / "detail.json"
+            _save_share_upload(detail, detail_path, max_detail_bytes, "Record detail")
+            detail_payload = _read_valid_share_detail(detail_path)
+
+            poster_path = temp_dir / "poster.jpg"
+            if poster is not None:
+                _save_share_upload(poster, poster_path, max_poster_bytes, "Poster image")
+            else:
+                poster_source = skeleton_path or clean_path
+                poster_duration = skeleton_duration if skeleton_duration is not None else duration
+                _extract_share_poster(poster_source, poster_path, poster_duration)
+            _validate_share_poster(poster_path)
+
+            playback_name = "skeleton.mp4" if skeleton_path is not None else "clean.mp4"
+            assets = ShareAssetsV1(
+                clean="clean.mp4",
+                skeleton="skeleton.mp4" if skeleton_path is not None else None,
+                poster="poster.jpg",
+                detail="detail.json",
+                playback=playback_name,
+            )
+            video_objects = [("clean.mp4", clean_path)]
+            if skeleton_path is not None:
+                video_objects.append(("skeleton.mp4", skeleton_path))
+        else:
+            clip_path = temp_dir / "clip.mp4"
+            _save_share_upload(video, clip_path, max_video_bytes, "Video")
+            duration = _validate_share_video(clip_path, "Video")
+            poster_path = temp_dir / "poster.jpg"
+            _extract_share_poster(clip_path, poster_path, duration)
+            _validate_share_poster(poster_path)
+            detail_payload = None
+            assets = ShareAssetsV1(clean="clip.mp4", poster="poster.jpg", playback="clip.mp4")
+            video_objects = [("clip.mp4", clip_path)]
+
+        manifest = ShareManifestV1(
+            shareId=share_id,
+            createdAt=created_at,
+            skillType=skill_type,
+            durationSeconds=round(duration, 2),
+            sharedByName=shared_name,
+            flight=flight,
+            events=events,
+            assets=assets,
+            airtimeSeconds=airtime_seconds if not enriched else None,
+            heightMeters=height_meters if not enriched else None,
+        )
+        control = ShareControlV1(
+            shareId=share_id,
+            createdAt=created_at,
+            deleteTokenHash=hashlib.sha256(delete_token.encode("utf-8")).hexdigest(),
+        )
+
+        bucket = _share_storage()
+        uploaded: list[str] = []
+        try:
+            for name, path in video_objects:
+                _upload_share_object(bucket, uploaded, f"{share_id}/{name}", path.read_bytes(), "video/mp4")
+            _upload_share_object(
+                bucket,
+                uploaded,
+                f"{share_id}/poster.jpg",
+                poster_path.read_bytes(),
+                "image/jpeg",
+            )
+            if detail_payload is not None:
+                _upload_share_object(
+                    bucket,
+                    uploaded,
+                    f"{share_id}/detail.json",
+                    detail_payload,
+                    "application/json",
+                )
+            _upload_share_object(
+                bucket,
+                uploaded,
+                f"{share_id}/meta.json",
+                manifest.model_dump_json(exclude_none=True).encode("utf-8"),
+                "application/json",
+            )
+            _upload_share_object(
+                bucket,
+                uploaded,
+                f"{share_id}/control.json",
+                control.model_dump_json().encode("utf-8"),
+                "application/json",
+            )
+        except HTTPException:
+            _remove_share_objects(bucket, uploaded)
+            raise
+        except Exception as error:
+            _remove_share_objects(bucket, uploaded)
+            logger.exception("share upload failed share_id=%s", share_id)
+            raise HTTPException(status_code=502, detail="Could not publish the shared clip.") from error
+
+    return {
+        "id": share_id,
+        "shareUrl": f"{SHARE_BASE_URL}/{share_id}",
+        "deleteToken": delete_token,
+        "schemaVersion": 1,
+    }
+
+
+def _share_asset_name(meta: dict, key: str, fallback: str) -> str:
+    assets = meta.get("assets")
+    value = assets.get(key) if isinstance(assets, dict) else None
+    if isinstance(value, str) and SHARE_ASSET_PATTERN.fullmatch(value):
+        return value
+    return fallback
+
+
+def _share_number(value) -> float | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if math.isfinite(number) else None
+
+
+def _load_share_meta(share_id: str) -> tuple[object, dict]:
     if not SHARE_ID_PATTERN.match(share_id):
         raise HTTPException(status_code=404, detail="Not found.")
     bucket = _share_storage()
@@ -2253,29 +2489,42 @@ def _render_share_page(share_id: str) -> HTMLResponse:
         meta = json.loads(bucket.download(f"{share_id}/meta.json").decode("utf-8"))
     except Exception:
         raise HTTPException(status_code=404, detail="This shared clip is gone.")
+    if not isinstance(meta, dict):
+        raise HTTPException(status_code=404, detail="This shared clip is gone.")
+    return bucket, meta
 
+
+def _render_share_page(share_id: str) -> HTMLResponse:
+    _, meta = _load_share_meta(share_id)
+
+    flight = meta.get("flight") if isinstance(meta.get("flight"), dict) else {}
+    airtime = _share_number(flight.get("airtimeSeconds", meta.get("airtimeSeconds")))
+    height = _share_number(flight.get("heightMeters", meta.get("heightMeters")))
     chips: list[str] = []
-    airtime = meta.get("airtimeSeconds")
-    height = meta.get("heightMeters")
-    if airtime:
-        chips.append(f'<span class="chip">airtime <b>{float(airtime):.2f}s</b></span>')
-    if height:
-        chips.append(f'<span class="chip">height <b>{float(height):.1f}m</b></span>')
+    if airtime is not None:
+        chips.append(f'<span class="chip">airtime <b>{airtime:.2f}s</b></span>')
+    if height is not None:
+        chips.append(f'<span class="chip">height <b>{height:.1f}m</b></span>')
     chips.append('<span class="chip">every frame analyzed</span>')
 
     description = "Watch it frame by frame with the skeleton overlay - shared from RiderLens."
-    if airtime:
-        description = f"{float(airtime):.2f}s of airtime - " + description
+    if airtime is not None:
+        description = f"{airtime:.2f}s of airtime - " + description
 
     from html import escape
 
-    rider_name = (meta.get("riderName") or "").strip()
-    if rider_name:
-        headline = f"{escape(rider_name)} shared <em>this send</em>"
-        og_title = f"{rider_name} shared a send with you \U0001F440"
+    shared_by_name = str(meta.get("sharedByName") or meta.get("riderName") or "").strip()[:40]
+    if shared_by_name:
+        headline = f"{escape(shared_by_name)} shared <em>this send</em>"
+        og_title = escape(f"{shared_by_name} shared a send with you \U0001F440", quote=True)
     else:
         headline = "You have to see <em>this send</em>"
         og_title = "You have to see this send \U0001F440"
+
+    clean_name = _share_asset_name(meta, "clean", "clip.mp4")
+    skeleton_name = _share_asset_name(meta, "skeleton", clean_name)
+    clip_name = _share_asset_name(meta, "playback", skeleton_name)
+    poster_name = _share_asset_name(meta, "poster", "poster.jpg")
 
     html = SHARE_HTML_PATH.read_text(encoding="utf-8")
     replacements = {
@@ -2284,16 +2533,30 @@ def _render_share_page(share_id: str) -> HTMLResponse:
         "{{OG_TITLE}}": og_title,
         "{{OG_DESCRIPTION}}": description,
         "{{PAGE_URL}}": f"{SHARE_BASE_URL}/{share_id}",
-        "{{POSTER_URL}}": _share_public_url(share_id, "poster.jpg"),
+        "{{POSTER_URL}}": _share_public_url(share_id, poster_name),
         "{{POSTER_WIDTH}}": "1280",
         "{{POSTER_HEIGHT}}": "720",
-        "{{CLIP_URL}}": _share_public_url(share_id, "clip.mp4"),
+        "{{CLIP_URL}}": _share_public_url(share_id, clip_name),
+        "{{DOWNLOAD_URL}}": f"{SHARE_BASE_URL}/s/{share_id}/download",
         "{{CHIPS}}": "".join(chips),
         "{{SHARE_ID}}": share_id,
     }
     for token, value in replacements.items():
         html = html.replace(token, value)
     return HTMLResponse(html, headers={"Cache-Control": "public, max-age=300"})
+
+
+@app.get("/s/{share_id}/download")
+def download_shared_video(share_id: str):
+    _, meta = _load_share_meta(share_id)
+    clean_name = _share_asset_name(meta, "clean", "clip.mp4")
+    skeleton_name = _share_asset_name(meta, "skeleton", clean_name)
+    clip_name = _share_asset_name(meta, "playback", skeleton_name)
+    return RedirectResponse(
+        url=f"{_share_public_url(share_id, clip_name)}?download=riderlens-send.mp4",
+        status_code=307,
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
 
 
 @app.get("/s/{share_id}", response_class=HTMLResponse)

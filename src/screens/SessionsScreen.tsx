@@ -134,6 +134,7 @@ export function SessionsScreen({ store }: SessionsScreenProps) {
         visible={Boolean(openRecord)}
         animationType="slide"
         presentationStyle="pageSheet"
+        supportedOrientations={["portrait"]}
         onRequestClose={() => setOpenRecordId(undefined)}
       >
         {openRecord ? (
@@ -170,7 +171,8 @@ export function SessionsScreen({ store }: SessionsScreenProps) {
               <RecordCard
                 record={openRecord}
                 showTitle={false}
-                onShare={store.shareRecordClip}
+                flush
+                onExportVideo={store.exportRecordVideo}
                 onShareLink={store.shareRecordLink}
                 onRetry={(record) => store.retryRecord(record.id)}
                 onReprocess={(record) => {
@@ -362,7 +364,8 @@ const styles = StyleSheet.create({
     backgroundColor: tokens.surfaceMuted
   },
   sheetContent: {
-    paddingHorizontal: spacing.xl,
+    // The record card is flush: the viewer runs edge-to-edge and the card's
+    // own sections restore their side padding.
     paddingBottom: spacing.xl
   }
 });

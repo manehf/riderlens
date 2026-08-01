@@ -75,6 +75,20 @@ export async function isProUser(): Promise<boolean> {
   }
 }
 
+/** Return the identifier shown for this installation in RevenueCat. This is
+ * intentionally read-only; a future authenticated account can replace it via
+ * Purchases.logIn without changing the Settings UI. */
+export async function getRevenueCatAppUserId(): Promise<string | null> {
+  configureRevenueCat();
+  const sdk = purchases();
+  if (!sdk || !configured) return null;
+  try {
+    return await sdk.getAppUserID();
+  } catch {
+    return null;
+  }
+}
+
 /** Subscribe to entitlement changes. Returns an unsubscribe fn. */
 export function onProStatusChange(listener: (isPro: boolean) => void): () => void {
   const sdk = purchases();

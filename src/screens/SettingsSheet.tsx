@@ -1,7 +1,8 @@
 import Constants from "expo-constants";
+import * as Clipboard from "expo-clipboard";
 import * as FileSystem from "expo-file-system/legacy";
 import * as ImagePicker from "expo-image-picker";
-import { Bike, Ruler, Sparkles, User, X } from "lucide-react-native";
+import { Bike, Copy, Ruler, Sparkles, User, X } from "lucide-react-native";
 import { useEffect, useRef, useState } from "react";
 import { Alert, Image, Modal, Pressable, ScrollView, StyleSheet, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -9,6 +10,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { AppText, Card, DisplayText, NumberText } from "../components/ui";
 import type { RiderLensStore } from "../hooks/useRiderLensMvp";
 import { useKeyboardNudge } from "../hooks/useKeyboardNudge";
+import { getRevenueCatAppUserId } from "../services/revenueCat";
 import { radius, spacing, tokens } from "../theme/tokens";
 import type { UnitSystem } from "../types/domain";
 
@@ -71,6 +73,7 @@ export function SettingsSheet({ store, visible, onClose }: SettingsSheetProps) {
   const { profile } = store;
   const version = Constants.expoConfig?.version ?? "dev";
   const [nameDraft, setNameDraft] = useState(profile.name ?? "");
+  const [revenueCatAppUserId, setRevenueCatAppUserId] = useState<string | null>(null);
   const scrollRef = useRef<ScrollView>(null);
   const keyboardNudge = useKeyboardNudge(scrollRef);
   const pro = store.analysisAccess;
@@ -83,6 +86,27 @@ export function SettingsSheet({ store, visible, onClose }: SettingsSheetProps) {
   useEffect(() => {
     setNameDraft(profile.name ?? "");
   }, [profile.name]);
+
+  useEffect(() => {
+    if (!visible || !pro.available) return;
+    let active = true;
+    void getRevenueCatAppUserId().then((appUserId) => {
+      if (active) setRevenueCatAppUserId(appUserId);
+    });
+    return () => {
+      active = false;
+    };
+  }, [pro.available, visible]);
+
+  async function copyRevenueCatAppUserId() {
+    if (!revenueCatAppUserId) return;
+    try {
+      await Clipboard.setStringAsync(revenueCatAppUserId);
+      Alert.alert("Support ID copied");
+    } catch {
+      Alert.alert("Could not copy Support ID");
+    }
+  }
 
   async function changeAvatar() {
     const avatarUri = await pickAvatar(profile.avatarUri);
@@ -274,6 +298,27 @@ export function SettingsSheet({ store, visible, onClose }: SettingsSheetProps) {
                   Restore purchases
                 </AppText>
               </Pressable>
+              {revenueCatAppUserId ? (
+                <View style={styles.supportIdBlock}>
+                  <View style={styles.supportIdHeader}>
+                    <AppText size={12} weight="semi" color={tokens.textMuted}>
+                      Support ID
+                    </AppText>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel="Copy RevenueCat Support ID"
+                      hitSlop={8}
+                      onPress={() => void copyRevenueCatAppUserId()}
+                      style={styles.copySupportIdButton}
+                    >
+                      <Copy color={tokens.textMuted} size={16} strokeWidth={2.2} />
+                    </Pressable>
+                  </View>
+                  <NumberText size={10} color={tokens.textMuted} style={styles.supportIdText}>
+                    {revenueCatAppUserId}
+                  </NumberText>
+                </View>
+              ) : null}
             </Card>
           ) : null}
 
@@ -503,5 +548,28 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     borderRadius: radius.sm,
     backgroundColor: tokens.electric
+  },
+  supportIdBlock: {
+    gap: spacing.xs,
+    borderTopWidth: 1,
+    borderTopColor: tokens.border,
+    paddingTop: spacing.sm
+  },
+  supportIdHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: spacing.sm
+  },
+  copySupportIdButton: {
+    width: 32,
+    height: 32,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: radius.sm,
+    backgroundColor: tokens.surfaceMuted
+  },
+  supportIdText: {
+    lineHeight: 15
   }
 });

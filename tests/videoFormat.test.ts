@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { decodeBase64, hasTopLevelMoofAtom } from "../src/services/videoFormat";
+import {
+  decodeBase64,
+  hasTopLevelMoofAtom,
+  isInterruptedVideoImport
+} from "../src/services/videoFormat";
 
 function atom(type: string, payload = 0): Uint8Array {
   const size = 8 + payload;
@@ -52,5 +56,19 @@ describe("decodeBase64", () => {
     const source = Uint8Array.from({ length: 300 }, (_, i) => (i * 7) % 256);
     const encoded = Buffer.from(source).toString("base64");
     expect(Array.from(decodeBase64(encoded))).toEqual(Array.from(source));
+  });
+});
+
+describe("isInterruptedVideoImport", () => {
+  it("recognizes the native iOS transcode interruption", () => {
+    expect(
+      isInterruptedVideoImport(
+        new Error("Failed to transcode picked video\n\u2192 Caused by: Operation Interrupted")
+      )
+    ).toBe(true);
+  });
+
+  it("does not hide unrelated picker failures", () => {
+    expect(isInterruptedVideoImport(new Error("Photo library permission denied"))).toBe(false);
   });
 });

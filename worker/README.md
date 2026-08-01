@@ -10,16 +10,17 @@ Implemented:
 
 - Receive uploaded regular-jump video files from the mobile app.
 - Canonicalize phone orientation metadata into upright H.264 pixels exactly once.
-- Respect the rider-selected trim window (0.5–6 seconds).
+- Respect the rider-selected trim window (0.5–8 seconds).
 - Sample frames with OpenCV.
 - Run MediaPipe Pose on sampled frames.
 - Pick approach, compression, takeoff, air, and landing frames.
 - Return body angles, normalized overlay geometry, confidence, and coaching notes.
+- Publish versioned, non-enumerable share packages to Supabase Storage.
 
 Not implemented:
 
 - Production job queue.
-- Supabase Storage download/upload loop.
+- Supabase Storage analysis-job download/upload loop.
 - Annotated video export.
 - Direct external URL ingestion.
 - YouTube video ingestion.
@@ -89,7 +90,7 @@ Fields:
 video=<file>
 session_id=session-...
 trim_start_seconds=0
-trim_end_seconds=6
+trim_end_seconds=8
 crop_preset=full_side_view
 ```
 
@@ -115,6 +116,59 @@ POST /jobs/{job_id}/analyze
 ```
 
 This is for the later Supabase job architecture, where a backend worker downloads videos from Storage and updates database rows. The current mobile MVP uses `/analysis/regular-jump` directly.
+
+## Share Endpoint
+
+```http
+POST /share
+Content-Type: multipart/form-data
+```
+
+Released clients can keep sending the legacy form:
+
+```text
+video=<clip.mp4>
+airtime_seconds=0.82        # optional
+height_meters=0.82          # optional
+rider_name=Alex             # optional, mapped to sharedByName
+```
+
+The enriched form used by the account-free share/import flow is:
+
+```text
+clean_video=<clean.mp4>
+skeleton_video=<skeleton.mp4>  # optional
+poster=<poster.jpg>             # optional; worker generates one when absent
+detail=<detail.json>            # required; series + filmstrip arrays
+skill_type=regular_jump
+flight_json=<FlightEstimate JSON>  # optional
+events_json=<CaptureEvent[] JSON>  # optional
+shared_by_name=Alex               # optional
+```
+
+Both forms create `meta.json` using `ShareManifestV1`. Enriched shares store
+`clean.mp4`, optional `skeleton.mp4`, `poster.jpg`, and `detail.json`; legacy
+shares retain `clip.mp4` so deployed clients remain compatible. Share IDs and
+delete tokens carry 128 bits of entropy. Only a SHA-256 hash of the delete token
+is stored in `control.json`.
+
+Response:
+
+```json
+{
+  "id": "unguessable-share-id",
+  "shareUrl": "https://s.riderlens.app/unguessable-share-id",
+  "deleteToken": "sender-only-delete-token",
+  "schemaVersion": 1
+}
+```
+
+The sender must persist `deleteToken` locally when the mobile integration lands;
+it cannot be recovered from storage. Default share limits are 128 MB per video,
+10 MB for the poster, 32 MB for detail JSON, and 15 seconds per stored video.
+They can be overridden with `RIDERLENS_MAX_SHARE_VIDEO_BYTES`,
+`RIDERLENS_MAX_SHARE_POSTER_BYTES`, `RIDERLENS_MAX_SHARE_DETAIL_BYTES`, and
+`RIDERLENS_MAX_SHARE_DURATION_SECONDS`.
 
 ## External Link Limitation
 

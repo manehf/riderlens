@@ -71,3 +71,14 @@ export async function isLikelyFragmentedMp4(uri: string): Promise<boolean> {
     return false;
   }
 }
+
+export function isInterruptedVideoImport(error: unknown): boolean {
+  const message =
+    error instanceof Error
+      ? error.message
+      : typeof error === "object" && error !== null && "message" in error
+        ? String((error as { message?: unknown }).message)
+        : String(error ?? "");
+
+  return /failed to transcode picked video|operation interrupted/i.test(message);
+}

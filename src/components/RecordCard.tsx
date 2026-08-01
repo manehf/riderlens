@@ -1,11 +1,12 @@
-import Slider from "@react-native-community/slider";
 import { useEvent, useEventListener } from "expo";
 import * as ScreenOrientation from "expo-screen-orientation";
+import { StatusBar } from "expo-status-bar";
 import { useVideoPlayer, VideoView } from "expo-video";
 import {
   AlertTriangle,
   ChevronLeft,
   ChevronRight,
+  Download,
   Film,
   Maximize2,
   Pause,
@@ -20,7 +21,6 @@ import {
 } from "lucide-react-native";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Alert,
   Image,
   Modal,
   Pressable,
@@ -42,8 +42,8 @@ import { AppText, Button, Card, Chip, NumberText } from "./ui";
 
 type RecordCardProps = {
   record: JumpRecord;
-  onShare?: (record: JumpRecord, preferSkeleton?: boolean) => void;
-  onShareLink?: (record: JumpRecord) => void;
+  onExportVideo?: (record: JumpRecord, preferSkeleton?: boolean) => Promise<void>;
+  onShareLink?: (record: JumpRecord) => Promise<void>;
   onRetry?: (record: JumpRecord) => void;
   /** Reopen the trim step to fix rotation or the window and rebuild the record. */
   onReprocess?: (record: JumpRecord) => void;
@@ -54,6 +54,9 @@ type RecordCardProps = {
   onRemoveTag?: (recordId: string, tag: string) => void;
   /** Previously-used tags offered as one-tap suggestions in the editor. */
   tagSuggestions?: string[];
+  /** Sheet presentation: the sheet supplies the chrome, so the card drops its
+   * border/padding and the viewer runs edge-to-edge. */
+  flush?: boolean;
 };
 
 /** Fallback when a record has a clip but no filmstrip to drive the viewer. */
@@ -91,10 +94,12 @@ function eventLabels(record: JumpRecord, filmstrip: FilmstripFrame[]): Map<numbe
 const PLAYBACK_SPEEDS = [1, 0.5, 0.25];
 const DEFAULT_SPEED = 1;
 
-// Filmstrip-as-scrubber geometry: must match the filmstrip styles below.
-const FILMSTRIP_CELL_WIDTH = 114;
+// Filmstrip-as-scrubber geometry. Large cells wherever the strip has its own
+// row (sheet, portrait fullscreen) — bigger targets scrub easier; slim cells
+// in landscape fullscreen where the strip overlays the footage.
 const FILMSTRIP_GAP = 8;
-const FILMSTRIP_STEP = FILMSTRIP_CELL_WIDTH + FILMSTRIP_GAP;
+const FILMSTRIP_CELL = { width: 136, height: 76 };
+const FILMSTRIP_CELL_COMPACT = { width: 96, height: 54 };
 // The scrubber renders at most this many cells. Records now carry every
 // analyzed frame (up to 450); mounting them all as Images would blow the
 // decoded-bitmap budget on iOS. The strip shows every Nth frame for
@@ -156,8 +161,9 @@ type JumpViewerProps = {
   frames: FilmstripFrame[];
   labels: Map<number, string>;
   onZoom: (frame: FilmstripFrame) => void;
-  /** Fullscreen variant fills its container instead of a 16:9 card viewport. */
-  variant?: "card" | "fullscreen";
+  /** "flush" is the sheet presentation: edge-to-edge viewport, padded
+   * controls. "fullscreen" fills the modal and adapts to orientation. */
+  variant?: "card" | "flush" | "fullscreen";
   initialFrameIndex?: number;
   onFrameChange?: (index: number) => void;
   /** Renders the expand control on the viewport when provided. */
@@ -194,8 +200,35 @@ function JumpViewer({
   const stripSettleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const playbackUri = mode === "skeleton" ? skeletonClipUri : clipUri;
   const usesNativePlayback = Boolean(playbackUri);
-  // In landscape fullscreen every vertical point goes to the footage.
-  const compactControls = variant === "fullscreen" && windowWidth > windowHeight;
+  const insets = useSafeAreaInsets();
+  const isFullscreen = variant === "fullscreen";
+  // In landscape fullscreen the footage owns the screen: the strip and
+  // transport float over it and auto-hide during playback.
+  const compactControls = isFullscreen && windowWidth > windowHeight;
+  const cell = compactControls ? FILMSTRIP_CELL_COMPACT : FILMSTRIP_CELL;
+  const stripStep = cell.width + FILMSTRIP_GAP;
+
+  // Real clip aspect drives the fullscreen portrait viewport, so the controls
+  // dock right under the footage instead of under a flex-stretched letterbox.
+  const [frameAspect, setFrameAspect] = useState(16 / 9);
+  useEffect(() => {
+    const first = frames[0];
+    if (!first) return;
+    let active = true;
+    Image.getSize(
+      first.image,
+      (width, height) => {
+        if (active && width > 0 && height > 0) setFrameAspect(width / height);
+      },
+      () => undefined
+    );
+    return () => {
+      active = false;
+    };
+  }, [frames]);
+
+  const [controlsVisible, setControlsVisible] = useState(true);
+  const hideControlsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const player = useVideoPlayer(playbackUri ?? null, (instance) => {
     // The skeleton share clip contains an end card after the analyzed frames,
@@ -207,6 +240,36 @@ function JumpViewer({
   });
   const { isPlaying: videoPlaying } = useEvent(player, "playingChange", { isPlaying: player.playing });
   const playing = usesNativePlayback ? videoPlaying : skeletonPlaying;
+
+  // Landscape overlay controls get out of the way during playback and come
+  // back on a tap — or whenever playback pauses (paused = analyzing frames).
+  useEffect(() => {
+    if (hideControlsTimerRef.current) {
+      clearTimeout(hideControlsTimerRef.current);
+      hideControlsTimerRef.current = null;
+    }
+    if (!compactControls || !playing) {
+      setControlsVisible(true);
+      return;
+    }
+    if (!controlsVisible) return;
+    hideControlsTimerRef.current = setTimeout(() => setControlsVisible(false), 2500);
+    return () => {
+      if (hideControlsTimerRef.current) {
+        clearTimeout(hideControlsTimerRef.current);
+        hideControlsTimerRef.current = null;
+      }
+    };
+  }, [compactControls, controlsVisible, playing]);
+
+  const handleViewportPress = useCallback(() => {
+    if (!compactControls) return;
+    if (!controlsVisible) {
+      setControlsVisible(true);
+      return;
+    }
+    if (playing) setControlsVisible(false);
+  }, [compactControls, controlsVisible, playing]);
 
   // One speed for both lenses.
   useEffect(() => {
@@ -348,7 +411,7 @@ function JumpViewer({
 
   // --- Filmstrip as scrubber: drag the strip under the fixed playhead. ------
   // Edge padding lets the first and last frames reach the center playhead.
-  const stripEdgePadding = Math.max(0, (stripWidth - FILMSTRIP_CELL_WIDTH) / 2);
+  const stripEdgePadding = Math.max(0, (stripWidth - cell.width) / 2);
 
   // One strip cell represents `stripStride` frames; scroll position maps
   // fractionally so single-frame stepping still moves the strip smoothly.
@@ -374,8 +437,8 @@ function JumpViewer({
       // Check the event-driven state too: the native flag reads false while a
       // seek is in flight even though playback is logically running.
       if (player.playing || videoPlaying || skeletonPlaying) return;
-      const cell = Math.round(offsetX / FILMSTRIP_STEP);
-      const index = Math.max(0, Math.min(cell * stripStride, frames.length - 1));
+      const cellIndex = Math.round(offsetX / stripStep);
+      const index = Math.max(0, Math.min(cellIndex * stripStride, frames.length - 1));
       if (index === frameIndexRef.current) return;
       suppressVideoSyncUntilRef.current = Date.now() + 350;
       commitFrameIndex(index);
@@ -384,7 +447,7 @@ function JumpViewer({
         player.currentTime = clipTimeOf(frame);
       }
     },
-    [clipTimeOf, commitFrameIndex, frames, playbackUri, player, skeletonPlaying, stripStride, videoPlaying]
+    [clipTimeOf, commitFrameIndex, frames, playbackUri, player, skeletonPlaying, stripStep, stripStride, videoPlaying]
   );
 
   const handleStripDragStart = useCallback(() => {
@@ -444,8 +507,8 @@ function JumpViewer({
   // Playback/stepping moves the strip; user drags move the frame (guarded above).
   useEffect(() => {
     if (stripInteractingRef.current) return;
-    stripRef.current?.scrollTo({ x: (frameIndex / stripStride) * FILMSTRIP_STEP, animated: false });
-  }, [frameIndex, stripStride, stripWidth]);
+    stripRef.current?.scrollTo({ x: (frameIndex / stripStride) * stripStep, animated: false });
+  }, [frameIndex, stripStep, stripStride, stripWidth]);
 
   // Carry the current moment across mode switches so the toggle never jumps in time.
   const previousModeRef = useRef(mode);
@@ -486,9 +549,117 @@ function JumpViewer({
     return current;
   }, [frameIndex, labels]);
 
+  /* The filmstrip IS the scrubber: drag it under the fixed playhead. One
+   * component for every mode — sheet, portrait fullscreen, landscape overlay. */
+  const filmstrip = (
+    <View style={styles.filmstripWrap} onLayout={(event) => setStripWidth(event.nativeEvent.layout.width)}>
+      <ScrollView
+        ref={stripRef}
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        snapToInterval={stripStep}
+        decelerationRate="fast"
+        scrollEventThrottle={16}
+        onScrollBeginDrag={handleStripDragStart}
+        onScroll={handleStripScroll}
+        onScrollEndDrag={handleStripDragEnd}
+        onMomentumScrollBegin={handleStripMomentumStart}
+        onMomentumScrollEnd={handleStripMomentumEnd}
+        contentContainerStyle={[styles.filmstrip, { paddingHorizontal: stripEdgePadding }]}
+      >
+        {stripCells.map(({ frame, index }) => (
+          <Pressable key={frame.t} onPress={() => seekToFrame(index)} style={styles.filmstripCell}>
+            <Image
+              source={{ uri: frame.image }}
+              resizeMethod="resize"
+              style={[
+                styles.filmstripImage,
+                { width: cell.width, height: cell.height },
+                Math.abs(index - frameIndex) < stripStride && styles.filmstripImageActive
+              ]}
+            />
+            {cellLabels.has(index) ? (
+              <View style={styles.eventTag}>
+                <AppText size={10} weight="bold" color={tokens.graphite}>
+                  {cellLabels.get(index)}
+                </AppText>
+              </View>
+            ) : null}
+          </Pressable>
+        ))}
+      </ScrollView>
+      <View pointerEvents="none" style={styles.playhead} />
+    </View>
+  );
+
+  const transport = (
+    <View
+      style={[
+        styles.playerControls,
+        variant === "flush" && styles.playerControlsFlush,
+        isFullscreen && styles.playerControlsFullscreen
+      ]}
+    >
+      <View style={styles.transportGroup}>
+        <IconButton
+          icon={ChevronLeft}
+          label="Previous frame"
+          onPress={() => stepFrame(-1)}
+          repeatOnLongPress
+        />
+        <IconButton
+          icon={playing ? Pause : Play}
+          label={playing ? "Pause" : "Play"}
+          emphasis
+          onPress={togglePlayback}
+        />
+        <IconButton
+          icon={ChevronRight}
+          label="Next frame"
+          onPress={() => stepFrame(1)}
+          repeatOnLongPress
+        />
+      </View>
+      <View style={styles.transportGroup}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Playback speed ${speedLabel(speed)}`}
+          onPress={cycleSpeed}
+          style={styles.speedButton}
+        >
+          <AppText size={10} weight="bold" color={tokens.textMuted} style={styles.speedCaption}>
+            SPEED
+          </AppText>
+          <NumberText size={12} weight="bold">
+            {speedLabel(speed)}
+          </NumberText>
+        </Pressable>
+        <NumberText size={11} color={tokens.textMuted} style={styles.playerTime}>
+          {currentFrame.t.toFixed(2)}s
+        </NumberText>
+      </View>
+    </View>
+  );
+
   return (
-    <View style={variant === "fullscreen" ? styles.viewerFullscreen : styles.viewer}>
-      <View style={variant === "fullscreen" ? styles.viewportFullscreen : styles.viewport}>
+    <View
+      style={
+        compactControls ? styles.viewerLandscape : isFullscreen ? styles.viewerPortraitFullscreen : styles.viewer
+      }
+    >
+      <Pressable
+        disabled={!isFullscreen}
+        onPress={handleViewportPress}
+        style={
+          compactControls
+            ? styles.viewportLandscape
+            : isFullscreen
+              ? [styles.viewportPortraitFullscreen, { aspectRatio: frameAspect }]
+              : variant === "flush"
+                ? styles.viewportFlush
+                : styles.viewport
+        }
+      >
         {playbackUri ? (
           <>
             <VideoView
@@ -499,13 +670,19 @@ function JumpViewer({
               surfaceType="textureView"
             />
             {mode === "skeleton" && !videoPlaying ? (
-              <Pressable style={StyleSheet.absoluteFill} onPress={() => onZoom(currentFrame)}>
+              <Pressable
+                style={StyleSheet.absoluteFill}
+                onPress={isFullscreen ? handleViewportPress : () => onZoom(currentFrame)}
+              >
                 <FrameWindow frames={frames} index={boundedFrameIndex} />
               </Pressable>
             ) : null}
           </>
         ) : (
-          <Pressable style={StyleSheet.absoluteFill} onPress={() => onZoom(currentFrame)}>
+          <Pressable
+            style={StyleSheet.absoluteFill}
+            onPress={isFullscreen ? handleViewportPress : () => onZoom(currentFrame)}
+          >
             <FrameWindow frames={frames} index={boundedFrameIndex} />
           </Pressable>
         )}
@@ -526,102 +703,30 @@ function JumpViewer({
             <Maximize2 color={tokens.surface} size={16} strokeWidth={2.4} />
           </Pressable>
         ) : null}
-      </View>
+      </Pressable>
 
       {compactControls ? (
-        // Landscape fullscreen: no room for the strip — a slim slider scrubs instead.
-        <Slider
-          style={styles.scrubber}
-          minimumValue={0}
-          maximumValue={Math.max(0, frames.length - 1)}
-          step={1}
-          value={frameIndex}
-          minimumTrackTintColor={tokens.electric}
-          maximumTrackTintColor={tokens.border}
-          thumbTintColor={tokens.electric}
-          onValueChange={(value) => seekToFrame(Math.round(value))}
-        />
+        <View
+          pointerEvents={controlsVisible ? "auto" : "none"}
+          style={[
+            styles.landscapeControls,
+            {
+              paddingBottom: Math.max(insets.bottom, spacing.md),
+              paddingLeft: insets.left,
+              paddingRight: insets.right
+            },
+            !controlsVisible && styles.controlsHidden
+          ]}
+        >
+          {filmstrip}
+          {transport}
+        </View>
       ) : (
-        /* The filmstrip IS the scrubber: drag it under the fixed playhead. */
-        <View style={styles.filmstripWrap} onLayout={(event) => setStripWidth(event.nativeEvent.layout.width)}>
-          <ScrollView
-            ref={stripRef}
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            snapToInterval={FILMSTRIP_STEP}
-            decelerationRate="fast"
-            scrollEventThrottle={16}
-            onScrollBeginDrag={handleStripDragStart}
-            onScroll={handleStripScroll}
-            onScrollEndDrag={handleStripDragEnd}
-            onMomentumScrollBegin={handleStripMomentumStart}
-            onMomentumScrollEnd={handleStripMomentumEnd}
-            contentContainerStyle={[styles.filmstrip, { paddingHorizontal: stripEdgePadding }]}
-          >
-            {stripCells.map(({ frame, index }) => (
-              <Pressable key={frame.t} onPress={() => seekToFrame(index)} style={styles.filmstripCell}>
-                <Image
-                  source={{ uri: frame.image }}
-                  resizeMethod="resize"
-                  style={[
-                    styles.filmstripImage,
-                    Math.abs(index - frameIndex) < stripStride && styles.filmstripImageActive
-                  ]}
-                />
-                {cellLabels.has(index) ? (
-                  <View style={styles.eventTag}>
-                    <AppText size={10} weight="bold" color={tokens.graphite}>
-                      {cellLabels.get(index)}
-                    </AppText>
-                  </View>
-                ) : null}
-              </Pressable>
-            ))}
-          </ScrollView>
-          <View pointerEvents="none" style={styles.playhead} />
-        </View>
+        <>
+          {filmstrip}
+          {transport}
+        </>
       )}
-
-      <View style={styles.playerControls}>
-        <View style={styles.transportGroup}>
-          <IconButton
-            icon={ChevronLeft}
-            label="Previous frame"
-            onPress={() => stepFrame(-1)}
-            repeatOnLongPress
-          />
-          <IconButton
-            icon={playing ? Pause : Play}
-            label={playing ? "Pause" : "Play"}
-            emphasis
-            onPress={togglePlayback}
-          />
-          <IconButton
-            icon={ChevronRight}
-            label="Next frame"
-            onPress={() => stepFrame(1)}
-            repeatOnLongPress
-          />
-        </View>
-        <View style={styles.transportGroup}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={`Playback speed ${speedLabel(speed)}`}
-            onPress={cycleSpeed}
-            style={styles.speedButton}
-          >
-            <AppText size={10} weight="bold" color={tokens.textMuted} style={styles.speedCaption}>
-              SPEED
-            </AppText>
-            <NumberText size={12} weight="bold">
-              {speedLabel(speed)}
-            </NumberText>
-          </Pressable>
-          <NumberText size={11} color={tokens.textMuted} style={styles.playerTime}>
-            {currentFrame.t.toFixed(2)}s
-          </NumberText>
-        </View>
-      </View>
     </View>
   );
 }
@@ -814,16 +919,31 @@ function TagSection({ record, suggestions, onAdd, onRemove }: TagSectionProps) {
   );
 }
 
-export function RecordCard({ record, onShare, onShareLink, onRetry, onDelete, onReprocess, onAddTag, onRemoveTag, tagSuggestions, showTitle = true }: RecordCardProps) {
+export function RecordCard({
+  record,
+  onExportVideo,
+  onShareLink,
+  onRetry,
+  onDelete,
+  onReprocess,
+  onAddTag,
+  onRemoveTag,
+  tagSuggestions,
+  showTitle = true,
+  flush = false
+}: RecordCardProps) {
   const [detail, setDetail] = useState<JumpRecordDetail | undefined>();
   const [zoomed, setZoomed] = useState<FilmstripFrame | undefined>();
   const [mode, setMode] = useState<ViewerMode>("skeleton");
   const [fullscreen, setFullscreen] = useState(false);
+  const [sharingLink, setSharingLink] = useState(false);
   // Keeps the inline and fullscreen viewers on the same moment: whichever is
   // active reports its frame here; the other picks it up on (re)mount.
   const sharedFrameIndexRef = useRef(0);
   const [viewerEpoch, setViewerEpoch] = useState(0);
   const insets = useSafeAreaInsets();
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+  const fullscreenLandscape = fullscreen && windowWidth > windowHeight;
 
   const openFullscreen = useCallback(() => {
     setFullscreen(true);
@@ -834,10 +954,16 @@ export function RecordCard({ record, onShare, onShareLink, onRetry, onDelete, on
   }, []);
 
   const closeFullscreen = useCallback(() => {
-    setFullscreen(false);
-    // Remount inline at wherever the fullscreen session ended.
-    setViewerEpoch((epoch) => epoch + 1);
-    void ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+    // Re-lock BEFORE dismissing: dismissing first while the device is held
+    // landscape can leave the sheet underneath presented sideways — iOS only
+    // re-evaluates orientation on the next presentation change.
+    void ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP)
+      .catch(() => undefined)
+      .finally(() => {
+        setFullscreen(false);
+        // Remount inline at wherever the fullscreen session ended.
+        setViewerEpoch((epoch) => epoch + 1);
+      });
   }, []);
 
   useEffect(() => {
@@ -871,8 +997,8 @@ export function RecordCard({ record, onShare, onShareLink, onRetry, onDelete, on
   const showModeToggle = record.status === "ready" && Boolean(record.clipUri) && frames.length > 0;
 
   return (
-    <Card style={styles.card}>
-      <View style={styles.headerRow}>
+    <Card style={[styles.card, flush && styles.cardFlush]}>
+      <View style={[styles.headerRow, flush && styles.sectionFlush]}>
         {showTitle ? (
           <View style={styles.headerText}>
             <AppText weight="bold">{getRecordTitle(record)}</AppText>
@@ -898,16 +1024,13 @@ export function RecordCard({ record, onShare, onShareLink, onRetry, onDelete, on
         )}
       </View>
 
-      {onAddTag && onRemoveTag ? (
-        <TagSection record={record} suggestions={tagSuggestions ?? []} onAdd={onAddTag} onRemove={onRemoveTag} />
-      ) : null}
-
       {record.status === "ready" && detail && frames.length > 0 && !fullscreen ? (
         // Unmounted while fullscreen is open: two mounted viewers double the
         // decoded-image memory and Android's Fresco starts returning black
         // bitmaps. The viewer remounts at the shared frame on close.
         <JumpViewer
           key={`${record.id}-${viewerEpoch}-${mode}`}
+          variant={flush ? "flush" : "card"}
           mode={mode}
           clipUri={record.clipUri}
           skeletonClipUri={record.skeletonClipUri}
@@ -928,7 +1051,7 @@ export function RecordCard({ record, onShare, onShareLink, onRetry, onDelete, on
       ) : null}
 
       {record.status === "pending" || record.status === "failed" ? (
-        <View style={styles.pendingRow}>
+        <View style={[styles.pendingRow, flush && styles.sectionFlush]}>
           <AlertTriangle color={tokens.amber} size={16} />
           <AppText size={13} color={tokens.textMuted} style={styles.pendingText}>
             {record.error ??
@@ -940,7 +1063,7 @@ export function RecordCard({ record, onShare, onShareLink, onRetry, onDelete, on
       ) : null}
 
       {record.status === "ready" && record.flight ? (
-        <View style={styles.flightStrip}>
+        <View style={[styles.flightStrip, flush && styles.sectionFlushMargin]}>
           <View style={styles.flightStat}>
             <AppText size={10} weight="bold" color={tokens.textMuted} style={styles.flightLabel}>
               {record.flight.endedIn === "crash" ? "Air to impact" : "Airtime"}
@@ -965,29 +1088,40 @@ export function RecordCard({ record, onShare, onShareLink, onRetry, onDelete, on
         </View>
       ) : null}
 
-      <View style={styles.actions}>
-        {record.status === "ready" && onShare ? (
-          // Shares whichever lens is active: skeleton (watermarked) or clean clip.
+      {onAddTag && onRemoveTag ? (
+        <View style={flush ? styles.sectionFlush : undefined}>
+          <TagSection record={record} suggestions={tagSuggestions ?? []} onAdd={onAddTag} onRemove={onRemoveTag} />
+        </View>
+      ) : null}
+
+      <View style={[styles.actions, flush && styles.sectionFlush]}>
+        {record.status === "ready" && onShareLink ? (
           <Button
             icon={Share2}
             variant="secondary"
             size="sm"
+            disabled={sharingLink}
             onPress={() => {
-              const preferSkeleton = mode === "skeleton" && Boolean(record.skeletonClipUri);
-              if (!onShareLink) {
-                onShare(record, preferSkeleton);
-                return;
-              }
-              Alert.alert("Share the send", "A link opens in any browser with frame stepping; the video file plays anywhere.", [
-                { text: "Share link", onPress: () => onShareLink(record) },
-                { text: "Share video", onPress: () => onShare(record, preferSkeleton) },
-                { text: "Cancel", style: "cancel" }
-              ]);
+              setSharingLink(true);
+              void onShareLink(record).finally(() => setSharingLink(false));
             }}
             style={styles.actionButton}
           >
-            Share
+            {sharingLink ? "Preparing..." : "Share"}
           </Button>
+        ) : null}
+        {record.status === "ready" && onExportVideo ? (
+          <Button
+            icon={Download}
+            variant="secondary"
+            size="sm"
+            accessibilityLabel="Export video"
+            onPress={() => {
+              const preferSkeleton = mode === "skeleton" && Boolean(record.skeletonClipUri);
+              void onExportVideo(record, preferSkeleton);
+            }}
+            style={styles.iconAction}
+          />
         ) : null}
         {record.status === "ready" && onReprocess ? (
           <Button
@@ -1025,15 +1159,32 @@ export function RecordCard({ record, onShare, onShareLink, onRetry, onDelete, on
         <View
           style={[
             styles.fullscreenRoot,
-            {
-              paddingTop: Math.max(insets.top, spacing.md),
-              paddingBottom: Math.max(insets.bottom, spacing.md),
-              paddingLeft: insets.left,
-              paddingRight: insets.right
-            }
+            // Landscape: the video runs edge-to-edge; header and controls
+            // are overlays that pad for the insets themselves.
+            fullscreenLandscape
+              ? null
+              : {
+                  paddingTop: Math.max(insets.top, spacing.md),
+                  paddingBottom: Math.max(insets.bottom, spacing.md),
+                  paddingLeft: insets.left,
+                  paddingRight: insets.right
+                }
           ]}
         >
-          <View style={styles.fullscreenHeader}>
+          <StatusBar hidden />
+          <View
+            style={[
+              styles.fullscreenHeader,
+              fullscreenLandscape && [
+                styles.fullscreenHeaderOverlay,
+                {
+                  top: Math.max(insets.top, spacing.md),
+                  left: insets.left + spacing.lg,
+                  right: insets.right + spacing.lg
+                }
+              ]
+            ]}
+          >
             {showModeToggle ? (
               <View style={styles.segmented}>
                 <SegmentButton
@@ -1099,6 +1250,19 @@ const styles = StyleSheet.create({
   card: {
     gap: spacing.md
   },
+  cardFlush: {
+    borderWidth: 0,
+    borderRadius: 0,
+    backgroundColor: "transparent",
+    padding: 0
+  },
+  // Flush cards run edge-to-edge; text/control sections restore side breathing.
+  sectionFlush: {
+    paddingHorizontal: spacing.xl
+  },
+  sectionFlushMargin: {
+    marginHorizontal: spacing.xl
+  },
   headerRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -1140,17 +1304,44 @@ const styles = StyleSheet.create({
     width: "100%",
     height: "100%"
   },
-  viewerFullscreen: {
-    flex: 1,
-    gap: spacing.sm,
-    paddingHorizontal: spacing.lg
-  },
-  viewportFullscreen: {
-    flex: 1,
+  viewportFlush: {
     width: "100%",
-    borderRadius: 10,
+    aspectRatio: 16 / 9,
+    overflow: "hidden",
+    backgroundColor: tokens.graphite
+  },
+  // Portrait fullscreen: the viewport is sized by the clip's real aspect and
+  // the whole video+controls cluster centers in the leftover space.
+  viewerPortraitFullscreen: {
+    flex: 1,
+    justifyContent: "center",
+    gap: spacing.sm
+  },
+  viewportPortraitFullscreen: {
+    width: "100%",
+    flexShrink: 1,
     overflow: "hidden",
     backgroundColor: "#000000"
+  },
+  // Landscape fullscreen: footage fills the modal, controls float over it.
+  viewerLandscape: {
+    flex: 1
+  },
+  viewportLandscape: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "#000000"
+  },
+  landscapeControls: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    gap: spacing.sm,
+    paddingTop: spacing.sm,
+    backgroundColor: "rgba(11, 14, 12, 0.4)"
+  },
+  controlsHidden: {
+    opacity: 0
   },
   frameStack: {
     flex: 1
@@ -1181,6 +1372,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.sm
   },
+  fullscreenHeaderOverlay: {
+    position: "absolute",
+    zIndex: 2,
+    paddingHorizontal: 0,
+    paddingBottom: 0
+  },
   fullscreenClose: {
     width: 38,
     height: 38,
@@ -1205,15 +1402,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 3
   },
-  scrubber: {
-    width: "100%",
-    height: 40
-  },
   playerControls: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     gap: spacing.md
+  },
+  playerControlsFlush: {
+    paddingHorizontal: spacing.xl
+  },
+  playerControlsFullscreen: {
+    paddingHorizontal: spacing.lg
   },
   transportGroup: {
     flexDirection: "row",
@@ -1276,8 +1475,6 @@ const styles = StyleSheet.create({
     alignItems: "center"
   },
   filmstripImage: {
-    width: 114,
-    height: 64,
     borderRadius: 6,
     backgroundColor: tokens.graphite,
     borderWidth: 2,
