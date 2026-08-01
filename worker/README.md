@@ -257,6 +257,23 @@ SUPABASE_SECRET_KEY=
 The worker also accepts the legacy `SUPABASE_SERVICE_ROLE_KEY` during migration,
 but new deployments should use a scoped `sb_secret_...` key.
 
+The public `/app/version` endpoint drives optional and required mobile update
+prompts. Defaults track the current `1.0.1` release; override them on Fly after
+each store release:
+
+```bash
+RIDERLENS_IOS_LATEST_VERSION=1.0.1
+RIDERLENS_IOS_MINIMUM_VERSION=1.0.0
+RIDERLENS_ANDROID_LATEST_VERSION=1.0.1
+RIDERLENS_ANDROID_MINIMUM_VERSION=1.0.0
+RIDERLENS_UPDATE_MESSAGE="A new RiderLens version is available with fixes and improvements."
+```
+
+`RIDERLENS_IOS_STORE_URL`, `RIDERLENS_ANDROID_STORE_URL` can override the
+built-in production listing URLs. Raise a minimum version only when an older
+binary is genuinely incompatible; the app otherwise presents a dismissible
+update prompt once per target version.
+
 ## Deploy (Fly.io)
 
 The worker ships as a container (`Dockerfile` + `fly.toml`, both in this directory). One-time setup:

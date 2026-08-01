@@ -148,6 +148,7 @@ SkillType = Literal["regular_jump", "bunnyhop", "manual", "wheelie", "drop"]
 CropPreset = Literal["full_side_view", "rider_centered", "takeoff_landing", "vertical_social"]
 Phase = Literal["approach", "compression", "takeoff", "air", "landing", "crash"]
 GeometrySource = Literal["detected", "estimated"]
+AppPlatform = Literal["ios", "android"]
 
 
 class AnalyzeRequest(BaseModel):
@@ -218,6 +219,14 @@ class AnalyzeResponse(BaseModel):
     report: Report
 
 
+class AppVersionResponse(BaseModel):
+    platform: AppPlatform
+    latestVersion: str
+    minimumSupportedVersion: str
+    storeUrl: str
+    message: str
+
+
 @dataclass
 class PoseFrame:
     time_seconds: float
@@ -245,6 +254,41 @@ def health():
         "bike_detector_model": BIKE_MODEL_PATH.exists(),
         "captureBusy": CAPTURE_JOB_LOCK.locked(),
     }
+
+
+APP_VERSION_DEFAULTS = {
+    "ios": {
+        "latest": "1.0.1",
+        "minimum": "1.0.0",
+        "store_url": "https://apps.apple.com/us/app/riderlens-mtb-skills-analysis/id6790874129",
+    },
+    "android": {
+        "latest": "1.0.1",
+        "minimum": "1.0.0",
+        "store_url": "https://play.google.com/store/apps/details?id=com.riderlens.app",
+    },
+}
+
+
+def _app_version_setting(platform: AppPlatform, name: str, default: str) -> str:
+    value = os.getenv(f"RIDERLENS_{platform.upper()}_{name}", "").strip()
+    return value or default
+
+
+@app.get("/app/version", response_model=AppVersionResponse)
+def app_version(platform: AppPlatform):
+    defaults = APP_VERSION_DEFAULTS[platform]
+    return AppVersionResponse(
+        platform=platform,
+        latestVersion=_app_version_setting(platform, "LATEST_VERSION", defaults["latest"]),
+        minimumSupportedVersion=_app_version_setting(platform, "MINIMUM_VERSION", defaults["minimum"]),
+        storeUrl=_app_version_setting(platform, "STORE_URL", defaults["store_url"]),
+        message=os.getenv(
+            "RIDERLENS_UPDATE_MESSAGE",
+            "A new RiderLens version is available with fixes and improvements.",
+        ).strip()
+        or "A new RiderLens version is available with fixes and improvements.",
+    )
 
 
 # --- Dev analysis lab -------------------------------------------------------

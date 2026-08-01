@@ -11,15 +11,19 @@ import {
   useFonts as useSansFonts
 } from "@expo-google-fonts/ibm-plex-sans";
 import * as Sentry from "@sentry/react-native";
+import Constants from "expo-constants";
 import { Plus } from "lucide-react-native";
 import * as ScreenOrientation from "expo-screen-orientation";
 import { useEffect, useState } from "react";
-import { Pressable, StyleSheet, View } from "react-native";
+import { AppState, Platform, Pressable, StyleSheet, View } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 
+import { AppUpdatePrompt } from "./src/components/AppUpdatePrompt";
 import { AppText, Screen } from "./src/components/ui";
 import { useRiderLensMvp } from "./src/hooks/useRiderLensMvp";
+import { checkForAppUpdate, dismissAppUpdate } from "./src/services/appUpdate";
+import type { AppUpdateNotice, MobilePlatform } from "./src/services/appVersion";
 import { isAnalysisWorkerReachable } from "./src/services/capture";
 import { CaptureSheet } from "./src/screens/CaptureSheet";
 import { SessionsScreen } from "./src/screens/SessionsScreen";
@@ -42,6 +46,7 @@ if (sentryDsn) {
 // still exist in src/screens but are unrouted until the video loop is done.
 function App() {
   const [captureOpen, setCaptureOpen] = useState(false);
+  const [appUpdate, setAppUpdate] = useState<AppUpdateNotice>();
 
   // The app lives in portrait; fullscreen video unlocks rotation temporarily.
   useEffect(() => {
@@ -50,6 +55,43 @@ function App() {
   // "camera" = jump straight into recording when the sheet opens.
   const [captureIntent, setCaptureIntent] = useState<"camera" | undefined>();
   const store = useRiderLensMvp();
+
+  useEffect(() => {
+    const resolvedPlatform =
+      Platform.OS === "ios" || Platform.OS === "android" ? (Platform.OS as MobilePlatform) : undefined;
+    const resolvedVersion = Constants.expoConfig?.version;
+    if (!resolvedPlatform || !resolvedVersion) return;
+    const platform: MobilePlatform = resolvedPlatform;
+    const currentVersion: string = resolvedVersion;
+
+    let active = true;
+    let checking = false;
+    async function check() {
+      if (checking) return;
+      checking = true;
+      try {
+        const notice = await checkForAppUpdate(platform, currentVersion);
+        if (active && notice) setAppUpdate(notice);
+      } finally {
+        checking = false;
+      }
+    }
+
+    void check();
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") void check();
+    });
+    return () => {
+      active = false;
+      subscription.remove();
+    };
+  }, []);
+
+  function dismissUpdatePrompt() {
+    if (!appUpdate || appUpdate.required) return;
+    setAppUpdate(undefined);
+    void dismissAppUpdate(appUpdate.platform, appUpdate.latestVersion);
+  }
 
   // (+) goes straight to the photo picker. Filming happens in the phone's own
   // camera app so the original always stays safe in Photos/Gallery — an
@@ -112,6 +154,7 @@ function App() {
             </Pressable>
           </View>
           <CaptureSheet store={store} visible={captureOpen} onClose={() => setCaptureOpen(false)} />
+          <AppUpdatePrompt notice={appUpdate} onDismiss={dismissUpdatePrompt} />
         </Screen>
       </SafeAreaView>
     </SafeAreaProvider>
