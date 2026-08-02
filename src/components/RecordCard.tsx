@@ -99,6 +99,7 @@ const DEFAULT_SPEED = 1;
 // in landscape fullscreen where the strip overlays the footage.
 const FILMSTRIP_GAP = 8;
 const FILMSTRIP_CELL = { width: 136, height: 76 };
+const FILMSTRIP_CELL_FULLSCREEN = { width: 148, height: 83 };
 const FILMSTRIP_CELL_COMPACT = { width: 96, height: 54 };
 // The scrubber renders at most this many cells. Records now carry every
 // analyzed frame (up to 450); mounting them all as Images would blow the
@@ -205,7 +206,11 @@ function JumpViewer({
   // In landscape fullscreen the footage owns the screen: the strip and
   // transport float over it and auto-hide during playback.
   const compactControls = isFullscreen && windowWidth > windowHeight;
-  const cell = compactControls ? FILMSTRIP_CELL_COMPACT : FILMSTRIP_CELL;
+  const cell = compactControls
+    ? FILMSTRIP_CELL_COMPACT
+    : isFullscreen
+      ? FILMSTRIP_CELL_FULLSCREEN
+      : FILMSTRIP_CELL;
   const stripStep = cell.width + FILMSTRIP_GAP;
 
   // Real clip aspect drives the fullscreen portrait viewport, so the controls
@@ -537,6 +542,7 @@ function JumpViewer({
 
   const boundedFrameIndex = Math.min(frameIndex, frames.length - 1);
   const currentFrame = frames[boundedFrameIndex];
+  const positionColor = isFullscreen ? tokens.surface : tokens.textMuted;
 
   // Phase banner, not a blip: the latest event at or before the current frame
   // stays visible until the next event replaces it, so it's readable mid-playback.
@@ -568,7 +574,14 @@ function JumpViewer({
         contentContainerStyle={[styles.filmstrip, { paddingHorizontal: stripEdgePadding }]}
       >
         {stripCells.map(({ frame, index }) => (
-          <Pressable key={frame.t} onPress={() => seekToFrame(index)} style={styles.filmstripCell}>
+          <Pressable
+            key={frame.t}
+            accessibilityRole="button"
+            accessibilityLabel={`Frame ${index + 1} of ${frames.length}, ${frame.t.toFixed(2)} seconds`}
+            accessibilityState={{ selected: Math.abs(index - frameIndex) < stripStride }}
+            onPress={() => seekToFrame(index)}
+            style={styles.filmstripCell}
+          >
             <Image
               source={{ uri: frame.image }}
               resizeMethod="resize"
@@ -625,6 +638,7 @@ function JumpViewer({
           accessibilityRole="button"
           accessibilityLabel={`Playback speed ${speedLabel(speed)}`}
           onPress={cycleSpeed}
+          hitSlop={6}
           style={styles.speedButton}
         >
           <AppText size={10} weight="bold" color={tokens.textMuted} style={styles.speedCaption}>
@@ -634,9 +648,23 @@ function JumpViewer({
             {speedLabel(speed)}
           </NumberText>
         </Pressable>
-        <NumberText size={11} color={tokens.textMuted} style={styles.playerTime}>
-          {currentFrame.t.toFixed(2)}s
-        </NumberText>
+        <View
+          accessible
+          accessibilityLabel={`Frame ${boundedFrameIndex + 1} of ${frames.length}, ${currentFrame.t.toFixed(2)} seconds`}
+          style={styles.playerPosition}
+        >
+          <View style={styles.playerFrameRow}>
+            <AppText size={9} weight="bold" color={positionColor} style={styles.playerPositionCaption}>
+              FRAME
+            </AppText>
+            <NumberText size={10} weight="bold" color={positionColor}>
+              {boundedFrameIndex + 1}/{frames.length}
+            </NumberText>
+          </View>
+          <NumberText size={11} color={positionColor} style={styles.playerTime}>
+            {currentFrame.t.toFixed(2)}s
+          </NumberText>
+        </View>
       </View>
     </View>
   );
@@ -698,6 +726,7 @@ function JumpViewer({
             accessibilityRole="button"
             accessibilityLabel="Fullscreen"
             onPress={onExpand}
+            hitSlop={8}
             style={styles.expandButton}
           >
             <Maximize2 color={tokens.surface} size={16} strokeWidth={2.4} />
@@ -782,6 +811,7 @@ function IconButton({ icon: Icon, label, onPress, emphasis = false, repeatOnLong
       accessibilityLabel={label}
       accessibilityHint={repeatOnLongPress ? "Hold to move through frames continuously" : undefined}
       cancelable={repeatOnLongPress ? false : undefined}
+      hitSlop={6}
       onPressIn={repeatOnLongPress ? handlePressIn : undefined}
       onPressOut={repeatOnLongPress ? stopHolding : undefined}
       onPress={handlePress}
@@ -805,6 +835,7 @@ function SegmentButton({ icon: Icon, label, active, onPress }: SegmentButtonProp
       accessibilityRole="button"
       accessibilityState={{ selected: active }}
       onPress={onPress}
+      hitSlop={4}
       style={[styles.segment, active && styles.segmentActive]}
     >
       <Icon color={active ? tokens.electric : tokens.textMuted} size={14} strokeWidth={2.4} />
@@ -1202,6 +1233,7 @@ export function RecordCard({
               accessibilityRole="button"
               accessibilityLabel="Close fullscreen"
               onPress={closeFullscreen}
+              hitSlop={8}
               style={styles.fullscreenClose}
             >
               <X color={tokens.surface} size={20} strokeWidth={2.4} />
@@ -1310,11 +1342,13 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     backgroundColor: tokens.graphite
   },
-  // Portrait fullscreen: the viewport is sized by the clip's real aspect and
-  // the whole video+controls cluster centers in the leftover space.
+  // Portrait fullscreen follows the familiar video-first layout: footage
+  // stays edge-to-edge directly under the header, with analysis controls
+  // attached below it. Landscape keeps its separate overlay presentation.
   viewerPortraitFullscreen: {
     flex: 1,
-    justifyContent: "center",
+    justifyContent: "flex-start",
+    paddingTop: spacing.xl,
     gap: spacing.sm
   },
   viewportPortraitFullscreen: {
@@ -1449,10 +1483,24 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10
   },
   speedCaption: {
-    letterSpacing: 0.4
+    letterSpacing: 0
+  },
+  playerPosition: {
+    minWidth: 64,
+    alignItems: "flex-end",
+    justifyContent: "center",
+    gap: 1
+  },
+  playerFrameRow: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    justifyContent: "flex-end",
+    gap: 4
+  },
+  playerPositionCaption: {
+    letterSpacing: 0
   },
   playerTime: {
-    minWidth: 42,
     textAlign: "right"
   },
   filmstripWrap: {
