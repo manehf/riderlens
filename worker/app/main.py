@@ -646,10 +646,6 @@ def draw_skeleton(frame, landmarks, visibility_threshold: float = 0.5) -> None:
             cv2.circle(frame, joint, thickness, SKELETON_COLOR, -1, cv2.LINE_AA)
 
 
-# The share destination burned into every skeleton clip: watermark + end-card QR.
-SHARE_URL = os.getenv("RIDERLENS_SHARE_URL", "https://riderlens.app")
-ENDCARD_SECONDS = 2.8
-
 WATERMARK_TEXT = "riderlens.app"
 # Electric green + graphite outline, BGR (matches the skeleton palette).
 WATERMARK_COLOR = (46, 255, 182)
@@ -667,37 +663,6 @@ def draw_watermark(frame) -> None:
     y = height - max(12, int(0.03 * height))
     cv2.putText(frame, WATERMARK_TEXT, (x, y), cv2.FONT_HERSHEY_SIMPLEX, scale, WATERMARK_OUTLINE, thickness + 2, cv2.LINE_AA)
     cv2.putText(frame, WATERMARK_TEXT, (x, y), cv2.FONT_HERSHEY_SIMPLEX, scale, WATERMARK_COLOR, thickness, cv2.LINE_AA)
-
-
-def build_endcard(width: int, height: int):
-    """Closing frame for shared clips: graphite card, wordmark, QR to the
-    share page. Whoever receives the clip can scan straight to the app."""
-    import io
-
-    import segno
-
-    canvas = np.zeros((height, width, 3), dtype=np.uint8)
-    canvas[:] = (17, 20, 16)  # graphite, BGR
-
-    # QR: dark modules on a white tile so any scanner reads it.
-    qr_size = int(min(width, height) * 0.44)
-    buffer = io.BytesIO()
-    segno.make(SHARE_URL, error="m").save(buffer, kind="png", scale=12, border=2)
-    qr_image = cv2.imdecode(np.frombuffer(buffer.getvalue(), np.uint8), cv2.IMREAD_COLOR)
-    qr_image = cv2.resize(qr_image, (qr_size, qr_size), interpolation=cv2.INTER_NEAREST)
-    qr_x = (width - qr_size) // 2
-    qr_y = int(height * 0.28)
-    canvas[qr_y : qr_y + qr_size, qr_x : qr_x + qr_size] = qr_image
-
-    def centered_text(text: str, y: int, scale: float, color, thickness: int) -> None:
-        (text_width, _), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, scale, thickness)
-        cv2.putText(canvas, text, ((width - text_width) // 2, y), cv2.FONT_HERSHEY_SIMPLEX, scale, color, thickness, cv2.LINE_AA)
-
-    title_scale = max(0.9, width / 1280 * 1.6)
-    centered_text("RIDERLENS", int(height * 0.18), title_scale, (46, 255, 182), max(2, int(title_scale * 2)))
-    url_scale = max(0.6, width / 1280 * 0.9)
-    centered_text(SHARE_URL.replace("https://", ""), int(height * 0.28) + qr_size + int(height * 0.09), url_scale, (240, 244, 236), max(1, int(url_scale * 2)))
-    return canvas
 
 
 class OverlayClipWriter:
@@ -768,11 +733,30 @@ class OverlayClipWriter:
         except Exception:
             return None
         finally:
-            if self.output_path:
-                try:
-                    os.unlink(self.output_path)
-                except OSError:
-                    pass
+            self.close()
+
+    def close(self) -> None:
+        """Also reap failed/timed-out encoders when analysis exits early."""
+        if self.process is not None:
+            try:
+                if self.process.poll() is None:
+                    self.process.kill()
+                self.process.wait(timeout=5)
+            except (OSError, subprocess.SubprocessError):
+                pass
+            try:
+                self.process.stdin.close()
+            except OSError:
+                pass
+            self.process = None
+        if self.writer is not None:
+            self.writer.release()
+            self.writer = None
+        if self.output_path:
+            try:
+                os.unlink(self.output_path)
+            except OSError:
+                pass
 
 
 def filmstrip_encode_settings(
@@ -788,9 +772,8 @@ def filmstrip_encode_settings(
     tiers retain source-frame density and spend resolution on shorter clips,
     where fewer images share the same mobile payload budget.
     """
-    # The viewer paints these at up to ~1100 device px: widths below ~700
-    # upscale visibly, and quality under ~75 reads as noise on foliage. The
-    # frames are the product - spend the payload here first.
+    # Start with generous dimensions for inspection. Actual encoded size is
+    # checked separately because detailed foliage can exceed these estimates.
     if frame_count <= 96:
         base_width, quality = 960, 85
     elif frame_count <= 200:
@@ -807,6 +790,75 @@ def filmstrip_encode_settings(
     # so they can spend a little more width without breaking the byte budget.
     target_width = round(base_width * 1.2) if frame_width >= frame_height else base_width
     return min(frame_width, target_width), quality
+
+
+FILMSTRIP_MAX_CHARACTERS = 12 * 1024 * 1024
+
+
+def encode_filmstrip_frame(frame, quality: int, max_characters: int) -> str | None:
+    """Bound actual base64 size, not just dimensions; foliage compresses poorly."""
+    original = frame
+    image = encode_frame_jpeg(frame, quality=quality)
+    while image and len(image) > max_characters:
+        height, width = frame.shape[:2]
+        if width == 1 and height == 1:
+            raise ValueError("Filmstrip frame budget is too small for a JPEG.")
+        scale = min(0.85, math.sqrt(max_characters / len(image)) * 0.95)
+        size = (max(1, int(width * scale)), max(1, int(height * scale)))
+        frame = cv2.resize(original, size, interpolation=cv2.INTER_AREA)
+        image = encode_frame_jpeg(frame, quality=quality)
+    return image
+
+
+def sample_window_frames(capture, start: float, end: float, source_fps: float, output_fps: float):
+    """Resample sequential decoder timestamps onto the overlay's constant-rate clock.
+
+    Two decoded frames suffice for nearest-frame sampling, even for VFR footage.
+    Integer strides drift when source FPS is not a multiple of the output FPS.
+    """
+    last_timestamp = None
+
+    def read_frame():
+        nonlocal last_timestamp
+        ok, frame = capture.read()
+        if not ok:
+            return None
+        frame_index = max(0, capture.get(cv2.CAP_PROP_POS_FRAMES) - 1)
+        timestamp = capture.get(cv2.CAP_PROP_POS_MSEC) / 1000.0
+        if (
+            not math.isfinite(timestamp)
+            or timestamp < 0
+            or (timestamp == 0 and frame_index > 0)
+            or (last_timestamp is not None and timestamp <= last_timestamp)
+        ):
+            # Some OpenCV backends expose no presentation timestamps.
+            next_timestamp = last_timestamp + 1 / source_fps if last_timestamp is not None else 0
+            timestamp = max(frame_index / source_fps, next_timestamp)
+        last_timestamp = timestamp
+        return timestamp, frame
+
+    current = read_frame()
+    if current is None:
+        return
+    following = read_frame()
+    count = min(480, max(0, math.ceil((end - start) * output_fps - 1e-7)))
+    for index in range(count):
+        timestamp = start + index / output_fps
+        while following is not None and following[0] <= timestamp + 1e-7:
+            current = following
+            following = read_frame()
+        if current[0] >= end:
+            break
+        if following is None and timestamp >= current[0] + 1 / source_fps - 1e-7:
+            break
+        chosen = current
+        if (
+            following is not None
+            and following[0] < end
+            and abs(following[0] - timestamp) < abs(current[0] - timestamp)
+        ):
+            chosen = following
+        yield timestamp, chosen[1]
 
 
 def measure_window(
@@ -832,20 +884,17 @@ def measure_window(
     capture = cv2.VideoCapture(video_path)
     if not capture.isOpened():
         raise HTTPException(status_code=422, detail="Could not open video.")
-    fps = capture.get(cv2.CAP_PROP_FPS) or 30
-    capture.release()
+    fps = capture.get(cv2.CAP_PROP_FPS)
+    if not math.isfinite(fps) or fps <= 0:
+        fps = 30.0
 
     span = max(window_end - window_start, 0.2)
-    # Every frame is the point: analysis runs at source frame rate up to 60fps
-    # (slow-mo footage keeps its detail). The sample ceiling only bounds
-    # pathologically long windows — a 15s window at 30fps still gets every frame.
-    step = 1.0 / min(fps, 60.0)
-    count = int(span / step) + 1
-    if count > 480:
-        count = 480
-        step = span / (count - 1)
+    output_fps = min(fps, 60.0, 480 / span)
+    step = 1.0 / output_fps
+    count = max(1, min(480, math.ceil(span * output_fps - 1e-7)))
+    frame_budget = FILMSTRIP_MAX_CHARACTERS // count
 
-    pose = create_pose_engine(min_detection_confidence=0.3, min_tracking_confidence=0.3)
+    pose = None
     series: list[dict] = []
     air_frames: list[dict] = []
     filmstrip: list[dict] = []
@@ -854,32 +903,13 @@ def measure_window(
     air_frame_cursor = 0
     # Frame-by-frame inspection needs every sampled frame in the strip. Density
     # is never thinned; dimensions and JPEG quality still fall as count rises.
-    overlay = OverlayClipWriter(fps=1.0 / step) if render_overlay else None
-    capture = cv2.VideoCapture(video_path)
-    # Decode sequentially: one seek to the window start, then read straight
-    # through, keeping every `stride`-th frame. Per-sample seeking re-decodes
-    # from the previous keyframe each time — on 4K/HEVC phone footage that is
-    # minutes of redundant work and starved the cloud worker into timeouts.
+    overlay = OverlayClipWriter(fps=output_fps) if render_overlay else None
     capture.set(cv2.CAP_PROP_POS_MSEC, max(0.0, window_start) * 1000.0)
-    stride = max(1, round(fps * step))
     try:
-        frame_cursor = 0
-        index = -1
-        while index + 1 < count:
-            grabbed = capture.grab()
-            if not grabbed:
-                break
-            keep = frame_cursor % stride == 0
-            frame_cursor += 1
-            if not keep:
-                continue
-            ok, frame = capture.retrieve()
-            if not ok:
-                break
-            index += 1
-            time_seconds = window_start + index * step
-            if time_seconds < 0:
-                continue
+        pose = create_pose_engine(min_detection_confidence=0.3, min_tracking_confidence=0.3)
+        for index, (time_seconds, frame) in enumerate(
+            sample_window_frames(capture, window_start, window_end, fps, output_fps)
+        ):
             height, width = frame.shape[:2]
             entry: dict = {
                 "t": round(time_seconds, 3),
@@ -964,24 +994,22 @@ def measure_window(
             )
             if pose_landmarks:
                 draw_skeleton(small, pose_landmarks)
-            image = encode_frame_jpeg(small, quality=strip_quality)
+            image = encode_filmstrip_frame(small, quality=strip_quality, max_characters=frame_budget)
             if image:
                 filmstrip.append({"t": round(time_seconds, 2), "image": image})
             series.append(entry)
-    finally:
-        pose.close()
-        capture.release()
 
-    overlay_clip = None
-    if overlay is not None:
-        # Close the share clip with the QR end-card before encoding finishes.
-        if overlay.size is not None and not overlay.failed:
-            endcard = build_endcard(*overlay.size)
-            endcard_frames = max(1, int(ENDCARD_SECONDS / step))
-            for _ in range(endcard_frames):
-                overlay.add(endcard)
-        overlay_clip = overlay.finalize()
-    return series, air_frames, filmstrip, overlay_clip
+        # The playback asset ends with the analysis, with no promotional frames.
+        overlay_clip = overlay.finalize() if overlay is not None else None
+        return series, air_frames, filmstrip, overlay_clip
+    finally:
+        if overlay is not None:
+            overlay.close()
+        try:
+            if pose is not None:
+                pose.close()
+        finally:
+            capture.release()
 
 
 def window_from_events(events: list[dict]) -> dict | None:
@@ -1846,8 +1874,8 @@ CAPTURE_MAX_WINDOW_SECONDS = 8.0
 UPLOAD_ID_PATTERN = re.compile(r"^[0-9a-f]{32}$")
 
 
-def reserve_capture_worker():
-    """Allow one MediaPipe record job per machine.
+def reserve_capture_worker(request: Request):
+    """Allow one pose-analysis record job per machine.
 
     The mobile app persists the record before processing and automatically retries
     a busy response, so rejecting overlap is safer than letting two large videos
@@ -1860,6 +1888,9 @@ def reserve_capture_worker():
             headers={"Retry-After": "30"},
         )
     try:
+        # Busy responses do not spend the IP allowance. Keep rate enforcement
+        # inside the reservation so rejecting an over-limit request releases it.
+        enforce_rate_limit(request)
         yield
     finally:
         CAPTURE_JOB_LOCK.release()
@@ -2121,7 +2152,7 @@ def capture_analyze(
     }
 
 
-@app.post("/capture/record", dependencies=PROTECTED)
+@app.post("/capture/record", dependencies=[Depends(require_client_key)])
 def capture_record(
     start_seconds: float = Form(...),
     end_seconds: float = Form(...),

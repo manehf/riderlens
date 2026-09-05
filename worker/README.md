@@ -1,6 +1,6 @@
 # RiderLens Analysis Worker
 
-FastAPI MediaPipe/OpenCV worker for the RiderLens regular-jump MVP.
+FastAPI RTMPose/OpenCV worker for the RiderLens regular-jump MVP, with a legacy MediaPipe fallback.
 
 The worker exists because Expo should not do heavy video processing on-device for the first MVP. The rider chooses the jump range locally, then the mobile app posts the source and selected timestamps when `EXPO_PUBLIC_ANALYSIS_WORKER_URL` is set. If the worker is unavailable, the app keeps the record queued for retry.
 
@@ -12,16 +12,15 @@ Implemented:
 - Canonicalize phone orientation metadata into upright H.264 pixels exactly once.
 - Respect the rider-selected trim window (0.5–8 seconds).
 - Sample frames with OpenCV.
-- Run MediaPipe Pose on sampled frames.
-- Pick approach, compression, takeoff, air, and landing frames.
-- Return body angles, normalized overlay geometry, confidence, and coaching notes.
+- Run RTMPose on person-detection crops and keep tracking continuity between frames.
+- Return a clean clip, skeleton video, per-frame measurements, and JPEG filmstrip.
+- Keep legacy key-frame geometry and optional AI review endpoints for the analysis lab.
 - Publish versioned, non-enumerable share packages to Supabase Storage.
 
 Not implemented:
 
 - Production job queue.
 - Supabase Storage analysis-job download/upload loop.
-- Annotated video export.
 - Direct external URL ingestion.
 - YouTube video ingestion.
 - Custom bike landmark detection.
@@ -79,6 +78,31 @@ npx expo start --clear
 
 ## Main Endpoint
 
+The published mobile app uses `POST /capture/record` (multipart form):
+
+```text
+video=<file>                 # or upload_id from /capture/analyze
+start_seconds=0
+end_seconds=8
+rotate_degrees=0             # optional: 0, 90, 180, 270
+events_json=[]              # optional: takeoff/landing events
+```
+
+When configured, the endpoint requires `x-riderlens-key`. It returns `clip`,
+`skeletonClip` (nullable), `window`, `series`, `filmstrip`, `events`, and `flight`.
+The clips and JPEGs are base64 data URLs; frame timestamps are in source-video
+seconds. This path uses local pose inference, not an external generative-AI API.
+
+Only one record is processed at a time per machine. A busy response is HTTP 429
+with `Retry-After: 30` and does not use the IP allowance; admitted requests still
+do. The filmstrip keeps all sampled frames (up to 60 FPS / 480 frames), with a
+12 MiB combined base64-image ceiling, separate from the two videos.
+
+See [capture quality validation](docs/capture-quality-validation.md) for the
+September worker changes, measured tradeoffs, and pre-deploy checks.
+
+## Legacy Analysis Endpoint
+
 ```http
 POST /analysis/regular-jump
 Content-Type: multipart/form-data
@@ -115,7 +139,7 @@ The worker keeps:
 POST /jobs/{job_id}/analyze
 ```
 
-This is for the later Supabase job architecture, where a backend worker downloads videos from Storage and updates database rows. The current mobile MVP uses `/analysis/regular-jump` directly.
+This is for the later Supabase job architecture, where a backend worker downloads videos from Storage and updates database rows. The current mobile MVP uses `/capture/record` instead.
 
 ## Share Endpoint
 

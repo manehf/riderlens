@@ -5,6 +5,17 @@ Deep background: `riderlens-mvp-plan.md` (product), `riderlens-architecture-infr
 
 ---
 
+## September 5: worker reliability batch (deployed, Fly v40)
+
+- Decoder-timestamp resampling replaces integer frame strides in `measure_window`; the filmstrip, measurements, and skeleton video share a constant-rate clock, capped at 60 FPS / 480 samples. Missing decoder timestamps fall back to source frame positions.
+- RTMPose re-detection prefers the previous person's overlapping box, including after missed detections, rather than switching to a more confident distant bystander. Initial rider selection and large camera cuts remain limitations; this is continuity, not person recognition.
+- Busy `/capture/record` responses no longer spend the IP rate allowance. Authentication and rate enforcement remain in place; mobile free-analysis quota and retry scheduling are unchanged.
+- Filmstrip base64 images have a combined 12 MiB ceiling without thinning sampled frames. Resolution adapts when needed; both video encodings are unchanged. Local 8-second fixture: JSON 43.83 -> 30.77 MiB, 239 frames retained.
+- Failed analysis and encoder timeouts now close/reap the video encoder and remove temporary output.
+- Validation: 111 worker tests, 66 app tests, TypeScript check, real RTMPose comparison. Deployed September 5: public health and an authenticated production capture passed (30 frames, both videos decoded, no end card). See `worker/docs/capture-quality-validation.md` for image/rollback references, tradeoffs, and release checks. No app rebuild was needed; existing saved records are unaffected. Physical-device playback verification remains manual.
+
+---
+
 ## Now: ship v1.0.0 to the stores
 
 Builds exist (iOS submitted to TestFlight, Android AAB ready). Remaining, in order:
@@ -45,7 +56,7 @@ Builds exist (iOS submitted to TestFlight, Android AAB ready). Remaining, in ord
    - **Import** (new service + `src/hooks/useRiderLensMvp.ts`): fetch manifest → preview sheet (clean/skeleton toggle, airtime + height, sharedByName, `Save to my library` / Cancel) → download into a temp dir, validate manifest + required files, move atomically into `records/<newId>/`, write the record with `origin: "shared"` + `sourceShareId` (also the duplicate-import guard), clean clip as `sourceVideoUri`, status `ready` immediately. Clean temp files on failure or cancel.
    - **Show QR** in the share dialog (`src/components/RecordCard.tsx`; `createShareLink` in `src/services/capture.ts` gains `ensureRecordShare(record)` so repeat shares reuse the upload): black-on-white QR of `https://s.riderlens.app/{id}`, copy-link + system share, "Anyone with this QR can view and save this jump". QR rendering is pure JS over react-native-svg (already installed via lucide). Rides release one if ready, else release two.
 
-   **Release two:** personalized QR end cards appended to *exported* share videos via FFmpeg (no re-analysis; QR stays off riding footage — compression kills scan reliability; canonical skeleton clips eventually drop the generic end card), revocation UI (`DELETE /share/{share_id}` with the stored delete token), cleanup tooling, analytics.
+   **Release two:** revocation UI (`DELETE /share/{share_id}` with the stored delete token), cleanup tooling, analytics. September 4 decision: drop promotional QR end cards from generated videos; use share links for app discovery instead. The worker change shipped September 5 in Fly v40. Existing local clips and hosted shares keep their encoded end cards until regenerated; the player retains its legacy loop boundary.
 
    **Retention & revocation (settled):** no automatic expiry; the sender can revoke. Share URLs stay permanently resolvable — a revoked/deleted share renders a branded tombstone page (a `share.html` variant), never a generic 404, so QR codes burned into videos never dead-end. Revocation cannot recall already-imported copies (say so in the UI). Share pages stay `noindex`; the privacy page's hosted-clips section covers hosting (redeploy `site/` — the live copy predates it). Dropped by decision: `/shares/v2`, remote feature flag, `allowSave`, private bucket/signed URLs, automatic expiry.
 
@@ -67,7 +78,7 @@ Builds exist (iOS submitted to TestFlight, Android AAB ready). Remaining, in ord
 - Permanent worker rejections retry forever every 30s ("failed" state is dead code). Distinguish 4xx → terminal.
 - Delete-mid-processing leaves orphaned payload files on disk.
 - Full base64 filmstrip in one `detail.json` — OOM risk on 2–3GB Androids; store strip thumbnails separately or generate locally from clips.
-- `measure_window` timestamps synthesized (keyframe-seek offset + non-integer-fps drift) — use decoder timestamps.
+- Decoder-timestamp sampling shipped in the September 5 batch above. Clean-clip stream-copy/keyframe behavior and timestamp-less decoder fallbacks still need device coverage.
 - Legacy `/analysis/regular-jump` + `/jobs/{id}/analyze` endpoints + client: remove (the jobs route becomes live cross-tenant risk when Supabase keys land on Fly).
 - README.md materially stale (documents legacy endpoints, nonexistent screens).
 - No CI — add GitHub Actions running tsc + vitest + worker pytest.
@@ -85,3 +96,4 @@ Builds exist (iOS submitted to TestFlight, Android AAB ready). Remaining, in ord
 - **No skeleton beats a wrong skeleton**: when the detector finds no rider in a frame, draw nothing (ships with #9). Hallucinated lines on beams read as "broken"; a briefly-absent skeleton reads as honest.
 - **Shares are capability links**: public bucket + unguessable 128-bit ID; no accounts, no automatic expiry; sender can revoke, and revoked URLs render a branded tombstone — never a 404 (QR codes burned into videos must never dead-end). Importing a shared session is free (no analysis compute); reprocessing an import follows normal quota rules.
 - Share metadata carries `sharedByName`, never `riderName` — the app owner is usually the filmer, not the rider.
+- Generated clips contain only analyzed footage, with no promotional QR end cards. App discovery belongs on the share page. The existing watermark is unchanged; Pro watermark policy is a separate decision.

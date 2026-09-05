@@ -69,6 +69,17 @@ MP_DERIVED = {1: 2, 3: 2, 4: 5, 6: 5, 9: 0, 10: 0, 17: 15, 19: 15, 21: 15, 18: 1
 
 HOLD_DECAY = 0.7
 TELEPORT_FLOOR = 0.06  # normalized units: generous for real rider motion
+MIN_TRACK_IOU = 0.1
+
+
+def box_iou(first, second) -> float:
+    left, top = max(first[0], second[0]), max(first[1], second[1])
+    right, bottom = min(first[2], second[2]), min(first[3], second[3])
+    intersection = max(0.0, right - left) * max(0.0, bottom - top)
+    first_area = max(0.0, first[2] - first[0]) * max(0.0, first[3] - first[1])
+    second_area = max(0.0, second[2] - second[0]) * max(0.0, second[3] - second[1])
+    union = first_area + second_area - intersection
+    return float(intersection / union) if union > 0 else 0.0
 
 
 def fade_landmarks(previous: list[Landmark]) -> list[Landmark]:
@@ -152,6 +163,9 @@ class RTMPoseEngine:
         self._min_score = min_score
         self._frame_index = 0
         self._tracked_box: list[float] | None = None
+        # Preserve identity through missed poses; clearing the crop must not
+        # silently bootstrap a different person on the next detector pass.
+        self._identity_box: list[float] | None = None
         self._hold_frames = max(0, hold_frames)
         self._last_landmarks: list[Landmark] | None = None
         self._missed_frames = 0
@@ -167,7 +181,13 @@ class RTMPoseEngine:
         if run_detector:
             detected = self._det(frame_bgr)
             if detected is not None and len(detected) > 0:
-                boxes = detected
+                if self._identity_box is None:
+                    boxes = detected
+                else:
+                    overlaps = [box_iou(self._identity_box, box) for box in detected]
+                    nearest = int(np.argmax(overlaps))
+                    if overlaps[nearest] >= MIN_TRACK_IOU:
+                        boxes = np.asarray([detected[nearest]])
         if boxes is None:
             if self._tracked_box is None:
                 return self._miss()
@@ -195,6 +215,7 @@ class RTMPoseEngine:
                 min(float(width), float(x1 + margin_x)),
                 min(float(height), float(y1 + margin_y)),
             ]
+            self._identity_box = self._tracked_box
 
         landmarks = [Landmark(0.0, 0.0) for _ in range(33)]
         for mp_index, halpe_index in MP_FROM_HALPE.items():
