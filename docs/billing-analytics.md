@@ -58,7 +58,10 @@ The image extends deployed v43 and replaces only `app/main.py` with the analytic
 allowlist additions. Removing those additions reproduces the exact production
 v43 file hash `4c18e6bae1470b1e28f8d2fd805c9407ffe35ddcc6b2b1a0e7497adc8751ae1a`.
 Live `/health` is passing and `/openapi.json` lists all six new event names.
-No synthetic event was sent into production GA4. Mobile changes remain local.
+No synthetic event was sent into production GA4. Mobile changes are included in
+the signed 1.0.5 test builds created September 11. iOS TestFlight upload completed;
+Android 1.0.5 (13) is available to internal testers. Public rollout and purchase/restore
+validation are not complete; see [the release record](releases/1.0.5.md).
 
 Validation: existing app suite plus presenter tests **152 passed**, additional
 analytics delivery tests **2 passed**, worker analytics tests **11 passed**,

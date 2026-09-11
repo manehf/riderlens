@@ -1,7 +1,8 @@
 # iOS analysis transfer reliability
 
-Status: implementation completed locally; native iOS SDK integration builds passed.
-No store submission or production deployment. Physical-device release gate remains open.
+Status: implementation completed; native iOS SDK integration and signed 1.0.5 (8)
+build passed. TestFlight upload completed on September 11; no public App Review
+submission for 1.0.5. Physical-device release gate remains open.
 Date: 2026-09-10. Incidents: Sentry 7724795355 and 7724892971, iOS 1.0.4 (7).
 
 ## Outcome and scope
@@ -279,6 +280,10 @@ validation profile. It does not satisfy the physical-device gate.
 
 ## Implementation evidence
 
+- September 11 release preparation: 154 app tests and TypeScript passed; native
+  Foundation checks passed again. Signed iOS 1.0.5 (8) and Android 1.0.5 (13)
+  builds completed. iOS was uploaded to App Store Connect/TestFlight; Android
+  is available to internal testers. See [the release record](releases/1.0.5.md).
 - Local module: `modules/riderlens-transfer/`; session-specific Expo integration:
   `plugins/withRiderLensTransfer.js`. Autolinking resolves `RiderLensTransfer` on iOS.
 - `analysisCoordinator.ts` checks ownership before resuming deferred preparation,
