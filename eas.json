@@ -51,6 +51,15 @@
     }
   },
   "submit": {
+    "validation": {
+      "android": {
+        "track": "internal",
+        "releaseStatus": "completed"
+      },
+      "ios": {
+        "ascAppId": "6790874129"
+      }
+    },
     "production": {
       "android": {
         "track": "production",
