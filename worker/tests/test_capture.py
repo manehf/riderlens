@@ -117,6 +117,69 @@ def test_capture_record_requires_a_source():
     assert response.status_code == 422
 
 
+def test_completed_capture_result_is_reused_without_processing_again(monkeypatch, tmp_path):
+    capture_dir = tmp_path / "captures"
+    result_dir = tmp_path / "results"
+    capture_dir.mkdir()
+    upload_id = "a" * 32
+    (capture_dir / f"{upload_id}.mp4").write_bytes(b"source")
+    monkeypatch.setattr(main, "CAPTURE_DIR", capture_dir)
+    monkeypatch.setattr(main, "CAPTURE_RESULT_DIR", result_dir)
+    monkeypatch.setattr(main, "video_duration_seconds", lambda _path: 2.0)
+    processing_calls = []
+
+    def measure_once(*_args, **_kwargs):
+        processing_calls.append(True)
+        series = [
+            {
+                "t": 0.0,
+                "kneeAngle": None,
+                "torsoAngle": None,
+                "hipHeight": None,
+                "pitch": None,
+                "confidence": 0.0,
+            }
+        ]
+        filmstrip = [{"t": 0.0, "image": "data:image/jpeg;base64,aW1hZ2U="}]
+        return series, [], filmstrip, b"overlay"
+
+    monkeypatch.setattr(main, "measure_window", measure_once)
+    monkeypatch.setattr(main, "crop_clip", lambda *_args: b"clip")
+    request_id = "analysis-test-idempotency-0123456789"
+    first = client.post(
+        "/capture/record",
+        data={
+            "start_seconds": "0",
+            "end_seconds": "1",
+            "upload_id": upload_id,
+            "request_id": request_id,
+        },
+    )
+    assert first.status_code == 200
+    assert first.headers["X-RiderLens-Result-Cache"] == "miss"
+    assert len(processing_calls) == 1
+
+    recovered = client.get(f"/capture/result/{request_id}")
+    assert recovered.status_code == 200
+    assert recovered.headers["X-RiderLens-Result-Cache"] == "hit"
+    assert recovered.json() == first.json()
+
+    # A repeated POST also returns before source validation or pose processing.
+    repeated = client.post(
+        "/capture/record",
+        data={"start_seconds": "0", "end_seconds": "1", "request_id": request_id},
+    )
+    assert repeated.status_code == 200
+    assert repeated.headers["X-RiderLens-Result-Cache"] == "hit"
+    assert repeated.json() == first.json()
+    assert len(processing_calls) == 1
+
+
+def test_capture_result_rejects_invalid_request_id():
+    response = client.get("/capture/result/not%20valid")
+    assert response.status_code == 422
+
+
 def test_capture_record_rejects_oversized_analysis_window():
     with open(CLIP, "rb") as video:
         response = client.post(

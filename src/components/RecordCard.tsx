@@ -6,6 +6,7 @@ import {
   AlertTriangle,
   ChevronLeft,
   ChevronRight,
+  Clock3,
   Download,
   Film,
   Maximize2,
@@ -960,6 +961,18 @@ export function RecordCard({
   const [mode, setMode] = useState<ViewerMode>("skeleton");
   const [fullscreen, setFullscreen] = useState(false);
   const [sharingLink, setSharingLink] = useState(false);
+  const [retryClock, setRetryClock] = useState(Date.now());
+  const waitingForServer = Boolean(record.analysisJobId) && record.status !== "ready" && record.status !== "failed";
+  const retrySeconds = Math.max(0, Math.ceil(((record.analysisNextRetryAt ?? 0) - retryClock) / 1000));
+  useEffect(() => {
+    setRetryClock(Date.now());
+    if (!record.analysisNextRetryAt || record.analysisNextRetryAt <= Date.now()) return;
+    const interval = setInterval(() => {
+      setRetryClock(Date.now());
+      if (Date.now() >= record.analysisNextRetryAt!) clearInterval(interval);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [record.analysisNextRetryAt]);
   // Keeps the inline and fullscreen viewers on the same moment: whichever is
   // active reports its frame here; the other picks it up on (re)mount.
   const sharedFrameIndexRef = useRef(0);
@@ -994,14 +1007,14 @@ export function RecordCard({
     setDetail(undefined);
     setMode("skeleton");
     if (record.status === "ready") {
-      loadRecordDetail(record.id).then((loaded) => {
+      loadRecordDetail(record.id, record.detailUri).then((loaded) => {
         if (active) setDetail(loaded);
       });
     }
     return () => {
       active = false;
     };
-  }, [record.id, record.status]);
+  }, [record.id, record.status, record.detailUri]);
 
   const frames = detail?.filmstrip ?? [];
   const labels = useMemo(() => (detail ? eventLabels(record, detail.filmstrip) : new Map<number, string>()), [detail, record]);
@@ -1010,11 +1023,25 @@ export function RecordCard({
   const statusLabel =
     record.status === "ready"
       ? "Ready"
+      : record.status === "failed"
+        ? "Failed"
+      : record.analysisPhase === "preparing"
+        ? "Preparing video"
+      : record.analysisPhase === "uploading"
+        ? `Sending video${record.analysisUploadProgress === undefined ? "" : ` ${Math.floor(record.analysisUploadProgress * 100)}%`}`
+      : record.analysisPhase === "awaiting_acceptance"
+        ? "Confirming upload"
+      : record.analysisPhase === "cancelling"
+        ? "Stopping upload"
+      : record.analysisPhase === "downloading"
+        ? "Getting result"
+      : record.analysisPhase === "analysing"
+        ? "Analysing"
+      : waitingForServer
+        ? "Waiting for analysis"
       : record.status === "processing"
         ? "Processing"
-        : record.status === "failed"
-          ? "Failed"
-          : "Queued";
+        : "Queued";
   // Once the record is ready the status chip says nothing new — its header slot
   // becomes the lens toggle instead.
   const showModeToggle = record.status === "ready" && Boolean(record.clipUri) && frames.length > 0;
@@ -1073,11 +1100,11 @@ export function RecordCard({
         <ClipPlayer clipUri={record.clipUri} />
       ) : null}
 
-      {record.status === "pending" || record.status === "failed" ? (
+      {record.status === "pending" || record.status === "processing" || record.status === "failed" || waitingForServer ? (
         <View style={[styles.pendingRow, flush && styles.sectionFlush]}>
-          <AlertTriangle color={tokens.amber} size={16} />
+          {record.status === "failed" ? <AlertTriangle color={tokens.amber} size={16} /> : <Clock3 color={tokens.amber} size={16} />}
           <AppText size={13} color={tokens.textMuted} style={styles.pendingText}>
-            {record.error ??
+            {waitingForServer ? "Waiting for analysis. Your video is saved; RiderLens checks progress automatically while the app is open." : record.error ??
               (record.status === "failed"
                 ? "Processing failed. Retry when the worker is reachable."
                 : "Saved locally. RiderLens will process it when the worker is reachable.")}
@@ -1156,9 +1183,9 @@ export function RecordCard({
             style={styles.iconAction}
           />
         ) : null}
-        {(record.status === "pending" || record.status === "failed") && onRetry ? (
-          <Button icon={RefreshCcw} size="sm" onPress={() => onRetry(record)} style={styles.actionButton}>
-            Retry
+        {(record.status === "pending" || record.status === "failed" || waitingForServer) && onRetry ? (
+          <Button icon={RefreshCcw} size="sm" disabled={retrySeconds > 0 || record.status === "processing"} onPress={() => onRetry(record)} style={styles.actionButton}>
+            {retrySeconds > 0 ? `${waitingForServer ? "Check" : "Retry"} in ${retrySeconds}s` : waitingForServer ? "Check status" : "Retry"}
           </Button>
         ) : null}
         {onDelete ? (

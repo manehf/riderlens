@@ -5,6 +5,25 @@ Deep background: `riderlens-mvp-plan.md` (product), `riderlens-architecture-infr
 
 ---
 
+## September 8: compatible persistent analysis queue
+
+- Worker v43 deployed: legacy build 11 still receives the final synchronous result; one overlap can wait up to ten seconds. A separate capability-negotiated API accepts up to four queued/processing jobs, dispatching one at a time.
+- SQLite, input videos and results use a 5 GB encrypted Fly volume. The worker stays running to finish jobs after the app closes. This adds persistence and absorbs bursts; it does not increase simultaneous pose processing or provide multi-machine dispatch.
+- App 1.0.4 has serial requests, persisted job IDs/deadlines, Retry-After/backoff, progress polling without repeat uploads, and waiting UI without Sentry failure noise. Index writes are serialized and recoverable.
+- Validation: 87 mobile tests/typecheck; full worker suite 141 passed, plus updated focused queue/API suite 25 passed. Production legacy and two queued fixture analyses completed. Android build 12 and iOS build 7 requested; store release still depends on successful builds and submission/review.
+- Details and rollback: `worker/docs/capture-queue-rollout.md`.
+
+---
+
+## September 7: interrupted-response recovery
+
+- Completed analysis responses are cached on the worker for 45 minutes behind an unguessable per-attempt ID. When Android or iOS suspends the app during the response download, foreground/manual retry retrieves the completed payload instead of uploading and processing the video again.
+- Explicit reprocessing creates a new attempt ID, while automatic/manual retries preserve it. Older pending records use a deterministic migration fallback.
+- Client errors now distinguish reachability, request transport/timeout, worker response, result recovery, response download, and local save in Sentry/GA4 diagnostics.
+- Validation: TypeScript check, 66 app tests, 116 worker tests plus focused idempotency tests. One existing real-MediaPipe macOS test remains environment-dependent because headless OpenGL creation can fail; the rest of the worker suite passes.
+
+---
+
 ## September 5: worker reliability batch (deployed, Fly v40)
 
 - Decoder-timestamp resampling replaces integer frame strides in `measure_window`; the filmstrip, measurements, and skeleton video share a constant-rate clock, capped at 60 FPS / 480 samples. Missing decoder timestamps fall back to source frame positions.
@@ -69,6 +88,8 @@ Builds exist (iOS submitted to TestFlight, Android AAB ready). Remaining, in ord
 7. **Someday: on-device analysis** — the same RTMPose exists compiled for phone NPUs (Qualcomm AI Hub "RTMPose_Body2d" for Snapdragon; CoreML route for iPhone). Would eliminate upload latency and per-analysis server cost at the price of two native inference stacks and losing server-deploy upgradability. Revisit if server costs or offline demand ever justify it.
 
 8. **Phase 2 backend** *(when paying users justify it)*: Supabase Auth (Sign in with Apple + magic link), server-side free-quota + entitlement checks, durable async jobs (schema already provisioned), outputs as objects instead of base64 JSON. Then: record backup/restore for Pro. Privacy policy rewrite **before** any of it goes live.
+
+9. **Mobile attribution / AppsFlyer** *(defer until paid acquisition has meaningful volume)*: keep the current measurement stack for now — GA4 for the in-app analysis funnel, Meta App Events for Meta campaigns, RevenueCat for trials/subscriptions/revenue, and Sentry for failures. Revisit AppsFlyer when acquisition spend reaches roughly **€300–500/month**, when two or more ad networks are running at useful volume, or when Reddit install/post-install attribution is needed for campaign optimization. At that point, integrate the React Native SDK in both store builds, configure iOS SKAdNetwork/ATT and Android Install Referrer, connect Meta + Reddit, and forward only decision-useful events (`install`, `app_open`, `analysis_completed`, `start_trial`, `subscribe`, `purchase`). Update App Store privacy details, Google Play Data Safety, and the privacy policy before release. Use one MMP only; do not add Adjust, Branch, Kochava, or Singular in parallel.
 
 ---
 

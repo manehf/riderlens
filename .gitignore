@@ -10,6 +10,7 @@ __pycache__/
 *.pyc
 .pytest_cache/
 .DS_Store
+release-artifacts/
 snapshots/
 moment-*.mp4
 fly_logs.md

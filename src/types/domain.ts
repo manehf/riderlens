@@ -144,6 +144,21 @@ export type RecordStatus = "pending" | "processing" | "ready" | "failed";
 // in each record's detail file on disk.
 export type JumpRecord = {
   id: string;
+  /** Stable for automatic/manual retries of one analysis attempt. Explicit
+   * reprocessing replaces it so the worker never returns an older result. */
+  analysisAttemptId?: string;
+  /** Durable server job; retries poll before considering another upload. */
+  analysisJobId?: string;
+  analysisTransferId?: string;
+  analysisPhase?: "preparing" | "uploading" | "awaiting_acceptance" | "cancelling" | "queued" | "analysing" | "downloading";
+  analysisUploadProgress?: number;
+  /** Persist capability fallback so a fresh health probe cannot replay it. */
+  analysisLegacySubmission?: boolean;
+  analysisRetryCount?: number;
+  analysisNextRetryAt?: number;
+  /** Shared server admission cooldown, restored after app restart. */
+  analysisWorkerRetryAt?: number;
+  analysisRetryable?: boolean;
   createdAt: string;
   skillType: SkillType;
   status: RecordStatus;
@@ -160,6 +175,7 @@ export type JumpRecord = {
   summary?: string;
   events?: CaptureEvent[];
   clipUri?: string;
+  detailUri?: string;
   /** Skeleton-burned, watermarked share version of the clip. */
   skeletonClipUri?: string;
   /** Middle filmstrip frame saved to disk: the face of this record in lists. */

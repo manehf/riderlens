@@ -6,7 +6,8 @@ import {
   isRevenueCatAvailable,
   onProStatusChange,
   presentProPaywall,
-  restorePurchases
+  restorePurchases,
+  type PaywallContext
 } from "../services/revenueCat";
 
 /** Pro entitlement state. `available` is false in Expo Go or without API keys —
@@ -54,9 +55,9 @@ export function useProStatus() {
     };
   }, [available]);
 
-  const upgrade = useCallback(async () => {
+  const upgrade = useCallback(async (context?: PaywallContext) => {
     configureRevenueCat();
-    const pro = await presentProPaywall();
+    const pro = await presentProPaywall(context);
     setIsPro(pro);
     setReady(true);
     return pro;

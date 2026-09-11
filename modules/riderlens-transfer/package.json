@@ -1,0 +1,7 @@
+{
+  "name": "riderlens-transfer",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Durable iOS analysis submission transport",
+  "license": "UNLICENSED"
+}

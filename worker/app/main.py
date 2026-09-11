@@ -6,6 +6,7 @@ import json
 import hmac
 import logging
 from collections import deque
+from contextlib import asynccontextmanager
 import math
 import os
 import re
@@ -16,6 +17,7 @@ import tempfile
 import threading
 import time
 import urllib.request
+import urllib.parse
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -37,7 +39,7 @@ except ImportError:  # pragma: no cover - dotenv ships with pydantic-settings
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from pydantic import BaseModel, Field, TypeAdapter, ValidationError
 
 from .pose_engine import create_pose_engine
@@ -80,9 +82,35 @@ if _sentry_dsn:
         environment=os.getenv("FLY_APP_NAME", "local"),
     )
 
-app = FastAPI(title="RiderLens Analysis Worker", version="0.2.0")
+@asynccontextmanager
+async def lifespan(application: FastAPI):
+    global CAPTURE_QUEUE
+    job_dir = os.getenv("RIDERLENS_JOB_DIR", "").strip()
+    if job_dir:
+        from .capture_jobs import CaptureJobQueue
+
+        CAPTURE_QUEUE = CaptureJobQueue(
+            FilePath(job_dir),
+            _run_capture_job,
+            max_jobs=int(os.getenv("RIDERLENS_MAX_QUEUED_JOBS", "4")),
+            acquire_slot=lambda: not CAPTURE_WAIT_LOCK.locked() and CAPTURE_JOB_LOCK.acquire(blocking=False),
+            release_slot=CAPTURE_JOB_LOCK.release,
+        )
+        CAPTURE_QUEUE.start()
+    try:
+        yield
+    finally:
+        if CAPTURE_QUEUE is not None:
+            CAPTURE_QUEUE.stop()
+            CAPTURE_QUEUE = None
+
+
+app = FastAPI(title="RiderLens Analysis Worker", version="0.3.0", lifespan=lifespan)
 logger = logging.getLogger("uvicorn.error")
 CAPTURE_JOB_LOCK = threading.Lock()
+CAPTURE_WAIT_LOCK = threading.Lock()
+CAPTURE_SUBMIT_LOCK = threading.Lock()
+CAPTURE_QUEUE = None
 
 # --- Abuse containment -------------------------------------------------------
 # The processing endpoints spend real money (Claude) and real CPU. Until
@@ -149,6 +177,18 @@ CropPreset = Literal["full_side_view", "rider_centered", "takeoff_landing", "ver
 Phase = Literal["approach", "compression", "takeoff", "air", "landing", "crash"]
 GeometrySource = Literal["detected", "estimated"]
 AppPlatform = Literal["ios", "android"]
+AnalyticsEventName = Literal[
+    "analysis_started",
+    "analysis_completed",
+    "analysis_failed",
+    "analysis_retry",
+    "allowance_exhausted",
+    "allowance_blocked",
+    "paywall_requested",
+    "paywall_result",
+    "billing_error",
+    "restore_result",
+]
 
 
 class AnalyzeRequest(BaseModel):
@@ -227,6 +267,17 @@ class AppVersionResponse(BaseModel):
     message: str
 
 
+class AnalyticsEventRequest(BaseModel):
+    clientId: str = Field(min_length=8, max_length=128, pattern=r"^[A-Za-z0-9._-]+$")
+    eventId: str = Field(min_length=8, max_length=128, pattern=r"^[A-Za-z0-9._-]+$")
+    name: AnalyticsEventName
+    timestampMicros: int = Field(gt=0)
+    sessionId: int = Field(gt=0)
+    platform: AppPlatform
+    appVersion: str = Field(min_length=1, max_length=32)
+    parameters: dict[str, str | int | float | bool] = Field(default_factory=dict)
+
+
 @dataclass
 class PoseFrame:
     time_seconds: float
@@ -253,7 +304,90 @@ def health():
         "opencv": cv2 is not None,
         "bike_detector_model": BIKE_MODEL_PATH.exists(),
         "captureBusy": CAPTURE_JOB_LOCK.locked(),
+        "captureJobsEnabled": CAPTURE_QUEUE is not None,
     }
+
+
+GA4_ALLOWED_PARAMETERS = {
+    "skill_type",
+    "clip_duration_seconds",
+    "source_duration_seconds",
+    "is_reprocess",
+    "is_retry",
+    "retry_source",
+    "has_skeleton_video",
+    "filmstrip_frame_count",
+    "failure_stage",
+    "paywall_source",
+    "paywall_flow_id",
+    "paywall_result",
+    "presentation_confirmed",
+    "has_pro",
+    "allowance_month",
+    "free_used",
+    "free_limit",
+    "free_remaining",
+    "billing_stage",
+    "billing_error_code",
+}
+
+
+def _send_ga4_event(event: AnalyticsEventRequest) -> None:
+    measurement_id = os.getenv("GA4_MEASUREMENT_ID", "").strip()
+    api_secret = os.getenv("GA4_API_SECRET", "").strip()
+    if not measurement_id or not api_secret:
+        raise HTTPException(status_code=503, detail="Product analytics is not configured.")
+
+    unexpected = set(event.parameters) - GA4_ALLOWED_PARAMETERS
+    if unexpected:
+        raise HTTPException(status_code=422, detail="Unsupported analytics parameter.")
+    for value in event.parameters.values():
+        if isinstance(value, str) and len(value) > 100:
+            raise HTTPException(status_code=422, detail="Analytics parameter is too long.")
+
+    query = urllib.parse.urlencode({"measurement_id": measurement_id, "api_secret": api_secret})
+    url = f"https://region1.google-analytics.com/mp/collect?{query}"
+    body = json.dumps(
+        {
+            "client_id": event.clientId,
+            "timestamp_micros": event.timestampMicros,
+            "events": [
+                {
+                    "name": event.name,
+                    "params": {
+                        **event.parameters,
+                        "event_id": event.eventId,
+                        "app_platform": event.platform,
+                        "app_version": event.appVersion,
+                        "event_source": "mobile_app_via_worker",
+                        "session_id": event.sessionId,
+                        "engagement_time_msec": 1,
+                    },
+                }
+            ],
+        },
+        separators=(",", ":"),
+    ).encode("utf-8")
+    request = urllib.request.Request(
+        url,
+        data=body,
+        method="POST",
+        headers={"Content-Type": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=8) as response:
+            status = response.status
+    except Exception as error:
+        logger.warning("GA4 event delivery failed event=%s error=%s", event.name, type(error).__name__)
+        raise HTTPException(status_code=502, detail="Analytics delivery failed.") from error
+    if status >= 300:
+        raise HTTPException(status_code=502, detail="Analytics delivery failed.")
+
+
+@app.post("/analytics/event", dependencies=[Depends(require_client_key)])
+def analytics_event(event: AnalyticsEventRequest):
+    _send_ga4_event(event)
+    return {"accepted": True}
 
 
 APP_VERSION_DEFAULTS = {
@@ -1869,27 +2003,44 @@ def clamp(value: float, minimum: float, maximum: float) -> float:
 # confirmed window into the record: trimmed clip + key frames + filmstrip + series.
 
 CAPTURE_DIR = FilePath(tempfile.gettempdir()) / "riderlens-captures"
+CAPTURE_RESULT_DIR = (
+    FilePath(os.environ["RIDERLENS_JOB_DIR"]) / "results"
+    if os.getenv("RIDERLENS_JOB_DIR") else FilePath(tempfile.gettempdir()) / "riderlens-results"
+)
 CAPTURE_TTL_SECONDS = 45 * 60
+CAPTURE_RESULT_TTL_SECONDS = 45 * 60
 CAPTURE_MAX_WINDOW_SECONDS = 8.0
 UPLOAD_ID_PATTERN = re.compile(r"^[0-9a-f]{32}$")
+REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9._-]{8,160}$")
+
+
+def _worker_busy():
+    return HTTPException(
+        status_code=429,
+        detail="Analysis worker is busy. This record is saved and will retry shortly.",
+        headers={"Retry-After": "30"},
+    )
 
 
 def reserve_capture_worker(request: Request):
-    """Allow one pose-analysis record job per machine.
+    """Keep legacy responses synchronous; allow only one brief waiting request.
 
-    The mobile app persists the record before processing and automatically retries
-    a busy response, so rejecting overlap is safer than letting two large videos
-    exhaust the machine together.
+    A bounded wait can absorb the end of an overlapping job without turning
+    a burst of uploads into an unbounded queue inside the client's 300s timeout.
+    Async jobs share the same processing lock and yield to this single waiter.
     """
-    if not CAPTURE_JOB_LOCK.acquire(blocking=False):
-        raise HTTPException(
-            status_code=429,
-            detail="Analysis worker is busy. This record is saved and will retry shortly.",
-            headers={"Retry-After": "30"},
-        )
+    acquired = CAPTURE_JOB_LOCK.acquire(blocking=False)
+    if not acquired:
+        wait_seconds = min(10.0, max(0.0, float(os.getenv("RIDERLENS_LEGACY_WAIT_SECONDS", "0"))))
+        if wait_seconds <= 0 or not CAPTURE_WAIT_LOCK.acquire(blocking=False):
+            raise _worker_busy()
+        try:
+            acquired = CAPTURE_JOB_LOCK.acquire(timeout=wait_seconds)
+        finally:
+            CAPTURE_WAIT_LOCK.release()
+        if not acquired:
+            raise _worker_busy()
     try:
-        # Busy responses do not spend the IP allowance. Keep rate enforcement
-        # inside the reservation so rejecting an over-limit request releases it.
         enforce_rate_limit(request)
         yield
     finally:
@@ -1917,6 +2068,75 @@ def _cleanup_captures() -> None:
                 path.unlink()
         except OSError:
             pass
+
+
+def _capture_result_path(request_id: str) -> FilePath:
+    if not REQUEST_ID_PATTERN.fullmatch(request_id):
+        raise HTTPException(status_code=422, detail="Invalid analysis request id.")
+    digest = hashlib.sha256(request_id.encode("utf-8")).hexdigest()
+    return CAPTURE_RESULT_DIR / f"{digest}.json"
+
+
+def _cleanup_capture_results() -> None:
+    if not CAPTURE_RESULT_DIR.exists():
+        return
+    now = time.time()
+    for path in CAPTURE_RESULT_DIR.iterdir():
+        try:
+            if now - path.stat().st_mtime > CAPTURE_RESULT_TTL_SECONDS:
+                path.unlink()
+        except OSError:
+            pass
+
+
+def _load_capture_result(request_id: str) -> str | None:
+    path = _capture_result_path(request_id)
+    try:
+        if time.time() - path.stat().st_mtime > CAPTURE_RESULT_TTL_SECONDS:
+            path.unlink(missing_ok=True)
+            return None
+        return path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return None
+    except OSError:
+        logger.warning("capture result cache read failed key=%s", path.stem[:12])
+        return None
+
+
+def _save_capture_result(request_id: str, payload: str) -> None:
+    path = _capture_result_path(request_id)
+    CAPTURE_RESULT_DIR.mkdir(parents=True, exist_ok=True)
+    _cleanup_capture_results()
+    temporary = path.with_suffix(f".{uuid.uuid4().hex}.tmp")
+    try:
+        with temporary.open("w", encoding="utf-8") as output:
+            output.write(payload)
+            output.flush()
+            os.fsync(output.fileno())
+        os.replace(temporary, path)
+        _sync_directory(path.parent)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def _sync_directory(directory: FilePath) -> None:
+    descriptor = os.open(directory, os.O_RDONLY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def _cached_capture_response(request_id: str) -> Response | None:
+    payload = _load_capture_result(request_id)
+    if payload is None:
+        return None
+    logger.info("capture_record cache hit request=%s", hashlib.sha256(request_id.encode()).hexdigest()[:12])
+    return Response(
+        content=payload,
+        media_type="application/json",
+        headers={"Cache-Control": "private, no-store", "X-RiderLens-Result-Cache": "hit"},
+    )
 
 
 # Ingest normalization: players honor phone rotation metadata, while OpenCV and
@@ -2152,16 +2372,195 @@ def capture_analyze(
     }
 
 
-@app.post("/capture/record", dependencies=[Depends(require_client_key)])
-def capture_record(
+@app.get("/capture/result/{request_id}", dependencies=[Depends(require_client_key)])
+def capture_result(request_id: str):
+    cached = _cached_capture_response(request_id)
+    if cached is None:
+        raise HTTPException(status_code=404, detail="Completed analysis not found.")
+    return cached
+
+
+def _job_response(job) -> dict:
+    return {
+        "jobId": job.request_id,
+        "status": job.status,
+        "retryAfterSeconds": 5 if job.status in ("queued", "processing") else 0,
+        "error": job.error,
+        "retryable": job.retryable,
+    }
+
+
+def _capture_queue():
+    if CAPTURE_QUEUE is None:
+        raise HTTPException(status_code=503, detail="Analysis queue is not enabled.")
+    return CAPTURE_QUEUE
+
+
+@app.get("/capture/jobs/{request_id}", dependencies=[Depends(require_client_key)])
+def capture_job_status(request_id: str):
+    _capture_result_path(request_id)  # Validate before any database access.
+    job = _capture_queue().get(request_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Analysis job expired. Send the video again.")
+    return Response(
+        content=json.dumps(_job_response(job)),
+        media_type="application/json",
+        headers={"Cache-Control": "private, no-store"},
+    )
+
+
+@app.post("/capture/jobs", dependencies=[Depends(require_client_key)])
+def submit_capture_job(
+    request: Request,
+    request_id: str = Form(...),
     start_seconds: float = Form(...),
     end_seconds: float = Form(...),
     upload_id: str | None = Form(None),
     video: UploadFile | None = File(None),
     events_json: str | None = Form(None),
     rotate_degrees: int = Form(0),
+):
+    """Opt-in async contract. Legacy /capture/record always returns final media."""
+    from .capture_jobs import InvalidJobId, JobConflict, QueueFull
+
+    queue = _capture_queue()
+    _capture_result_path(request_id)
+    if not math.isfinite(start_seconds) or not math.isfinite(end_seconds):
+        raise HTTPException(status_code=422, detail="Invalid analysis window.")
+    if start_seconds < 0 or end_seconds <= start_seconds or end_seconds - start_seconds > CAPTURE_MAX_WINDOW_SECONDS + 1e-6:
+        raise HTTPException(status_code=422, detail="Select an analysis window of 8 seconds or less.")
+    if rotate_degrees not in (0, *ROTATE_FILTERS):
+        raise HTTPException(status_code=422, detail="rotate_degrees must be 0, 90, 180, or 270.")
+    try:
+        events = json.loads(events_json) if events_json else []
+        if not isinstance(events, list) or not all(isinstance(event, dict) for event in events):
+            raise ValueError()
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=422, detail="events_json must be an array of events.")
+    parameters = {
+        "start_seconds": start_seconds,
+        "end_seconds": end_seconds,
+        "rotate_degrees": rotate_degrees,
+        "events_json": json.dumps(events, sort_keys=True, separators=(",", ":")),
+    }
+    # Bound concurrent disk writes as well as queued work. Duplicate submissions
+    # return their original job before spending quota or saving a second source.
+    if not CAPTURE_SUBMIT_LOCK.acquire(blocking=False):
+        raise _worker_busy()
+    destination = None
+    adopted = False
+    try:
+        existing = queue.get(request_id)
+        if existing is not None:
+            if existing.parameters != parameters:
+                raise HTTPException(status_code=409, detail="Analysis ID already belongs to another selection.")
+            if existing.status != "failed" or not existing.retryable:
+                # A lost acknowledgement may resend the multipart body. Check
+                # content too, while avoiding a second persistent upload/quota.
+                if video is not None or upload_id is not None:
+                    source = video.file if video is not None else open(_capture_path(upload_id), "rb")
+                    digest = hashlib.sha256()
+                    try:
+                        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+                            digest.update(chunk)
+                    finally:
+                        if video is not None:
+                            source.seek(0)
+                        else:
+                            source.close()
+                    if not queue.matches(request_id, parameters, digest.hexdigest()):
+                        raise HTTPException(status_code=409, detail="Analysis ID already belongs to another video.")
+                return Response(content=json.dumps(_job_response(existing)), status_code=202,
+                                media_type="application/json", headers={"Cache-Control": "private, no-store"})
+        if not queue.has_capacity():
+            raise _worker_busy()
+        if video is None and upload_id is None:
+            raise HTTPException(status_code=422, detail="Provide upload_id or a video file.")
+        if video is not None and (not video.content_type or not video.content_type.startswith("video/")):
+            raise HTTPException(status_code=415, detail="Upload a video file.")
+        # Leave headroom for normalization, results and an in-flight legacy job.
+        max_bytes = int(os.getenv("RIDERLENS_MAX_UPLOAD_BYTES", str(512 * 1024 * 1024)))
+        if shutil.disk_usage(queue.upload_dir).free < max_bytes + 512 * 1024 * 1024:
+            raise _worker_busy()
+        enforce_rate_limit(request)
+        suffix = FilePath(video.filename or "clip.mp4").suffix.lower() if video else ".mp4"
+        if suffix not in (".mp4", ".mov", ".m4v", ".avi", ".webm"):
+            suffix = ".mp4"
+        destination = queue.upload_dir / f"{uuid.uuid4().hex}{suffix}"
+        source = video.file if video is not None else open(_capture_path(upload_id), "rb")
+        digest = hashlib.sha256()
+        size = 0
+        try:
+            with open(destination, "wb") as output:
+                while chunk := source.read(1024 * 1024):
+                    size += len(chunk)
+                    if size > max_bytes:
+                        raise HTTPException(status_code=413, detail="Video too large. Trim it shorter and retry.")
+                    output.write(chunk)
+                    digest.update(chunk)
+                output.flush()
+                os.fsync(output.fileno())
+            _sync_directory(queue.upload_dir)
+        finally:
+            if video is None:
+                source.close()
+        if size == 0:
+            raise HTTPException(status_code=422, detail="The uploaded video is empty.")
+        job = queue.submit(request_id, destination, parameters, source_digest=digest.hexdigest())
+        adopted = FilePath(job.upload_path) == destination
+        return Response(content=json.dumps(_job_response(job)), status_code=202,
+                        media_type="application/json", headers={"Cache-Control": "private, no-store"})
+    except InvalidJobId as error:
+        raise HTTPException(status_code=422, detail=str(error))
+    except JobConflict:
+        raise HTTPException(status_code=409, detail="Analysis ID already belongs to another video.")
+    except QueueFull:
+        raise _worker_busy()
+    finally:
+        if destination is not None and not adopted:
+            destination.unlink(missing_ok=True)
+        CAPTURE_SUBMIT_LOCK.release()
+
+
+def _run_capture_job(job):
+    from .capture_jobs import JobProcessingError
+
+    # An interrupted worker may have saved the result before committing ready.
+    if _load_capture_result(job.request_id) is not None:
+        return
+    started = time.perf_counter()
+    CAPTURE_DIR.mkdir(parents=True, exist_ok=True)
+    try:
+        with tempfile.TemporaryDirectory(prefix="job-", dir=CAPTURE_DIR) as work_dir:
+            source = FilePath(job.upload_path)
+            working = FilePath(work_dir) / f"source{source.suffix}"
+            shutil.copyfile(source, working)
+            _normalize_upload(working)
+            normalized = working.with_suffix(".mp4")
+            if normalized.exists():
+                working = normalized
+            _process_capture_source(str(working), request_id=job.request_id, **job.parameters)
+    except HTTPException as error:
+        raise JobProcessingError(str(error.detail), retryable=error.status_code in (408, 429) or error.status_code >= 500) from error
+    finally:
+        logger.info("capture_job finished total_seconds=%.1f rss_mb=%s", time.perf_counter() - started, current_rss_mb())
+
+
+@app.post("/capture/record", dependencies=[Depends(require_client_key)])
+def capture_record(
+    start_seconds: float = Form(...),
+    end_seconds: float = Form(...),
+    upload_id: str | None = Form(None),
+    request_id: str | None = Form(None),
+    video: UploadFile | None = File(None),
+    events_json: str | None = Form(None),
+    rotate_degrees: int = Form(0),
     _capture_slot: None = Depends(reserve_capture_worker),
 ):
+    if request_id is not None:
+        cached = _cached_capture_response(request_id)
+        if cached is not None:
+            return cached
     if cv2 is None or mp is None or np is None:
         raise HTTPException(status_code=503, detail="Install worker dependencies: mediapipe, opencv-python-headless, numpy.")
     if upload_id is None and video is None:
@@ -2175,6 +2574,19 @@ def capture_record(
         video_path = str(_capture_path(upload_id))
     else:
         video_path = str(_capture_path(_save_capture_upload(video)))
+    return _process_capture_source(
+        video_path, start_seconds, end_seconds, events_json, rotate_degrees, request_id
+    )
+
+
+def _process_capture_source(
+    video_path: str,
+    start_seconds: float,
+    end_seconds: float,
+    events_json: str | None,
+    rotate_degrees: int,
+    request_id: str | None,
+):
     if rotate_degrees:
         video_path = _rotated_source(video_path, rotate_degrees)
 
@@ -2227,7 +2639,7 @@ def capture_record(
     # don't describe a takeoff→landing flight (manual windows, no-jump clips).
     from .flight import estimate_flight
 
-    response = {
+    response_payload = {
         "clip": "data:video/mp4;base64," + base64.b64encode(clip_bytes).decode("ascii"),
         # Skeleton-burned, watermarked share version; null if rendering failed.
         "skeletonClip": (
@@ -2240,8 +2652,8 @@ def capture_record(
         "flight": estimate_flight(series, events),
     }
     payload_characters = (
-        len(response["clip"])
-        + len(response["skeletonClip"] or "")
+        len(response_payload["clip"])
+        + len(response_payload["skeletonClip"] or "")
         + sum(len(frame["image"]) for frame in filmstrip)
         + len(json.dumps(series, separators=(",", ":")))
     )
@@ -2253,7 +2665,15 @@ def capture_record(
         payload_characters / (1024 * 1024),
         current_rss_mb(),
     )
-    return response
+    if request_id is not None:
+        serialized = json.dumps(response_payload, separators=(",", ":"))
+        _save_capture_result(request_id, serialized)
+        return Response(
+            content=serialized,
+            media_type="application/json",
+            headers={"Cache-Control": "private, no-store", "X-RiderLens-Result-Cache": "miss"},
+        )
+    return response_payload
 
 
 # --- Share pages ---------------------------------------------------------------

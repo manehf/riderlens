@@ -50,7 +50,10 @@ export function getSystemTags(record: JumpRecord): string[] {
 }
 
 export function createId(prefix: string): string {
-  return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  // Two random chunks keep externally-used idempotency keys impractical to
+  // guess while remaining available in every React Native runtime.
+  const random = `${Math.random().toString(36).slice(2, 10)}${Math.random().toString(36).slice(2, 10)}`;
+  return `${prefix}-${Date.now().toString(36)}-${random}`;
 }
 
 export function createQueuedSession(skillType: SkillType, videoUri: string, clip?: ClipReview): RideSession {

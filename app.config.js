@@ -14,6 +14,7 @@ module.exports = ({ config }) => ({
   },
   plugins: [
     ...(config.plugins ?? []),
+    "./plugins/withRiderLensTransfer",
     [
       "expo-dev-client",
       {

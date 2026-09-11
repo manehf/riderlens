@@ -2,7 +2,7 @@
   "expo": {
     "name": "RiderLens",
     "slug": "riderlens",
-    "version": "1.0.2",
+    "version": "1.0.4",
     "orientation": "default",
     "scheme": "riderlens",
     "userInterfaceStyle": "light",
@@ -56,6 +56,25 @@
           "imageWidth": 240,
           "resizeMode": "contain",
           "backgroundColor": "#bbfa17"
+        }
+      ],
+      [
+        "expo-tracking-transparency",
+        {
+          "userTrackingPermission": "Allow RiderLens to measure whether our ads led to app installs and to show more relevant advertising."
+        }
+      ],
+      [
+        "react-native-fbsdk-next",
+        {
+          "appID": "910915921744881",
+          "clientToken": "e33c9911b34feb9b17a8de8342efb245",
+          "displayName": "RiderLens",
+          "scheme": "fb910915921744881",
+          "advertiserIDCollectionEnabled": true,
+          "autoLogAppEventsEnabled": true,
+          "isAutoInitEnabled": true,
+          "iosUserTrackingPermission": "Allow RiderLens to measure whether our ads led to app installs and to show more relevant advertising."
         }
       ]
     ],

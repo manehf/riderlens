@@ -60,9 +60,7 @@ export async function persistClipReviewVideo(clip: ClipReview): Promise<ClipRevi
  * the library directory — never the rider's Photos or arbitrary URIs. */
 export async function deleteLibraryVideo(uri: string): Promise<void> {
   if (!isStoredVideoUri(uri)) return;
-  try {
-    await FileSystem.deleteAsync(uri, { idempotent: true });
-  } catch {
-    // Best effort: a missing file is already the desired state.
-  }
+  // Missing files are already handled by idempotent. Other disk failures must
+  // retain the durable deletion intent so cleanup can retry after reopening.
+  await FileSystem.deleteAsync(uri, { idempotent: true });
 }

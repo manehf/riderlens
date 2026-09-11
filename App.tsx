@@ -25,6 +25,7 @@ import { useRiderLensMvp } from "./src/hooks/useRiderLensMvp";
 import { checkForAppUpdate, dismissAppUpdate } from "./src/services/appUpdate";
 import type { AppUpdateNotice, MobilePlatform } from "./src/services/appVersion";
 import { isAnalysisWorkerReachable } from "./src/services/capture";
+import { initializeProductAnalytics } from "./src/services/productAnalytics";
 import { CaptureSheet } from "./src/screens/CaptureSheet";
 import { SessionsScreen } from "./src/screens/SessionsScreen";
 import { radius, shadows, spacing, tokens } from "./src/theme/tokens";
@@ -51,6 +52,7 @@ function App() {
   // The app lives in portrait; fullscreen video unlocks rotation temporarily.
   useEffect(() => {
     void ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+    void initializeProductAnalytics();
   }, []);
   // "camera" = jump straight into recording when the sheet opens.
   const [captureIntent, setCaptureIntent] = useState<"camera" | undefined>();

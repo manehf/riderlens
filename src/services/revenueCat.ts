@@ -1,5 +1,18 @@
 import Constants from "expo-constants";
 import { Platform } from "react-native";
+import * as Sentry from "@sentry/react-native";
+import { billingErrorCode, createPaywallPresenter, type PaywallContext } from "./billingFlow";
+import { trackBillingEvent } from "./productAnalytics";
+
+export type { PaywallContext } from "./billingFlow";
+
+function reportBillingError(stage: string, error: unknown): void {
+  const code = billingErrorCode(error);
+  trackBillingEvent("billing_error", { billing_stage: stage, billing_error_code: code });
+  Sentry.captureMessage(`Billing operation failed: ${stage}`, {
+    level: "warning", tags: { workflow: "billing", billing_stage: stage, billing_error_code: code }
+  });
+}
 
 // RevenueCat is available only in a native build with a platform public SDK
 // key. Expo Go cannot load the native purchases module.
@@ -32,7 +45,8 @@ function purchases(): PurchasesModule | null {
   try {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     return require("react-native-purchases").default as PurchasesModule;
-  } catch {
+  } catch (error) {
+    reportBillingError("load_purchases", error);
     return null;
   }
 }
@@ -42,7 +56,8 @@ function purchasesUi(): PurchasesUiModule | null {
   try {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     return require("react-native-purchases-ui").default as PurchasesUiModule;
-  } catch {
+  } catch (error) {
+    reportBillingError("load_paywall", error);
     return null;
   }
 }
@@ -56,7 +71,8 @@ export function configureRevenueCat(): void {
   try {
     sdk.configure({ apiKey });
     configured = true;
-  } catch {
+  } catch (error) {
+    reportBillingError("configure", error);
     // Never let billing plumbing break the app.
   }
 }
@@ -70,7 +86,8 @@ export async function isProUser(): Promise<boolean> {
   if (!sdk || !configured) return false;
   try {
     return hasProEntitlement(await sdk.getCustomerInfo());
-  } catch {
+  } catch (error) {
+    reportBillingError("customer_info", error);
     return false;
   }
 }
@@ -106,23 +123,34 @@ export function onProStatusChange(listener: (isPro: boolean) => void): () => voi
 
 /** Present the RevenueCat paywall unless already entitled. Resolves to the
  * resulting Pro status. */
-export async function presentProPaywall(): Promise<boolean> {
-  const ui = purchasesUi();
-  if (!ui || !configured) return false;
-  try {
-    await ui.presentPaywallIfNeeded({ requiredEntitlementIdentifier: PRO_ENTITLEMENT_ID });
-    return await isProUser();
-  } catch {
-    return isProUser();
-  }
+const presentPaywall = createPaywallPresenter({
+  present: async () => {
+    const ui = purchasesUi();
+    if (!ui || !configured) throw { code: "billing_unavailable" };
+    return ui.presentPaywallIfNeeded({ requiredEntitlementIdentifier: PRO_ENTITLEMENT_ID });
+  },
+  readPro: isProUser,
+  track: trackBillingEvent,
+  report: reportBillingError
+});
+
+export function presentProPaywall(context?: PaywallContext): Promise<boolean> {
+  return presentPaywall(context);
 }
 
 export async function restorePurchases(): Promise<boolean> {
   const sdk = purchases();
-  if (!sdk || !configured) return false;
+  if (!sdk || !configured) {
+    trackBillingEvent("restore_result", { paywall_result: "unavailable", has_pro: false });
+    return false;
+  }
   try {
-    return hasProEntitlement(await sdk.restorePurchases());
-  } catch {
+    const pro = hasProEntitlement(await sdk.restorePurchases());
+    trackBillingEvent("restore_result", { paywall_result: "completed", has_pro: pro });
+    return pro;
+  } catch (error) {
+    reportBillingError("restore", error);
+    trackBillingEvent("restore_result", { paywall_result: "error", has_pro: false });
     return false;
   }
 }

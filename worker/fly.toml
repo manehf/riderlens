@@ -10,15 +10,19 @@ primary_region = 'cdg'
   dockerfile = 'Dockerfile'
 
 [env]
+  GA4_MEASUREMENT_ID = 'G-XL3CSRXSNK'
   RIDERLENS_DEV_UI = '0'
+  RIDERLENS_JOB_DIR = '/data/jobs'
+  RIDERLENS_MAX_QUEUED_JOBS = '4'
+  RIDERLENS_LEGACY_WAIT_SECONDS = '10'
   SENTRY_DSN = 'https://9b62e80d08875c74cf3dcbff87660da8@o4511693741948928.ingest.us.sentry.io/4511733886943232'
 
 [http_service]
   internal_port = 8080
   force_https = true
-  # Suspend (freeze in memory) instead of full stop: resume is ~1s instead of
-  # the ~20s cold boot - share-page visitors and first analyses both feel it.
-  auto_stop_machines = 'suspend'
+  # Queued work must continue after the phone closes its HTTP connection.
+  # Fly Proxy cannot infer background-job activity from request concurrency.
+  auto_stop_machines = 'off'
   auto_start_machines = true
   min_machines_running = 0
 
@@ -34,3 +38,8 @@ primary_region = 'cdg'
 [[vm]]
   size = 'shared-cpu-8x'
   memory = '4096mb'
+
+[[mounts]]
+  source = 'capture_jobs'
+  destination = '/data'
+  initial_size = '5gb'

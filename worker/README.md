@@ -16,10 +16,11 @@ Implemented:
 - Return a clean clip, skeleton video, per-frame measurements, and JPEG filmstrip.
 - Keep legacy key-frame geometry and optional AI review endpoints for the analysis lab.
 - Publish versioned, non-enumerable share packages to Supabase Storage.
+- Persist and dispatch bounded capture jobs on one machine, with legacy API compatibility.
 
 Not implemented:
 
-- Production job queue.
+- Distributed job queue and processing across multiple machines.
 - Supabase Storage analysis-job download/upload loop.
 - Direct external URL ingestion.
 - YouTube video ingestion.
@@ -85,7 +86,8 @@ video=<file>                 # or upload_id from /capture/analyze
 start_seconds=0
 end_seconds=8
 rotate_degrees=0             # optional: 0, 90, 180, 270
-events_json=[]              # optional: takeoff/landing events
+events_json=[]               # optional: takeoff/landing events
+request_id=analysis-...      # optional stable idempotency key from the app
 ```
 
 When configured, the endpoint requires `x-riderlens-key`. It returns `clip`,
@@ -93,10 +95,50 @@ When configured, the endpoint requires `x-riderlens-key`. It returns `clip`,
 The clips and JPEGs are base64 data URLs; frame timestamps are in source-video
 seconds. This path uses local pose inference, not an external generative-AI API.
 
-Only one record is processed at a time per machine. A busy response is HTTP 429
-with `Retry-After: 30` and does not use the IP allowance; admitted requests still
-do. The filmstrip keeps all sampled frames (up to 60 FPS / 480 frames), with a
+When `request_id` is present, the completed JSON is retained for 45 minutes.
+Retries first call `GET /capture/result/{request_id}`; a cache hit returns the
+finished payload without uploading or processing the source video again. Both
+fresh and recovered result responses use `Cache-Control: private, no-store`.
+
+Only one record is processed at a time per machine. In production, one overlapping
+legacy request can wait up to 10 seconds for the processing slot; further or
+longer overlaps return HTTP 429 with `Retry-After: 30` without spending the IP
+allowance. The final response contract stays compatible with build 11.
+The filmstrip keeps all sampled frames (up to 60 FPS / 480 frames), with a
 12 MiB combined base64-image ceiling, separate from the two videos.
+
+### Persistent capture jobs (app 1.0.4+)
+
+`GET /health` advertises `captureJobsEnabled: true` only when the dispatcher has
+started. New clients then use `POST /capture/jobs` with the same multipart fields
+and a required `request_id`. HTTP 202 returns `{jobId,status,retryAfterSeconds,error,
+retryable}`. Poll `GET /capture/jobs/{jobId}` for `queued`, `processing`, `ready`,
+or `failed`; fetch final media from `GET /capture/result/{jobId}` when ready.
+All job/result endpoints require the existing app client key and return no-store
+responses. `/capture/record` never returns a job placeholder.
+
+The queue admits four queued/processing jobs in total and runs one at a time,
+sharing the processing slot with legacy requests. Duplicate IDs with the same
+video and parameters return the existing job; changed input returns 409. Explicit
+resubmission of a retryable failed job reuses its ID. A missing/expired job returns
+404 so the app can resend its locally saved source. A lost POST acknowledgement
+is recovered by looking up the original ID before uploading again.
+
+`RIDERLENS_JOB_DIR=/data/jobs` holds SQLite state and uploaded sources on the
+encrypted Fly volume. Results/status expire after 45 minutes; queued sources
+expire after 24 hours if they never start. Inputs are deleted after completion or
+failure. Interrupted processing is recovered on startup; an already durable result
+is reused before recalculating. A crash before result persistence can repeat work.
+Scheduled volume snapshots are disabled to avoid retaining expired media in backups.
+
+This is a single-machine persistent queue, not distributed execution or a library
+backup. Do not scale machine count or Uvicorn processes with this configuration:
+shared job ownership/storage and dispatch must be introduced first. HTTP multipart
+spooling happens before admission; the upload limit bounds the saved source, not
+aggregate concurrent incoming request bodies. The server stays running so jobs
+continue after the mobile connection closes; this increases billed uptime.
+
+Validation and deployment record: [September queue rollout](docs/capture-queue-rollout.md).
 
 See [capture quality validation](docs/capture-quality-validation.md) for the
 September worker changes, measured tradeoffs, and pre-deploy checks.
@@ -317,9 +359,9 @@ Then point the app at it in `.env`:
 EXPO_PUBLIC_ANALYSIS_WORKER_URL=https://riderlens-worker.fly.dev
 ```
 
-URL resolution in the app: the dev bundler host (your Mac) is probed first, the deployed URL second — so local development keeps using the LAN worker for free, and phones away from your network fall through to Fly automatically. Machines scale to zero when idle; the app's health pre-flight plus the retry queue absorb cold starts.
+URL resolution in the app: the dev bundler host (your Mac) is probed first, the deployed URL second. Production autostop is disabled because background jobs must finish even after the app closes. The health pre-flight still supports older deployments that suspend when idle.
 
 Notes:
 - The dev Analysis Lab (`/dev`) is disabled on the deployment (`RIDERLENS_DEV_UI=0`).
 - Watch per-record Anthropic cost in the dashboard; the cheaper-model test and the local window detector (product plan §7) are the cost path.
-- If long clips ever hit proxy timeouts on `/capture/record`, bump the VM size before reaching for async job queues.
+- Legacy `/capture/record` remains bounded by the old client's five-minute total timeout. New clients use the persistent job API and short status/result requests.

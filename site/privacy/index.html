@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Privacy Policy | RiderLens</title>
-    <meta name="description" content="How RiderLens handles your videos, records, profile, crash reports, and optional website analytics." />
+    <meta name="description" content="How RiderLens handles your videos, records, profile, crash reports, app events, and optional website analytics." />
     <meta name="robots" content="index, follow, max-image-preview:large" />
     <meta name="theme-color" content="#bcfa18" />
     <link rel="canonical" href="https://riderlens.app/privacy/" />
@@ -17,13 +17,13 @@
     <meta property="og:site_name" content="RiderLens" />
     <meta property="og:locale" content="en_US" />
     <meta property="og:title" content="Privacy Policy | RiderLens" />
-    <meta property="og:description" content="How RiderLens handles your videos, records, profile, crash reports, and optional website analytics." />
+    <meta property="og:description" content="How RiderLens handles your videos, records, profile, crash reports, app events, and optional website analytics." />
     <meta property="og:url" content="https://riderlens.app/privacy/" />
     <meta property="og:image" content="https://riderlens.app/assets/social-share.jpg" />
     <meta property="og:image:alt" content="RiderLens mobile app preview" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="Privacy Policy | RiderLens" />
-    <meta name="twitter:description" content="How RiderLens handles your videos, records, profile, crash reports, and optional website analytics." />
+    <meta name="twitter:description" content="How RiderLens handles your videos, records, profile, crash reports, app events, and optional website analytics." />
     <meta name="twitter:image" content="https://riderlens.app/assets/social-share.jpg" />
 
     
@@ -52,19 +52,19 @@
     <p class="eyebrow">Privacy policy</p>
     <h1>Your library lives on your phone.</h1>
     <p class="legal-summary">RiderLens turns short riding clips into pose-analyzed records. The short version: your library stays on your device, clips are uploaded only to be processed, and we don't sell anything about you.</p>
-    <p class="updated">Effective September 5, 2026</p>
+    <p class="updated">Effective September 6, 2026</p>
   </header>
 
   <section class="legal-section">
     <h2>What we collect and where it lives</h2>
     <p><strong>Your videos and records</strong> (clips, pose overlays, tags, timestamps) are stored locally on your device. There are no accounts and no cloud library in the current version.</p>
     <p><strong>Your rider profile</strong> (optional: name, photo, body measurements, units) is stored only on your device.</p>
-    <p><strong>Processing uploads:</strong> when a record is created, the selected clip is uploaded to our processing server to generate the trimmed clip, pose overlay, and metrics. Uploads are kept temporarily for processing and retry, then expire and are deleted. We do not build a copy of your library on our servers.</p>
+    <p><strong>Processing uploads:</strong> when a record is created, the selected clip is uploaded to our processing server to generate the trimmed clip, pose overlay, and metrics. To find the riding moment, selected still frames may be sent to Anthropic, our AI processing provider. We do not send your rider profile or an account identifier with those frames. Uploads and processing frames are kept temporarily for processing and retry, then expire and are deleted. We do not build a copy of your library on our servers.</p>
   </section>
 
   <section class="legal-section">
     <h2>Crash reporting</h2>
-    <p>The app and our processing server use Sentry to collect crash and error reports so we can fix problems. A report contains technical details (what failed, stack trace, device model, OS version, app version). Reports never include your videos, images, name, or profile data, and we configure Sentry not to collect IP-based identity. Crash data is retained by Sentry for a limited period and used only for debugging.</p>
+    <p>The app and our processing server use Sentry to collect crash and error reports so we can fix problems. A report contains technical details (what failed, stack trace, device model, OS version, app version, and related network information). We configure the app not to send your videos, images, name, or rider profile with these reports. Crash data is retained by Sentry for a limited period and used only for debugging.</p>
   </section>
 
   <section class="legal-section">
@@ -75,6 +75,14 @@
   <section class="legal-section">
     <h2>Purchases</h2>
     <p>Subscriptions are processed by the Apple App Store or Google Play together with RevenueCat, which manages subscription status so the app can unlock Pro features. We never receive your payment card details.</p>
+  </section>
+
+  <section class="legal-section" id="app-measurement">
+    <h2>App analytics and advertising measurement</h2>
+    <p>RiderLens uses Meta App Events to measure app installs and launches and to understand whether an advertising campaign led to an install. It also sends a limited analysis funnel to Google Analytics 4 and Meta: when an analysis starts, completes, fails, or is retried. Analysis events may include the selected skill, clip duration, retry type, processing stage, and whether a skeleton video was created; they never include your videos, images, rider profile, record title, or error message. Meta may also receive technical details such as app version, device and operating system information, event time, IP-derived approximate location, and App Store subscription, purchase, or trial events.</p>
+    <p>Google Analytics receives these analysis events from our processing service rather than directly from the app. Events for one analysis share a random analysis identifier so that its steps can be connected, but RiderLens does not send Google a persistent device, advertising, account, or rider identifier.</p>
+    <p>On Android, Meta may access the Google advertising identifier when it is available and use it for analytics and advertising measurement. You can delete or reset this identifier in Android's privacy settings without losing RiderLens features.</p>
+    <p>On iOS 14.5 and later, RiderLens asks for permission before enabling access to the advertising identifier (IDFA) or tracking activity across other companies' apps and websites. If you decline, RiderLens does not enable advertising-identifier collection and all app features remain available. Meta may still receive limited, privacy-preserving install and app-launch measurement supplied by Apple or without an advertising identifier.</p>
   </section>
 
   <section class="legal-section">
@@ -93,7 +101,7 @@
     <p>On riderlens.app, Google Analytics 4 and Meta Pixel run only if you choose “Accept analytics” in our consent banner. They help us understand which pages are visited and whether a visitor clicks through to the App Store or Google Play, so we can measure and improve our campaigns.</p>
     <p>When enabled, these services may receive the page address, referring page, browser and device details, an approximate location derived from your IP address, and your app-store link clicks. Google and Meta may set identifiers such as <code>_ga</code>, <code>_fbp</code>, and <code>_fbc</code> and process the data under their own privacy policies.</p>
     <p>You can reject analytics without losing any site features. Your choice is stored in your browser. Use “Cookie settings” in the footer at any time to change it; rejecting after acceptance revokes consent and removes the known Google Analytics and Meta Pixel cookies from this site.</p>
-    <p>The RiderLens app does not currently send product-usage analytics to Google Analytics or Meta Pixel. If that changes, we will update this policy before release.</p>
+    <p>The RiderLens app does not embed the Google Analytics SDK or the browser-based Meta Pixel. Its limited server-side Google Analytics 4 and Meta App Events measurement is described above.</p>
   </section>
 
   <section class="legal-section">

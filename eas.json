@@ -4,6 +4,13 @@
     "appVersionSource": "remote"
   },
   "build": {
+    "transfer-validation": {
+      "extends": "production",
+      "distribution": "internal",
+      "autoIncrement": false,
+      "ios": { "simulator": true },
+      "env": { "SENTRY_DISABLE_AUTO_UPLOAD": "true" }
+    },
     "development": {
       "developmentClient": true,
       "distribution": "internal",
@@ -45,6 +52,10 @@
   },
   "submit": {
     "production": {
+      "android": {
+        "track": "production",
+        "releaseStatus": "completed"
+      },
       "ios": {
         "ascAppId": "6790874129"
       }
