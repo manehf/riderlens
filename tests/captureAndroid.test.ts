@@ -73,6 +73,37 @@ describe("Android analysis reads across screen lock", () => {
     expect(lifecycle.listeners.size).toBe(0);
   });
 
+  it("defers a slow result body on screen lock and recovers it on resume", async () => {
+    vi.useFakeTimers();
+    fetchMock.mockResolvedValueOnce(json({ captureJobsEnabled: true }))
+      .mockResolvedValueOnce(json({ jobId: input.jobId, status: "ready" }))
+      .mockImplementationOnce((_url, init) => Promise.resolve({
+        ok: true, status: 200,
+        json: () => new Promise((_resolve, reject) => {
+          init.signal.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), { once: true });
+        })
+      }));
+    const { processRecord, RecordForegroundWaitingError } = await import("../src/services/capture");
+    const result = processRecord(input).catch((error) => error);
+    const settled = vi.fn();
+    void result.then(settled);
+    await vi.advanceTimersByTimeAsync(45_000);
+    expect(settled).not.toHaveBeenCalled();
+    // The status read has already finished; only the result owns a listener.
+    expect(lifecycle.listeners.size).toBe(1);
+    changeState("background");
+    changeState("active");
+    expect(await result).toBeInstanceOf(RecordForegroundWaitingError);
+    expect(lifecycle.listeners.size).toBe(0);
+    expect(vi.getTimerCount()).toBe(0);
+
+    fetchMock.mockResolvedValueOnce(json({ captureJobsEnabled: true }))
+      .mockResolvedValueOnce(json({ jobId: input.jobId, status: "ready" }))
+      .mockResolvedValueOnce(json(payload));
+    expect(await processRecord(input)).toEqual(payload);
+    expect(fetchMock.mock.calls.every((call) => call[1].method === "GET")).toBe(true);
+  });
+
   it("defers an already-background health check instead of declaring the worker unreachable", async () => {
     lifecycle.state = "background";
     fetchMock.mockImplementation((_url, init) => {

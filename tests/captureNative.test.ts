@@ -164,4 +164,36 @@ describe("durable iOS submission", () => {
     await expect(processRecord(input)).rejects.toBeInstanceOf(RecordForegroundWaitingError);
     expect(native.ensureUpload).not.toHaveBeenCalled();
   });
+
+  it("defers an iOS result body after 45 seconds without scheduling another native upload", async () => {
+    vi.useFakeTimers();
+    const watchers = new Set<() => void>();
+    native.watch.mockImplementation((abort) => { watchers.add(abort); return () => { watchers.delete(abort); }; });
+    fetchMock.mockResolvedValueOnce(response({ captureJobsEnabled: true }))
+      .mockResolvedValueOnce(response({ jobId: input.requestId, status: "ready" }))
+      .mockImplementationOnce((_url, init) => Promise.resolve({
+        ok: true, status: 200,
+        json: () => new Promise((_resolve, reject) => {
+          init.signal.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), { once: true });
+        })
+      }));
+    const { processRecord, RecordForegroundWaitingError } = await import("../src/services/capture");
+    const result = processRecord({ ...input, jobId: input.requestId }).catch((error) => error);
+    const settled = vi.fn();
+    void result.then(settled);
+    await vi.advanceTimersByTimeAsync(45_000);
+    expect(settled).not.toHaveBeenCalled();
+    expect(watchers.size).toBe(1);
+    for (const abort of watchers) abort();
+    expect(await result).toBeInstanceOf(RecordForegroundWaitingError);
+    expect(watchers.size).toBe(0);
+    expect(vi.getTimerCount()).toBe(0);
+
+    fetchMock.mockResolvedValueOnce(response({ captureJobsEnabled: true }))
+      .mockResolvedValueOnce(response({ jobId: input.requestId, status: "ready" }))
+      .mockResolvedValueOnce(response({ clip: "recovered" }));
+    expect(await processRecord({ ...input, jobId: input.requestId })).toEqual({ clip: "recovered" });
+    expect(native.ensureUpload).not.toHaveBeenCalled();
+    expect(fetchMock.mock.calls.every((call) => call[1].method === "GET")).toBe(true);
+  });
 });

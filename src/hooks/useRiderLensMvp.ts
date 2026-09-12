@@ -23,6 +23,7 @@ import {
   isAnalysisWorkerReachable,
   processRecord,
   RecordProcessingError,
+  RecordReadTimeoutError,
   RecordWaitingError,
   RecordJobFailedError,
   RecordTransferWaitingError,
@@ -436,7 +437,14 @@ export function useRiderLensMvp(): RiderLensStore {
             trackAnalysisEvent("analysis_failed", record.id, { ...eventContext, failure_stage: failureStage });
             Sentry.captureException(error, {
               tags: { workflow: "analysis", failure_stage: failureStage, retry_source: retrySource ?? "initial" },
-              extra: { recordId: record.id, requestId, phase: record.analysisPhase, skillType: record.skillType, clipDurationSeconds: eventContext.clip_duration_seconds, appState: AppState.currentState, retryable, ...transferDiagnostics(snapshot) }
+              extra: {
+                recordId: record.id, requestId, phase: record.analysisPhase, skillType: record.skillType,
+                clipDurationSeconds: eventContext.clip_duration_seconds, appState: AppState.currentState, retryable,
+                ...transferDiagnostics(snapshot),
+                ...(error instanceof RecordReadTimeoutError ? {
+                  readOperation: error.operation, readTimeoutMs: error.timeoutMs, readElapsedMs: error.elapsedMs
+                } : {})
+              }
             });
           }
         } finally {

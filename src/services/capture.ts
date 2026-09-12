@@ -14,11 +14,15 @@ const FLY_COLD_START_HEALTH_TIMEOUT_MS = 30_000;
 // Processing uploads the clip and runs the full pipeline; allow more, still
 // bounded. Cloud processing of 4K phone footage can legitimately take minutes.
 const RECORD_TIMEOUT_MS = 300_000;
-const RESULT_RECOVERY_TIMEOUT_MS = 30_000;
+const JOB_STATUS_TIMEOUT_MS = 30_000;
+// Results contain base64 videos and filmstrip frames, not just a small status.
+// Allow slower mobile transfers, with a separate bounded deadline through JSON.
+const RESULT_DOWNLOAD_TIMEOUT_MS = 120_000;
 
 export type RecordProcessingFailureStage =
   | "worker_reachability"
   | "result_recovery"
+  | "result_timeout"
   | "request_timeout"
   | "request_transport"
   | "upload_prepare"
@@ -50,6 +54,24 @@ export class WorkerResponseError extends RecordProcessingError {
   constructor(message: string, readonly status: number, retryAfterMs?: number) {
     super(message, "worker_response", status === 408 || status === 429 || status >= 500, undefined, retryAfterMs);
     this.name = "WorkerResponseError";
+  }
+}
+
+type AnalysisReadOperation = "health" | "status" | "result";
+
+/** Distinguishes our own deadline from an unrelated network failure/abort. */
+export class RecordReadTimeoutError extends RecordProcessingError {
+  constructor(
+    readonly operation: AnalysisReadOperation,
+    readonly timeoutMs: number,
+    readonly elapsedMs: number,
+    cause?: unknown
+  ) {
+    super(operation === "result"
+      ? "Downloading the analysis took too long. Your video is saved and will retry."
+      : "Checking analysis progress took too long. Your video is saved and will retry.",
+    operation === "result" ? "result_timeout" : operation === "health" ? "worker_reachability" : "result_recovery", true, cause);
+    this.name = "RecordReadTimeoutError";
   }
 }
 
@@ -140,7 +162,7 @@ async function readDetail(response: Response): Promise<string> {
 async function workerReachable(workerUrl: string): Promise<boolean> {
   try {
     const timeoutMs = workerUrl.includes(".fly.dev") ? FLY_COLD_START_HEALTH_TIMEOUT_MS : LOCAL_HEALTH_TIMEOUT_MS;
-    return await fetchJsonWithTimeout(`${workerUrl}/health`, { method: "GET" }, timeoutMs, async (response) => {
+    return await fetchJsonWithTimeout(`${workerUrl}/health`, { method: "GET" }, timeoutMs, "health", async (response) => {
       if (!response.ok) return false;
       // Older workers omit the capability and keep the original synchronous API.
       const health = await response.json().catch(() => ({}));
@@ -246,7 +268,8 @@ async function recoverCompletedRecord(workerUrl: string, requestId: string, onPh
     return await fetchJsonWithTimeout(
       `${workerUrl}/capture/result/${encodeURIComponent(requestId)}`,
       { method: "GET" },
-      RESULT_RECOVERY_TIMEOUT_MS,
+      RESULT_DOWNLOAD_TIMEOUT_MS,
+      "result",
       async (response) => {
         if (response.status === 404) return null;
         if (!response.ok) throw await responseError(response);
@@ -270,16 +293,26 @@ async function responseError(response: Response): Promise<WorkerResponseError> {
 }
 
 // Keep the deadline alive through JSON transfer, including polling/results.
-async function fetchJsonWithTimeout<T>(url: string, init: RequestInit, timeoutMs: number, read: (response: Response) => Promise<T>): Promise<T> {
+async function fetchJsonWithTimeout<T>(url: string, init: RequestInit, timeoutMs: number, operation: AnalysisReadOperation, read: (response: Response) => Promise<T>): Promise<T> {
   const controller = new AbortController();
+  const startedAt = Date.now();
   let leftForeground = false;
+  let timedOut = false;
   const stopWatching = watchAnalysisBackground(() => { leftForeground = true; controller.abort(); });
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  const timeout = setTimeout(() => { timedOut = true; controller.abort(); }, timeoutMs);
   try {
     const response = await fetch(url, { ...init, headers: { ...workerHeaders(), ...init.headers }, signal: controller.signal });
-    return await read(response);
+    const result = await read(response);
+    // A reader may handle a JSON rejection itself (health/error response bodies).
+    // Do not turn an expired/cancelled read into a successful response.
+    if (leftForeground) throw new RecordForegroundWaitingError();
+    if (timedOut) throw new RecordReadTimeoutError(operation, timeoutMs, Date.now() - startedAt);
+    return result;
   } catch (error) {
     if (leftForeground) throw new RecordForegroundWaitingError();
+    if (timedOut && !(error instanceof RecordReadTimeoutError)) {
+      throw new RecordReadTimeoutError(operation, timeoutMs, Date.now() - startedAt, error);
+    }
     throw error;
   } finally {
     clearTimeout(timeout);
@@ -302,14 +335,16 @@ async function handleCaptureJob(workerUrl: string, job: CaptureJob, onPhase?: Pr
 }
 
 async function pollCaptureJob(workerUrl: string, jobId: string, resubmitRetryableFailure = false, onPhase?: ProcessRecordInput["onPhase"]): Promise<RecordPayload | null> {
-  return await fetchJsonWithTimeout(`${workerUrl}/capture/jobs/${encodeURIComponent(jobId)}`, { method: "GET" }, 30_000, async (response) => {
+  const job = await fetchJsonWithTimeout(`${workerUrl}/capture/jobs/${encodeURIComponent(jobId)}`, { method: "GET" }, JOB_STATUS_TIMEOUT_MS, "status", async (response) => {
     if (response.status === 404) return null;
     if (!response.ok) throw await responseError(response);
     const job = await response.json() as CaptureJob;
     if (job.jobId !== jobId) throw new RecordProcessingError("The analysis service returned a different job. Please retry.", "worker_response", true);
     if (resubmitRetryableFailure && job.status === "failed" && job.retryable === true) return null;
-    return await handleCaptureJob(workerUrl, job, onPhase);
+    return job;
   });
+  // Finish the status request's timer/listener before starting a result download.
+  return job ? await handleCaptureJob(workerUrl, job, onPhase) : null;
 }
 
 /** Interpret the small, durable native receipt without any network request.
