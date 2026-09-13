@@ -4,6 +4,8 @@ const lifecycle = vi.hoisted(() => ({
   state: "active",
   listeners: new Set<(state: string) => void>()
 }));
+const report = vi.hoisted(() => vi.fn());
+vi.mock("@sentry/react-native", () => ({ captureException: report }));
 vi.mock("react-native", () => ({
   AppState: {
     get currentState() { return lifecycle.state; },
@@ -31,10 +33,41 @@ describe("Android analysis reads across screen lock", () => {
     vi.resetModules();
     lifecycle.state = "active";
     lifecycle.listeners.clear();
+    report.mockClear();
     fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
   });
   afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
+
+  it("handles warm-up cancellation by the picker and probes again on resume", async () => {
+    vi.useFakeTimers();
+    fetchMock.mockImplementationOnce((_url, init) => new Promise((_resolve, reject) => {
+      init.signal.addEventListener("abort", () => {
+        changeState("active");
+        reject(new TypeError("Network request failed"));
+      });
+      changeState("background");
+    }));
+    const { prewarmAnalysisWorker } = await import("../src/services/analysisPrewarm");
+    await expect(prewarmAnalysisWorker()).resolves.toBeUndefined();
+    expect(report).not.toHaveBeenCalled();
+    expect(lifecycle.listeners.size).toBe(0);
+    expect(vi.getTimerCount()).toBe(0);
+
+    // An interrupted probe must not leave a negative cache entry that delays work.
+    fetchMock.mockResolvedValueOnce(json({ captureJobsEnabled: true }))
+      .mockResolvedValueOnce(json({ jobId: input.jobId, status: "ready" }))
+      .mockResolvedValueOnce(json(payload));
+    const { processRecord } = await import("../src/services/capture");
+    expect(await processRecord(input)).toEqual(payload);
+    expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([
+      "https://worker.example/health", "https://worker.example/health",
+      `https://worker.example/capture/jobs/${input.jobId}`, `https://worker.example/capture/result/${input.jobId}`
+    ]);
+    expect(fetchMock.mock.calls.every((call) => call[1].method === "GET")).toBe(true);
+    expect(lifecycle.listeners.size).toBe(0);
+    expect(vi.getTimerCount()).toBe(0);
+  });
 
   it.each(["poll", "result"])("defers interrupted %s and recovers the same job without another upload", async (stage) => {
     vi.useFakeTimers();

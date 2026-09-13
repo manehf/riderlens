@@ -1,3 +1,5 @@
+import * as FileSystem from "expo-file-system/legacy";
+
 // Fragmented MP4s (streaming containers: moov followed by moof/mdat pairs)
 // defeat precise AVFoundation/ExoPlayer seeking, so the trim preview scrubs
 // unreliably even though worker-side analysis handles them fine. Cameras
@@ -58,11 +60,8 @@ export function hasTopLevelMoofAtom(bytes: Uint8Array): boolean {
 
 export async function isLikelyFragmentedMp4(uri: string): Promise<boolean> {
   try {
-    // Lazy require keeps this module importable in node test runs.
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const FileSystem = require("expo-file-system");
     const head = await FileSystem.readAsStringAsync(uri, {
-      encoding: "base64",
+      encoding: FileSystem.EncodingType.Base64,
       position: 0,
       length: SNIFF_BYTES
     });

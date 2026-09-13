@@ -1,8 +1,15 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const readAsStringAsync = vi.hoisted(() => vi.fn());
+vi.mock("expo-file-system/legacy", () => ({
+  readAsStringAsync,
+  EncodingType: { Base64: "base64" }
+}));
 
 import {
   decodeBase64,
   hasTopLevelMoofAtom,
+  isLikelyFragmentedMp4,
   isInterruptedVideoImport
 } from "../src/services/videoFormat";
 
@@ -56,6 +63,24 @@ describe("decodeBase64", () => {
     const source = Uint8Array.from({ length: 300 }, (_, i) => (i * 7) % 256);
     const encoded = Buffer.from(source).toString("base64");
     expect(Array.from(decodeBase64(encoded))).toEqual(Array.from(source));
+  });
+});
+
+describe("video file inspection", () => {
+  beforeEach(() => { readAsStringAsync.mockReset(); });
+
+  it.each(["moof", "mdat"])("reads a bounded file header and detects %s containers", async (type) => {
+    const bytes = concat(atom("ftyp", 24), atom("moov", 900), atom(type, 100));
+    readAsStringAsync.mockResolvedValue(Buffer.from(bytes).toString("base64"));
+    expect(await isLikelyFragmentedMp4("file:///picked.mp4")).toBe(type === "moof");
+    expect(readAsStringAsync).toHaveBeenCalledWith("file:///picked.mp4", {
+      encoding: "base64", position: 0, length: 65536
+    });
+  });
+
+  it("keeps an unreadable file from blocking the picker", async () => {
+    readAsStringAsync.mockRejectedValue(new Error("file unavailable"));
+    await expect(isLikelyFragmentedMp4("file:///picked.mp4")).resolves.toBe(false);
   });
 });
 

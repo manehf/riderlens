@@ -24,7 +24,7 @@ import { AppText, Screen } from "./src/components/ui";
 import { useRiderLensMvp } from "./src/hooks/useRiderLensMvp";
 import { checkForAppUpdate, dismissAppUpdate } from "./src/services/appUpdate";
 import type { AppUpdateNotice, MobilePlatform } from "./src/services/appVersion";
-import { isAnalysisWorkerReachable } from "./src/services/capture";
+import { prewarmAnalysisWorker } from "./src/services/analysisPrewarm";
 import { initializeProductAnalytics } from "./src/services/productAnalytics";
 import { CaptureSheet } from "./src/screens/CaptureSheet";
 import { SessionsScreen } from "./src/screens/SessionsScreen";
@@ -101,7 +101,7 @@ function App() {
   function onCapturePress() {
     // Prewarm: a scale-to-zero worker takes ~14s to cold start — pinging now
     // means it's awake by the time the rider has picked a clip.
-    void isAnalysisWorkerReachable();
+    void prewarmAnalysisWorker();
     void store.uploadVideoFromLibrary();
   }
 
